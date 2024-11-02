@@ -1,0 +1,30 @@
+{
+  "name": "pubg-discord-tracker",
+  "version": "1.0.0",
+  "description": "Discord bot for tracking PUBG player statistics",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev src/index.ts",
+    "build": "tsc",
+    "lint": "eslint . --ext .ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^2.7.0",
+    "@types/node-fetch": "^2.6.11",
+    "typescript": "^5.4.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.24",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "ts-node-dev": "^2.0.0"
+  }
+} 
