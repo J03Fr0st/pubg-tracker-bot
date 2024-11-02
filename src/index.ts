@@ -1,11 +1,14 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import dotenv from 'dotenv';
+import { join } from 'path';
 import { loadConfig } from './config/config';
 import { CommandHandler } from './handlers/command-handler';
 import { PubgMonitor } from './services/pubg-monitor';
 import { ensureDataDirectory } from './utils/ensure-directory';
 
-dotenv.config();
+// Load environment variables based on NODE_ENV
+const envFile = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
+dotenv.config({ path: join(__dirname, '..', envFile) });
 
 async function startBot(): Promise<void> {
   await ensureDataDirectory();
@@ -20,7 +23,7 @@ async function startBot(): Promise<void> {
   });
 
   const commandHandler = new CommandHandler(config);
-  const pubgMonitor = new PubgMonitor(config);
+  const pubgMonitor = new PubgMonitor(config, client);
 
   client.on('ready', () => {
     console.log(`Logged in as ${client.user?.tag}`);
@@ -35,4 +38,9 @@ async function startBot(): Promise<void> {
   await client.login(config.DISCORD_TOKEN);
 }
 
-startBot().catch(console.error); 
+// Only start the bot if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  startBot().catch(console.error);
+}
+
+export { startBot }; 
