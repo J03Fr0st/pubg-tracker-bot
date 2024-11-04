@@ -11,15 +11,13 @@ export class PubgMonitor {
   private readonly matchRepository: MatchRepository;
   private readonly pubgApiService: PubgApiService;
   private readonly channelId: string;
-  private readonly client: Client;
   private isMonitoring: boolean;
 
-  constructor(config: Config, client: Client) {
+  constructor(config: Config) {
     this.playerRepository = new PlayerRepository();
     this.matchRepository = new MatchRepository();
     this.pubgApiService = new PubgApiService(config.PUBG_API_KEY);
     this.channelId = config.MONITOR_CHANNEL_ID;
-    this.client = client;
     this.isMonitoring = false;
   }
 
@@ -90,7 +88,7 @@ export class PubgMonitor {
 
   private async getMonitorChannel(): Promise<TextChannel | null> {
     try {
-      const channel = await this.client.channels.fetch(this.channelId);
+      const channel = await client.channels.fetch(this.channelId);
       if (channel?.isTextBased()) {
         return channel as TextChannel;
       }

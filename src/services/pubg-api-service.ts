@@ -1,3 +1,4 @@
+import fetch from 'node-fetch';
 import { Match, MatchStats } from '../models/match';
 
 interface PubgApiMatch {
@@ -32,7 +33,7 @@ export class PubgApiService {
       `/players?filter[playerNames]=${encodeURIComponent(playerName)}`
     );
 
-    const data: any = await response.json();
+    const data = await response.json();
     if (!data.data?.[0]?.relationships?.matches?.data) {
       throw new Error('Player not found or no matches available');
     }
