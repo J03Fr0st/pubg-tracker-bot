@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { PlayerSearchResult, PlayerStats, MatchDetails } from '../types/pubg-api.types';
+import { MatchDetails, PlayersResponse } from '../types/pubg-player-api.types';
 import { RateLimiter } from '../utils/rate-limiter';
 
 export class PubgApiService {
@@ -53,16 +53,21 @@ export class PubgApiService {
    * Searches for a player by their name
    * @param playerName - The name of the player to search for
    */
-  public async getPlayer(playerName: string): Promise<PlayerSearchResult> {
-    return this.makeRequest<PlayerSearchResult>(`/players?filter[playerNames]=${playerName}`);
+  public async getPlayer(playerName: string): Promise<PlayersResponse> {
+    return this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);
   }
 
   /**
-   * Gets the lifetime stats for a player
-   * @param accountId - The account ID of the player
+   * Gets the lifetime stats for multiple players
+   * @param playerNames - Array of player names to retrieve stats for
+   * @returns Promise containing stats for all requested players
    */
-  public async getPlayerStats(accountId: string): Promise<PlayerStats> {
-    return this.makeRequest<PlayerStats>(`/players/${accountId}/seasons/lifetime`);
+  public async getStatsforPlayers(playerNames: string[]): Promise<PlayersResponse> {
+    if (playerNames.length > 10) {
+      throw new Error('Cannot request stats for more than 10 players at a time.');
+    }
+    const playerNamesParam = playerNames.join(',');
+    return this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
   }
 
   /**
@@ -70,6 +75,6 @@ export class PubgApiService {
    * @param matchId - The ID of the match to retrieve
    */
   public async getMatchDetails(matchId: string): Promise<MatchDetails> {
-    return this.makeRequest<MatchDetails>(`/matches/${matchId}`);
+    return this.makeRequest<MatchDetails>(`matches/${matchId}`);
   }
 } 
