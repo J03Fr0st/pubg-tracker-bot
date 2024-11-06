@@ -1,5 +1,4 @@
 import axios, { AxiosInstance } from 'axios';
-import { MatchDetails, PlayersResponse } from '../types/pubg-player-api.types';
 import { RateLimiter } from '../utils/rate-limiter';
 
 export class PubgApiService {
@@ -74,7 +73,7 @@ export class PubgApiService {
    * Gets the details of a specific match
    * @param matchId - The ID of the match to retrieve
    */
-  public async getMatchDetails(matchId: string): Promise<MatchDetails> {
-    return this.makeRequest<MatchDetails>(`matches/${matchId}`);
+  public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
+    return this.makeRequest<MatchesResponse>(`matches/${matchId}`);
   }
 } 

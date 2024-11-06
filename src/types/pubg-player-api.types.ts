@@ -1,54 +1,42 @@
-export interface PlayersResponse {
-    data: PlayerData[]
-  }
-  
-  export interface PlayerData {
-    type: string
-    id: string
-    attributes: Attributes
-    relationships: Relationships
-  }
-  
-  export interface Attributes {
-    clanId: string
-    name: string
-    stats: any
-    titleId: string
-    shardId: string
-    patchVersion: string
-    banType: string
-  }
-  
-  export interface Relationships {
-    matches: Matches
-  }
-  
-  export interface Matches {
-    data: Match[]
-  }
-  
-  export interface Match {
-    type: string
-    id: string
-  }
-
-export interface MatchDetails {
-  data: {
-    type: string;
-    id: string;
-    attributes: {
-      createdAt: string;
-      duration: number;
-      gameMode: string;
-      mapName: string;
-    };
-    relationships: {
-      participants: {
-        data: Array<{
-          type: string;
-          id: string;
-        }>;
-      };
-    };
+// Root Players Interface
+interface PlayersResponse {
+  data: PlayerData[];
+  links: {
+      self: string;
   };
-} 
+  meta: {};
+}
+
+// Player Data Interface
+interface PlayerData {
+  type: string;
+  id: string;
+  attributes: PlayerAttributes;
+  relationships: {
+      matches: RelationshipData;
+  };
+  links: {
+      self: string;
+  };
+}
+
+// Player Attributes Interface
+interface PlayerAttributes {
+  name: string;
+  shardId: string;
+  createdAt: string;
+  updatedAt: string;
+  patchVersion: string;
+  titleId: string;
+}
+
+// Relationships for Matches
+interface RelationshipData {
+  data: MatchReference[];
+}
+
+// Match Reference Interface
+interface MatchReference {
+  type: string;
+  id: string;
+}
