@@ -1,7 +1,7 @@
 // Root Players Interface
 interface PlayersResponse {
   data: PlayerData[];
-  links: {
+  links?: {
       self: string;
   };
   meta: {};

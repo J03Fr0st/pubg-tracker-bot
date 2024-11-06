@@ -1,7 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiter } from '../utils/rate-limiter';
 import { PubgStorageService } from '../services/pubg-storage.service';
-import { PlayersResponse, MatchesResponse } from '../types/pubg-api.types';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;
@@ -60,9 +59,7 @@ export class PubgApiService {
    * Searches for a player by their name and saves to database
    */
   public async getPlayer(playerName: string): Promise<PlayersResponse> {
-    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);
-    // Save player data using storage service
-    await this.storageService.addPlayer(response.data);
+    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);    
     return response;
   }
 
@@ -79,7 +76,9 @@ export class PubgApiService {
     const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
     
     // Save player data using storage service
-    await this.storageService.savePlayers(response.data);
+    for (const player of response.data) {
+        await this.storageService.addPlayer(player);
+    }
     return response;
   }
 
@@ -88,9 +87,6 @@ export class PubgApiService {
    */
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
     const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}?include=participants`);
-    
-    // Save match data using storage service
-    await this.storageService.saveMatch(response);
     return response;
   }
 } 

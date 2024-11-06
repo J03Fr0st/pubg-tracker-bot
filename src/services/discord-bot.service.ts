@@ -64,6 +64,9 @@ export class DiscordBotService {
         const playerName = args[0];
         try {
             const player = await this.pubgApiService.getPlayer(playerName);
+            // Save player data using storage service
+            await this.pubgStorageService.addPlayer(player.data[0]);
+
             await message.reply(`Player ${playerName} added to monitoring list`);
         } catch (error) {
             const err = error as Error;
@@ -88,13 +91,13 @@ export class DiscordBotService {
     }
 
     private async handleListPlayers(message: Message): Promise<void> {
-        const players = await this.pubgStorageService.getProcessedMatches();
+        const players = await this.pubgStorageService.getAllPlayers();
         if (players.length === 0) {
             await message.reply('No players are being monitored in this channel');
             return;
         }
 
-        const playerList = players.join('\n');
+        const playerList = players.map(p => p.name).join('\n');
         await message.reply(`Monitored players:\n${playerList}`);
     }
 
@@ -153,6 +156,9 @@ export class DiscordBotService {
 
     private formatPlayerStats(player: DiscordPlayerMatchStats): string {
         const { stats } = player;
+        if (!stats) {
+            return '';
+        }
         const survivalMinutes = Math.round(stats.timeSurvived / 60);
         const kmWalked = (stats.walkDistance / 1000).toFixed(1);
         const accuracy = stats.kills > 0 && stats.headshotKills > 0 

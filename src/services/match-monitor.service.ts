@@ -1,7 +1,7 @@
 import { PubgApiService } from './pubg-api.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';
-import { MatchGroupSummary, PlayerMatchStats } from '../types/discord-match-summary.types';
+import { DiscordMatchGroupSummary, DiscordPlayerMatchStats } from '../types/discord-match-summary.types';
 
 export class MatchMonitorService {
     private readonly CHECK_INTERVAL = 60000; // 1 minute
@@ -20,9 +20,13 @@ export class MatchMonitorService {
 
     private async checkNewMatches(): Promise<void> {
         const players = await this.storage.getAllPlayers();
+        if (players.length === 0) {
+            return;
+        }
+
         const playerMatches = await Promise.all(
             players.map(async (player) => {
-                const matches = await this.pubgApi.getPlayerMatches(player.id);
+                const matches = await this.pubgApi.getStatsForPlayers(player.id);
                 return {
                     player,
                     matches: matches.slice(0, 5), // Check last 5 matches
@@ -84,39 +88,29 @@ export class MatchMonitorService {
         return grouped;
     }
 
-    private async createMatchSummary(match: MatchGroup): Promise<MatchGroupSummary> {
-        const matchDetails = await this.pubgApi.getMatch(match.matchId);
-        const playerStats: PlayerMatchStats[] = [];
+    private async createMatchSummary(match: MatchGroup): Promise<DiscordMatchGroupSummary> {
+        const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
+        //Save match details to database
+        var savedMatch = await this.storage.saveMatch(matchDetails);        
+        
+        const playerStats: DiscordPlayerMatchStats[] = [];
         let teamRank: number | undefined;
 
         for (const player of match.players) {
-            const stats = matchDetails.participants.find(p => p.id === player.id)!;
-            
+            const currentPlayerStats = savedMatch?.participants.find(p => p.pubgId === player.id);
+            if (!currentPlayerStats) {
+                continue;
+            }
             // If all players are in the same team, use their team rank
             if (teamRank === undefined) {
-                teamRank = stats.winPlace;
-            } else if (teamRank !== stats.winPlace) {
+                teamRank = currentPlayerStats.stats.winPlace;
+            } else if (teamRank !== currentPlayerStats.stats.winPlace) {
                 teamRank = undefined; // Players were in different teams
             }
 
             playerStats.push({
                 name: player.name,
-                stats: {
-                    rank: stats.rank,
-                    kills: stats.kills,
-                    damageDealt: stats.damageDealt,
-                    timeSurvived: stats.timeSurvived,
-                    headshotKills: stats.headshotKills,
-                    assists: stats.assists,
-                    boosts: stats.boosts,
-                    heals: stats.heals,
-                    killPlace: stats.killPlace,
-                    longestKill: stats.longestKill,
-                    revives: stats.revives,
-                    walkDistance: stats.walkDistance,
-                    weaponsAcquired: stats.weaponsAcquired,
-                    winPlace: stats.winPlace
-                },
+                stats: currentPlayerStats.stats
             });
         }
 

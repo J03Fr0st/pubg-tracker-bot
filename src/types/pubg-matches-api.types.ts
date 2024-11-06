@@ -2,10 +2,10 @@
 interface MatchesResponse {
     data: MatchData;
     included: (Roster | Participant | Asset)[];
-    links: {
+    links?: {
         self: string;
     };
-    meta: {};
+    meta?: {};
 }
 
 // Match Data Interface
