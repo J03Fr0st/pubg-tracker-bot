@@ -54,7 +54,7 @@ describe("PubgApiService Integration Tests", () => {
     it("should fetch player stats from PUBG API", async () => {
       // First get a real player ID
       const playerName = process.env.PUBG_TEST_PLAYER_NAME || "J03Fr0st";
-      const result = await pubgApiService.getStatsforPlayers([playerName]);
+      const result = await pubgApiService.getStatsForPlayers([playerName]);
 
       expect(result).toBeDefined();
     }, 20000); // Increase timeout to 10 seconds
@@ -63,7 +63,7 @@ describe("PubgApiService Integration Tests", () => {
       const invalidPlayerId = "invalid-player-id";
 
       await expect(
-        pubgApiService.getStatsforPlayers([invalidPlayerId])
+        pubgApiService.getStatsForPlayers([invalidPlayerId])
       ).rejects.toThrow();
     });
   });  

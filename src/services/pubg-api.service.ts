@@ -61,7 +61,7 @@ export class PubgApiService {
    * @param playerNames - Array of player names to retrieve stats for
    * @returns Promise containing stats for all requested players
    */
-  public async getStatsforPlayers(playerNames: string[]): Promise<PlayersResponse> {
+  public async getStatsForPlayers(playerNames: string[]): Promise<PlayersResponse> {
     if (playerNames.length > 10) {
       throw new Error('Cannot request stats for more than 10 players at a time.');
     }
