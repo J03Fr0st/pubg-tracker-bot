@@ -26,4 +26,4 @@ const PlayerSchema = new Schema<IPlayer>({
   timestamps: true // This will add createdAt and updatedAt fields
 });
 
-export const Player = model<IPlayer>('Player', PlayerSchema); 
+export const Player = model<IPlayer>('Player', PlayerSchema);

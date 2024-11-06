@@ -1,32 +1,10 @@
-import {IPlayer, MonitoredPlayer, Player, ProcessedMatch} from '../data/models/player.model';
-import { Match, IMatch } from '../data/models/match.model';
-export class PubgStorageService {
-  /**
-   * Saves or updates a player in the database
-   */
-  public async addPlayer(playerData: PlayerData): Promise<IPlayer> {
-    const player = await Player.findOneAndUpdate(
-      { pubgId: playerData.id },
-      {
-        pubgId: playerData.id,
-        name: playerData.attributes.name,
-        shardId: playerData.attributes.shardId,
-        createdAt: new Date(playerData.attributes.createdAt),
-        updatedAt: new Date(playerData.attributes.updatedAt),
-        patchVersion: playerData.attributes.patchVersion,
-        titleId: playerData.attributes.titleId,
-        matches: playerData.relationships.matches.data.map((match: MatchReference) => match.id)
-      },
-      { upsert: true, new: true }
-    );
-    return player;
-  }
+import { Match, IMatch } from '../models/match.model';
 
+export class MatchRepository {
   /**
    * Saves a match in the database if it doesn't exist
    */
   public async saveMatch(matchData: MatchData, participants: Participant[]): Promise<IMatch | null> {
-    // Check if match already exists
     const existingMatch = await Match.findOne({ matchId: matchData.id });
     if (existingMatch) {
       return null;
@@ -78,33 +56,8 @@ export class PubgStorageService {
    * Gets a player's matches from the database
    */
   public async getPlayerMatches(pubgId: string): Promise<IMatch[]> {
-    const player = await Player.findOne({ pubgId });
-    if (!player) {
-      return [];
-    }
-
     return Match.find({
       'participants.pubgId': pubgId
     }).sort({ createdAt: -1 });
-  }
-
-  public async removePlayer(playerName: string): Promise<void> {
-    await Player.deleteOne({ name: playerName });
-  }
-
-  public async updatePlayerLastMatch(playerName: string, matchId: string): Promise<void> {
-    await Player.updateOne(
-      { name: playerName },
-      { $set: { lastMatchId: matchId } }
-    );
-  }
-
-  public async getProcessedMatches(): Promise<string[]> {
-    const matches = await ProcessedMatch.find().select('matchId').lean();
-    return matches.map(m => m.matchId);
-  }
-
-  public async addProcessedMatch(matchId: string): Promise<void> {
-    await ProcessedMatch.create({ matchId });
   }
 } 

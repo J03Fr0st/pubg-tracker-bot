@@ -1,24 +1,22 @@
+import { config } from 'dotenv';
+import { connect } from 'mongoose';
 import { PubgApiService } from './services/pubg-api.service';
-import dotenv from 'dotenv';
-import mongoose from 'mongoose';
+import { PubgStorageService } from './services/pubg-storage.service';
+import { DiscordBotService } from './services/discord-bot.service';
+import { MatchMonitorService } from './services/match-monitor.service';
 
-dotenv.config();
+async function main(): Promise<void> {
+    config();
+    
+    await connect(process.env.MONGODB_URI!);
+    
+    const pubgApi = new PubgApiService(process.env.PUBG_API_KEY!);
+    const pubgStorage = new PubgStorageService();
+    const discordBot = new DiscordBotService(pubgStorage, pubgApi);
+    const matchMonitor = new MatchMonitorService(pubgApi, pubgStorage, discordBot);
 
-const pubgApiService = new PubgApiService(process.env.PUBG_API_KEY as string);
-
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/pubg-stats';
-
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
-
-async function main() {
-  try {
-    const stats = await pubgApiService.getStatsForPlayers(['J03Fr0st']);
-    console.log('Player Stats:', stats);
-  } catch (error) {
-    console.error('Error:', error);
-  }
+    await discordBot.initialize();
+    await matchMonitor.startMonitoring();
 }
 
-main(); 
+main().catch(console.error); 

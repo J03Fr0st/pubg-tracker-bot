@@ -1,14 +1,21 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiter } from '../utils/rate-limiter';
-import { PubgStorageService } from './pubg-storage.service';
+import { PlayerRepository } from '../data/repositories/player.repository';
+import { MatchRepository } from '../data/repositories/match.repository';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;
   private readonly shard: string;
   private readonly rateLimiter: RateLimiter;
-  private readonly storageService: PubgStorageService;
+  private readonly playerRepository: PlayerRepository;
+  private readonly matchRepository: MatchRepository;
 
-  constructor(apiKey: string, shard: string = 'steam') {
+  constructor(
+    apiKey: string, 
+    shard: string = 'steam',
+    playerRepository: PlayerRepository = new PlayerRepository(),
+    matchRepository: MatchRepository = new MatchRepository()
+  ) {
     this.shard = shard;
     this.apiClient = axios.create({
       baseURL: `https://api.pubg.com/shards/${shard}`,
@@ -17,8 +24,9 @@ export class PubgApiService {
         'Accept': 'application/vnd.api+json'
       }
     });
-    this.rateLimiter = new RateLimiter(10); // 10 requests per minute
-    this.storageService = new PubgStorageService();
+    this.rateLimiter = new RateLimiter(10);
+    this.playerRepository = playerRepository;
+    this.matchRepository = matchRepository;
   }
 
   /**
@@ -56,8 +64,8 @@ export class PubgApiService {
    */
   public async getPlayer(playerName: string): Promise<PlayersResponse> {
     const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);
-    // Save player data
-    await Promise.all(response.data.map(player => this.storageService.savePlayer(player)));
+    // Save player data using repository
+    await Promise.all(response.data.map(player => this.playerRepository.savePlayer(player)));
     return response;
   }
 
@@ -73,9 +81,8 @@ export class PubgApiService {
     const playerNamesParam = playerNames.join(',');
     const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
     
-    // Save player data
-    await Promise.all(response.data.map(player => this.storageService.savePlayer(player)));
-
+    // Save player data using repository
+    await Promise.all(response.data.map(player => this.playerRepository.savePlayer(player)));
     return response;
   }
 
@@ -83,12 +90,12 @@ export class PubgApiService {
    * Gets the match details and saves to database
    */
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
-    const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}`);
+    const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}?include=participants`);
     const participants = response.included.filter(
       (item): item is Participant => item.type === 'participant'
     );
     
-    await this.storageService.saveMatch(response.data, participants);
+    await this.matchRepository.saveMatch(response.data, participants);
     return response;
   }
 } 
