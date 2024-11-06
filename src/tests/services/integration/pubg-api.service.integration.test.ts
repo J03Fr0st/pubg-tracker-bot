@@ -16,12 +16,12 @@ describe("PubgApiService Integration Tests", () => {
     }
     pubgApiService = new PubgApiService(apiKey);
     jest.setTimeout(120000);
-  }, 10000); // Increase timeout to 10 seconds
+  }, 20000); // Increase timeout to 10 seconds
 
   // Add a delay between tests to respect rate limiting
   afterEach(async () => {
     await new Promise((resolve) => setTimeout(resolve, 6000)); // 6 second delay
-  }, 10000); // Increase timeout to 10 seconds
+  }, 20000); // Increase timeout to 10 seconds
 
   describe("getPlayer", () => {
     it("should fetch player data from PUBG API", async () => {
@@ -39,7 +39,7 @@ describe("PubgApiService Integration Tests", () => {
           shardId: expect.any(String),
         },
       });
-    }, 10000); // Increase timeout to 10 seconds
+    }, 20000); // Increase timeout to 10 seconds
 
     it("should handle non-existent player gracefully", async () => {
       const nonExistentPlayer = "thisplayershouldnotexist12345678";
@@ -47,7 +47,7 @@ describe("PubgApiService Integration Tests", () => {
       await expect(
         pubgApiService.getPlayer(nonExistentPlayer)
       ).rejects.toThrow();
-    }, 10000); // Increase timeout to 10 seconds
+    }, 20000); // Increase timeout to 10 seconds
   });
 
   describe("getPlayerStats", () => {
@@ -57,7 +57,7 @@ describe("PubgApiService Integration Tests", () => {
       const result = await pubgApiService.getStatsforPlayers([playerName]);
 
       expect(result).toBeDefined();
-    }, 10000); // Increase timeout to 10 seconds
+    }, 20000); // Increase timeout to 10 seconds
 
     it("should handle invalid player ID gracefully", async () => {
       const invalidPlayerId = "invalid-player-id";
