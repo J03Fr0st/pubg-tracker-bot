@@ -12,7 +12,7 @@ async function main(): Promise<void> {
     
     const pubgApi = new PubgApiService(process.env.PUBG_API_KEY!);
     const pubgStorage = new PubgStorageService();
-    const discordBot = new DiscordBotService(pubgStorage, pubgApi);
+    const discordBot = new DiscordBotService(pubgApi);
     const matchMonitor = new MatchMonitorService(pubgApi, pubgStorage, discordBot);
 
     await discordBot.initialize();

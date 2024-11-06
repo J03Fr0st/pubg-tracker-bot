@@ -36,4 +36,8 @@ export class PlayerRepository {
   public async findPlayerByPubgId(pubgId: string): Promise<IPlayer | null> {
     return Player.findOne({ pubgId });
   }
+
+  public async getAllPlayers(): Promise<IPlayer[]> {
+    return Player.find();
+  }
 } 

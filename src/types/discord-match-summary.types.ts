@@ -1,5 +1,5 @@
-export interface PlayerMatchStats {
-    name: string;
+export interface DiscordPlayerMatchStats {
+        name: string;
     stats: {
         rank: number;
         kills: number;
@@ -18,11 +18,11 @@ export interface PlayerMatchStats {
     };
 }
 
-export interface MatchGroupSummary {
+export interface DiscordMatchGroupSummary {
     matchId: string;
     mapName: string;
     gameMode: string;
     playedAt: string;
-    players: PlayerMatchStats[];
+    players: DiscordPlayerMatchStats[];
     teamRank?: number;
 } 

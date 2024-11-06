@@ -1,110 +1,52 @@
-import {IPlayer, MonitoredPlayer, Player, ProcessedMatch} from '../data/models/player.model';
-import { Match, IMatch } from '../data/models/match.model';
+import { IPlayer, Player } from '../data/models/player.model';
+import { IMatch, Match } from '../data/models/match.model';
+import { MatchRepository } from '../data/repositories/match.repository';
+import { PlayerRepository } from '../data/repositories/player.repository';
+import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+
 export class PubgStorageService {
-  /**
-   * Saves or updates a player in the database
-   */
+  private matchRepository = new MatchRepository();
+  private playerRepository = new PlayerRepository();
+  private processedMatchRepository = new ProcessedMatchRepository();
+
+  //#region Player
   public async addPlayer(playerData: PlayerData): Promise<IPlayer> {
-    const player = await Player.findOneAndUpdate(
-      { pubgId: playerData.id },
-      {
-        pubgId: playerData.id,
-        name: playerData.attributes.name,
-        shardId: playerData.attributes.shardId,
-        createdAt: new Date(playerData.attributes.createdAt),
-        updatedAt: new Date(playerData.attributes.updatedAt),
-        patchVersion: playerData.attributes.patchVersion,
-        titleId: playerData.attributes.titleId,
-        matches: playerData.relationships.matches.data.map((match: MatchReference) => match.id)
-      },
-      { upsert: true, new: true }
-    );
-    return player;
-  }
-
-  /**
-   * Saves a match in the database if it doesn't exist
-   */
-  public async saveMatch(matchData: MatchData, participants: Participant[]): Promise<IMatch | null> {
-    // Check if match already exists
-    const existingMatch = await Match.findOne({ matchId: matchData.id });
-    if (existingMatch) {
-      return null;
-    }
-
-    const match = new Match({
-      matchId: matchData.id,
-      gameMode: matchData.attributes.gameMode,
-      mapName: matchData.attributes.mapName,
-      duration: matchData.attributes.duration,
-      createdAt: new Date(matchData.attributes.createdAt),
-      isCustomMatch: matchData.attributes.isCustomMatch,
-      seasonState: matchData.attributes.seasonState,
-      shardId: matchData.attributes.shardId,
-      participants: participants.map(participant => ({
-        pubgId: participant.id,
-        name: participant.attributes.stats.name,
-        stats: {
-          DBNOs: participant.attributes.stats.DBNOs,
-          assists: participant.attributes.stats.assists,
-          boosts: participant.attributes.stats.boosts,
-          damageDealt: participant.attributes.stats.damageDealt,
-          deathType: participant.attributes.stats.deathType,
-          headshotKills: participant.attributes.stats.headshotKills,
-          heals: participant.attributes.stats.heals,
-          killPlace: participant.attributes.stats.killPlace,
-          killStreaks: participant.attributes.stats.killStreaks,
-          kills: participant.attributes.stats.kills,
-          longestKill: participant.attributes.stats.longestKill,
-          name: participant.attributes.stats.name,
-          revives: participant.attributes.stats.revives,
-          rideDistance: participant.attributes.stats.rideDistance,
-          roadKills: participant.attributes.stats.roadKills,
-          swimDistance: participant.attributes.stats.swimDistance,
-          teamKills: participant.attributes.stats.teamKills,
-          timeSurvived: participant.attributes.stats.timeSurvived,
-          vehicleDestroys: participant.attributes.stats.vehicleDestroys,
-          walkDistance: participant.attributes.stats.walkDistance,
-          weaponsAcquired: participant.attributes.stats.weaponsAcquired,
-          winPlace: participant.attributes.stats.winPlace
-        }
-      }))
-    });
-
-    return match.save();
-  }
-
-  /**
-   * Gets a player's matches from the database
-   */
-  public async getPlayerMatches(pubgId: string): Promise<IMatch[]> {
-    const player = await Player.findOne({ pubgId });
-    if (!player) {
-      return [];
-    }
-
-    return Match.find({
-      'participants.pubgId': pubgId
-    }).sort({ createdAt: -1 });
+    return this.playerRepository.savePlayer(playerData);
   }
 
   public async removePlayer(playerName: string): Promise<void> {
-    await Player.deleteOne({ name: playerName });
+    await this.playerRepository.removePlayer(playerName);
+  }
+
+  public async getAllPlayers(): Promise<IPlayer[]> {
+    return this.playerRepository.getAllPlayers();
   }
 
   public async updatePlayerLastMatch(playerName: string, matchId: string): Promise<void> {
-    await Player.updateOne(
-      { name: playerName },
-      { $set: { lastMatchId: matchId } }
-    );
+    await this.playerRepository.updatePlayerLastMatch(playerName, matchId);
+  }  
+
+  //#endregion
+
+
+  //#region Match
+  public async saveMatch(matchesResponse: MatchesResponse): Promise<IMatch | null> {
+    return this.matchRepository.saveMatch(matchesResponse);
+  }  
+
+  public async getPlayerMatches(pubgId: string): Promise<IMatch[]> {
+    return this.matchRepository.getPlayerMatches(pubgId);
   }
 
+  //#endregion
+
+  //#region Processed Match
   public async getProcessedMatches(): Promise<string[]> {
-    const matches = await ProcessedMatch.find().select('matchId').lean();
-    return matches.map(m => m.matchId);
+    return this.processedMatchRepository.getProcessedMatches();
   }
 
   public async addProcessedMatch(matchId: string): Promise<void> {
-    await ProcessedMatch.create({ matchId });
+    await this.processedMatchRepository.addProcessedMatch(matchId);
   }
+  //#endregion
 } 

@@ -4,11 +4,16 @@ export class MatchRepository {
   /**
    * Saves a match in the database if it doesn't exist
    */
-  public async saveMatch(matchData: MatchData, participants: Participant[]): Promise<IMatch | null> {
-    const existingMatch = await Match.findOne({ matchId: matchData.id });
+  public async saveMatch(matchesResponse: MatchesResponse): Promise<IMatch | null> {    
+    const existingMatch = await Match.findOne({ matchId: matchesResponse.data.id });
     if (existingMatch) {
       return null;
     }
+
+    const matchData = matchesResponse.data;
+    const participants = matchesResponse.included.filter(
+      (item): item is Participant => item.type === 'participant'
+    );
 
     const match = new Match({
       matchId: matchData.id,

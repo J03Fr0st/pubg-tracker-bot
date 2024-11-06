@@ -15,7 +15,7 @@ interface PlayerData {
   relationships: {
       matches: RelationshipData;
   };
-  links: {
+  links?: {
       self: string;
   };
 }

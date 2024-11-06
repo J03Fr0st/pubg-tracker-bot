@@ -1,7 +1,7 @@
 import { PubgApiService } from './pubg-api.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';
-import { MatchGroupSummary, PlayerMatchStats } from '../types/match-summary.types';
+import { MatchGroupSummary, PlayerMatchStats } from '../types/discord-match-summary.types';
 
 export class MatchMonitorService {
     private readonly CHECK_INTERVAL = 60000; // 1 minute
