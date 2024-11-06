@@ -1,10 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiter } from '../utils/rate-limiter';
+import { PubgStorageService } from './pubg-storage.service';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;
   private readonly shard: string;
   private readonly rateLimiter: RateLimiter;
+  private readonly storageService: PubgStorageService;
 
   constructor(apiKey: string, shard: string = 'steam') {
     this.shard = shard;
@@ -16,6 +18,7 @@ export class PubgApiService {
       }
     });
     this.rateLimiter = new RateLimiter(10); // 10 requests per minute
+    this.storageService = new PubgStorageService();
   }
 
   /**
@@ -49,11 +52,13 @@ export class PubgApiService {
   }
 
   /**
-   * Searches for a player by their name
-   * @param playerName - The name of the player to search for
+   * Searches for a player by their name and saves to database
    */
   public async getPlayer(playerName: string): Promise<PlayersResponse> {
-    return this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);
+    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);
+    // Save player data
+    await Promise.all(response.data.map(player => this.storageService.savePlayer(player)));
+    return response;
   }
 
   /**
@@ -66,14 +71,24 @@ export class PubgApiService {
       throw new Error('Cannot request stats for more than 10 players at a time.');
     }
     const playerNamesParam = playerNames.join(',');
-    return this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
+    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
+    
+    // Save player data
+    await Promise.all(response.data.map(player => this.storageService.savePlayer(player)));
+
+    return response;
   }
 
   /**
-   * Gets the details of a specific match
-   * @param matchId - The ID of the match to retrieve
+   * Gets the match details and saves to database
    */
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
-    return this.makeRequest<MatchesResponse>(`matches/${matchId}`);
+    const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}`);
+    const participants = response.included.filter(
+      (item): item is Participant => item.type === 'participant'
+    );
+    
+    await this.storageService.saveMatch(response.data, participants);
+    return response;
   }
 } 

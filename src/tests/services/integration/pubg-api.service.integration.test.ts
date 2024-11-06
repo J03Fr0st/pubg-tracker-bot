@@ -1,5 +1,6 @@
 import { PubgApiService } from "../../../services/pubg-api.service";
 import { config } from "dotenv";
+import mongoose from 'mongoose';
 
 // Load environment variables for tests
 config();
@@ -15,6 +16,21 @@ describe("PubgApiService Integration Tests", () => {
       );
     }
     pubgApiService = new PubgApiService(apiKey);
+
+    try {
+      const mongoUri = process.env.MONGODB_URI;
+      if (!mongoUri) {
+        throw new Error("MONGODB_URI environment variable is required for integration tests");
+      }
+      mongoose.connect(`${mongoUri}`);
+      console.log('Connected to MongoDB Test Database');
+    } catch (error) {
+      console.error('Error connecting to MongoDB Test Database:', error);
+      process.exit(1);
+    }
+
+
+    
     jest.setTimeout(120000);
   }, 20000); // Increase timeout to 10 seconds
 
