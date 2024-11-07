@@ -23,6 +23,7 @@ export class DiscordBotService {
     }
 
     public async initialize(): Promise<void> {
+        console.log('Initializing Discord bot...');
         await this.client.login(process.env.DISCORD_TOKEN);
     }
 
@@ -103,7 +104,7 @@ export class DiscordBotService {
 
     private formatMatchSummary(summary: DiscordMatchGroupSummary): string {
         const { mapName, gameMode, playedAt, players } = summary;
-        const teamRankText = summary.teamRank ? `Team Rank: #${summary.teamRank}` : '';
+        const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : '';
         
         // Create the header with match info
         let message = [
@@ -168,19 +169,17 @@ export class DiscordBotService {
         return [
             '',
             `### ${player.name}`,
-            '```yaml',
-            `Position: #${stats.winPlace}`,
-            `Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
-            `Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
-            `Survival: ${survivalMinutes}min`,
+            `🏅 Position: #${stats.winPlace}`,
+            `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
+            `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
+            `⏱️ Survival: ${survivalMinutes}min`,
             '',
-            `Longest Kill: ${Math.round(stats.longestKill)}m`,
-            `Distance: ${kmWalked}km`,
-            `Headshot %: ${accuracy}%`,
-            `Heals/Boosts: ${stats.heals}/${stats.boosts}`,
-            `Weapons: ${stats.weaponsAcquired}`,
-            stats.revives > 0 ? `Revives: ${stats.revives}` : '',
-            '```',
+            `🎯 Longest Kill: ${Math.round(stats.longestKill)}m`,
+            `🚶 Distance: ${kmWalked}km`,
+            `🎯 Headshot %: ${accuracy}%`,
+            `💊 Heals/Boosts: ${stats.heals}/${stats.boosts}`,
+            `🔧 Weapons: ${stats.weaponsAcquired}`,
+            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',
         ].filter(Boolean).join('\n');
     }
 } 

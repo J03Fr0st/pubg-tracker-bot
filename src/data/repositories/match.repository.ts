@@ -5,10 +5,10 @@ export class MatchRepository {
   /**
    * Saves a match in the database if it doesn't exist
    */
-  public async saveMatch(matchesResponse: MatchesResponse): Promise<IMatch | null> {    
+  public async saveMatch(matchesResponse: MatchesResponse): Promise<IMatch> {    
     const existingMatch = await Match.findOne({ matchId: matchesResponse.data.id });
     if (existingMatch) {
-      return null;
+      return existingMatch;
     }
 
     const matchData = matchesResponse.data;

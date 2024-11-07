@@ -88,7 +88,7 @@ export class PubgApiService {
    * Gets the match details and saves to database
    */
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
-    const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}?include=participants`);
+    const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}`);
     return response;
   }
 } 
