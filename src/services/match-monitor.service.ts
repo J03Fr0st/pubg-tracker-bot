@@ -1,19 +1,29 @@
+import { PlayersResponse } from './../../dist/types/pubg-api.types.d';
 import { PubgApiService } from './pubg-api.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';
 import { DiscordMatchGroupSummary, DiscordPlayerMatchStats } from '../types/discord-match-summary.types';
+import { MatchMonitorPlayer, MatchMonitorPlayerMatchInfo, MatchMonitorMatch, MatchMonitorMatchGroup } from '../types/match-monitor.types';
 
 export class MatchMonitorService {
     private readonly CHECK_INTERVAL = 60000; // 1 minute
+    private readonly channelId: string = process.env.DISCORD_CHANNEL_ID || '';
 
     constructor(
         private readonly pubgApi: PubgApiService,
         private readonly storage: PubgStorageService,
         private readonly discordBot: DiscordBotService,
+        
     ) {}
 
     public async startMonitoring(): Promise<void> {
         setInterval(async () => {
+
+            if (this.channelId === '') {
+                console.error('DISCORD_CHANNEL_ID is not set');
+                return;
+            }
+
             await this.checkNewMatches();
         }, this.CHECK_INTERVAL);
     }
@@ -24,34 +34,30 @@ export class MatchMonitorService {
             return;
         }
 
-        const playerMatches = await Promise.all(
-            players.map(async (player) => {
-                const matches = await this.pubgApi.getStatsForPlayers(player.id);
-                return {
-                    player,
-                    matches: matches.slice(0, 5), // Check last 5 matches
-                };
-            })
-        );
+        const playerNames = players.map(player => player.name);
+        const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
+
+        let newPlayerMatches: MatchMonitorPlayerMatchInfo[] = [];
+        for (const player of playersResponse.data) {
+            await this.storage.addPlayer(player);
+            const matches = player.relationships.matches.data.slice(0, 5).map(match => ({ id: match.id }));
+            newPlayerMatches.push({ player: { id: player.id, name: player.attributes.name }, matches });
+        }
 
         const processedMatches = await this.storage.getProcessedMatches();
-        const newMatches = this.findNewMatches(playerMatches, processedMatches);
+        const newMatches = this.findNewMatches(newPlayerMatches, processedMatches);
 
-        // Group matches by matchId and channelId
-        const groupedMatches = this.groupMatchesByChannel(newMatches);
-
-        // Process each group
-        for (const [channelId, matches] of groupedMatches) {
-            for (const match of matches) {
-                const summary = await this.createMatchSummary(match);
-                await this.discordBot.sendMatchSummary(channelId, summary);
+        for (const match of newMatches) {
+            const summary = await this.createMatchSummary(match);
+            if (summary) {
+                await this.discordBot.sendMatchSummary(this.channelId,summary);
                 await this.storage.addProcessedMatch(match.matchId);
-            }
         }
     }
+}
 
-    private findNewMatches(playerMatches: PlayerMatchInfo[], processedMatches: string[]): MatchGroup[] {
-        const matchGroups: Map<string, MatchGroup> = new Map();
+    private findNewMatches(playerMatches: MatchMonitorPlayerMatchInfo[], processedMatches: string[]): MatchMonitorMatchGroup[] {
+        const matchGroups: Map<string, MatchMonitorMatchGroup> = new Map();
 
         for (const { player, matches } of playerMatches) {
             for (const match of matches) {
@@ -62,7 +68,6 @@ export class MatchMonitorService {
                 if (!matchGroups.has(match.id)) {
                     matchGroups.set(match.id, {
                         matchId: match.id,
-                        channelId: player.channelId,
                         players: [],
                     });
                 }
@@ -75,24 +80,12 @@ export class MatchMonitorService {
         return Array.from(matchGroups.values());
     }
 
-    private groupMatchesByChannel(matches: MatchGroup[]): Map<string, MatchGroup[]> {
-        const grouped = new Map<string, MatchGroup[]>();
-
-        for (const match of matches) {
-            if (!grouped.has(match.channelId)) {
-                grouped.set(match.channelId, []);
-            }
-            grouped.get(match.channelId)!.push(match);
-        }
-
-        return grouped;
-    }
-
-    private async createMatchSummary(match: MatchGroup): Promise<DiscordMatchGroupSummary> {
+    private async createMatchSummary(match: MatchMonitorMatchGroup): Promise<DiscordMatchGroupSummary | null> {
         const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
-        //Save match details to database
         var savedMatch = await this.storage.saveMatch(matchDetails);        
-        
+        if (!savedMatch) {
+           return null;
+        }
         const playerStats: DiscordPlayerMatchStats[] = [];
         let teamRank: number | undefined;
 
@@ -101,11 +94,10 @@ export class MatchMonitorService {
             if (!currentPlayerStats) {
                 continue;
             }
-            // If all players are in the same team, use their team rank
             if (teamRank === undefined) {
                 teamRank = currentPlayerStats.stats.winPlace;
             } else if (teamRank !== currentPlayerStats.stats.winPlace) {
-                teamRank = undefined; // Players were in different teams
+                teamRank = undefined;
             }
 
             playerStats.push({
@@ -116,26 +108,11 @@ export class MatchMonitorService {
 
         return {
             matchId: match.matchId,
-            mapName: matchDetails.mapName,
-            gameMode: matchDetails.gameMode,
-            playedAt: matchDetails.playedAt,
+            mapName: savedMatch.mapName,
+            gameMode: savedMatch.gameMode,
+            playedAt: savedMatch.createdAt.toISOString(),
             players: playerStats,
             teamRank
         };
     }
 }
-
-interface PlayerMatchInfo {
-    player: {
-        id: string;
-        name: string;
-        channelId: string;
-    };
-    matches: Array<{ id: string }>;
-}
-
-interface MatchGroup {
-    matchId: string;
-    channelId: string;
-    players: Array<{ id: string; name: string }>;
-} 

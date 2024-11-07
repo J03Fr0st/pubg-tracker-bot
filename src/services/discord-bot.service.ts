@@ -1,7 +1,7 @@
 import { Client, Events, GatewayIntentBits, TextChannel, Message } from 'discord.js';
 import { PubgApiService } from './pubg-api.service';
 import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/discord-match-summary.types';
-import { PubgStorageService } from '../services/pubg-storage.service';
+import { PubgStorageService } from './pubg-storage.service';
 
 export class DiscordBotService {
     private readonly client: Client;

@@ -29,60 +29,66 @@ describe("PubgApiService Integration Tests", () => {
       process.exit(1);
     }
 
-
-    
     jest.setTimeout(120000);
-  }, 20000); // Increase timeout to 10 seconds
+  }, 20000);
 
-  // Add a delay between tests to respect rate limiting
   afterEach(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 6000)); // 6 second delay
-  }, 20000); // Increase timeout to 10 seconds
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+  }, 20000);
 
   describe("getPlayer", () => {
     it("should fetch player data from PUBG API", async () => {
-      // Using a known PUBG player for testing
+      // Arrange
       const playerName = process.env.PUBG_TEST_PLAYER_NAME || "J03Fr0st";
 
-      const result = await pubgApiService.getPlayer(playerName);
+      // Act
+      const playerData = await pubgApiService.getPlayer(playerName);
 
-      expect(result).toBeDefined();
-      expect(result.data).toBeInstanceOf(Array);
-      expect(result.data[0]).toMatchObject({
+      // Assert
+      expect(playerData).toBeDefined();
+      expect(playerData.data).toBeInstanceOf(Array);
+      expect(playerData.data[0]).toMatchObject({
         type: "player",
         attributes: {
           name: expect.any(String),
           shardId: expect.any(String),
         },
       });
-    }, 20000); // Increase timeout to 10 seconds
+    }, 20000);
 
     it("should handle non-existent player gracefully", async () => {
+      // Arrange
       const nonExistentPlayer = "thisplayershouldnotexist12345678";
 
+      // Act & Assert
       await expect(
         pubgApiService.getPlayer(nonExistentPlayer)
       ).rejects.toThrow();
-    }, 20000); // Increase timeout to 10 seconds
+    }, 20000);
   });
 
   describe("getPlayerStats", () => {
     it("should fetch player stats from PUBG API", async () => {
-      // First get a real player ID
+      // Arrange
       const playerName = process.env.PUBG_TEST_PLAYER_NAME || "J03Fr0st";
-      const result = await pubgApiService.getStatsForPlayers([playerName]);
 
-      expect(result).toBeDefined();
-    }, 20000); // Increase timeout to 10 seconds
+      // Act
+      const playerStats = await pubgApiService.getStatsForPlayers([playerName]);
+
+      // Assert
+      expect(playerStats).toBeDefined();
+    }, 20000);
 
     it("should handle invalid player ID gracefully", async () => {
+      // Arrange
       const invalidPlayerId = "invalid-player-id";
 
+      // Act & Assert
       await expect(
         pubgApiService.getStatsForPlayers([invalidPlayerId])
       ).rejects.toThrow();
     });
-  });  
+  });
 
   describe("getMatchDetails", () => {
     it("should retrieve match details for a valid match ID", async () => {
