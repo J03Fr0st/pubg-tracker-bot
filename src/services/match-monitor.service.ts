@@ -53,6 +53,7 @@ export class MatchMonitorService {
         let newPlayerMatches: MatchMonitorPlayerMatchInfo[] = [];
         for (const player of playersResponse.data) {
             const matches = player.relationships.matches.data.slice(0, 5).map(match => ({ id: match.id }));
+            matches.reverse();
             console.log(`Found ${matches.length} recent matches for player ${player.attributes.name}`);
             newPlayerMatches.push({ player: { id: player.id, name: player.attributes.name }, matches });
         }
