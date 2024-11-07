@@ -38,13 +38,6 @@ export interface IRoster {
   participantNames: string[];
 }
 
-export interface IAsset {
-  assetId: string;
-  name: string;
-  description: string;
-  URL: string;
-}
-
 export interface IMatch extends Document {
   matchId: string;
   gameMode: string;
@@ -56,7 +49,6 @@ export interface IMatch extends Document {
   shardId: string;
   participants: IParticipant[];
   rosters: IRoster[];
-  assets: IAsset[];
 }
 
 const ParticipantStatsSchema = new Schema<IParticipantStats>({
@@ -97,13 +89,6 @@ const RosterSchema = new Schema<IRoster>({
   participantNames: [{ type: String, required: true }]
 });
 
-const AssetSchema = new Schema<IAsset>({
-  assetId: { type: String, required: true },
-  name: { type: String, required: true },
-  description: { type: String, required: true },
-  URL: { type: String, required: true }
-});
-
 const MatchSchema = new Schema<IMatch>({
   matchId: { type: String, required: true, unique: true },
   gameMode: { type: String, required: true },
@@ -114,8 +99,7 @@ const MatchSchema = new Schema<IMatch>({
   seasonState: { type: String, required: true },
   shardId: { type: String, required: true },
   participants: [ParticipantSchema],
-  rosters: [RosterSchema],
-  assets: [AssetSchema]
+  rosters: [RosterSchema]
 }, {
   timestamps: true
 });

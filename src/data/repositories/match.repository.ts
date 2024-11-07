@@ -1,4 +1,4 @@
-import { MatchesResponse, Participant, Roster, Asset } from '../../types/pubg-matches-api.types';
+import { MatchesResponse, Participant, Roster } from '../../types/pubg-matches-api.types';
 import { Match, IMatch } from '../models/match.model';
 
 export class MatchRepository {
@@ -18,10 +18,6 @@ export class MatchRepository {
 
     const rosters = matchesResponse.included.filter(
       (item): item is Roster => item.type === 'roster'
-    );
-
-    const assets = matchesResponse.included.filter(
-      (item): item is Asset => item.type === 'asset'
     );
 
     const match = new Match({
@@ -69,12 +65,6 @@ export class MatchRepository {
           const participant = participants.find(p => p.id === participantData.id);
           return participant ? participant.attributes.stats.name : participantData.id;
         })
-      })),
-      assets: assets.map(asset => ({
-        assetId: asset.id,
-        name: asset.attributes.name,
-        description: asset.attributes.description,
-        URL: asset.attributes.URL
       }))
     });
 
