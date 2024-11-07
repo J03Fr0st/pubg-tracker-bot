@@ -1,5 +1,5 @@
 // Root Match Interface
-interface MatchesResponse {
+export interface MatchesResponse {
     data: MatchData;
     included: (Roster | Participant | Asset)[];
     links?: {
@@ -9,7 +9,7 @@ interface MatchesResponse {
 }
 
 // Match Data Interface
-interface MatchData {
+export interface MatchData {
     type: string;
     id: string;
     attributes: MatchAttributes;
@@ -20,7 +20,7 @@ interface MatchData {
 }
 
 // Match Attributes Interface
-interface MatchAttributes {
+export interface MatchAttributes {
     createdAt: string;
     duration: number;
     gameMode: string;
@@ -33,7 +33,7 @@ interface MatchAttributes {
 }
 
 // Relationships for Rosters and Assets
-interface RelationshipData {
+export interface RelationshipData {
     data: {
         type: string;
         id: string;
@@ -41,7 +41,7 @@ interface RelationshipData {
 }
 
 // Roster Interface
-interface Roster {
+export interface Roster {
     type: string;
     id: string;
     attributes: RosterAttributes;
@@ -57,34 +57,34 @@ interface Roster {
 }
 
 // Roster Attributes
-interface RosterAttributes {
+export interface RosterAttributes {
     shardId: string;
     stats: RosterStats;
     won: string;
 }
 
 // Roster Stats Interface
-interface RosterStats {
+export interface RosterStats {
     rank: number;
     teamId: number;
 }
 
-// Participant Interface (Player Stats)
-interface Participant {
+// Participant export interface (Player Stats)
+export interface Participant {
     type: string;
     id: string;
     attributes: ParticipantAttributes;
 }
 
 // Participant Attributes Interface
-interface ParticipantAttributes {
+export interface ParticipantAttributes {
     actor: string;
     shardId: string;
     stats: PlayerStats;
 }
 
 // Player Stats Interface
-interface PlayerStats {
+export interface PlayerStats {
     DBNOs: number;
     assists: number;
     boosts: number;
@@ -109,15 +109,15 @@ interface PlayerStats {
     winPlace: number;
 }
 
-// Asset Interface (Telemetry Data)
-interface Asset {
+// Asset export interface (Telemetry Data)
+export interface Asset {
     type: string;
     id: string;
     attributes: AssetAttributes;
 }
 
 // Asset Attributes Interface
-interface AssetAttributes {
+export interface AssetAttributes {
     URL: string;
     name: string;
     description: string;

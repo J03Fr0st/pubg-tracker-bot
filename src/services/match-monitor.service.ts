@@ -1,4 +1,4 @@
-import { PlayersResponse } from './../../dist/types/pubg-api.types.d';
+import { PlayersResponse } from '../types/pubg-player-api.types';
 import { PubgApiService } from './pubg-api.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';

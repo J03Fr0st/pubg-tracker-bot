@@ -1,3 +1,4 @@
+import {MatchReference, PlayerData } from '../../types/pubg-player-api.types';
 import { Player, IPlayer } from '../models/player.model';
 
 export class PlayerRepository {

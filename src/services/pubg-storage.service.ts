@@ -3,6 +3,8 @@ import { IMatch, Match } from '../data/models/match.model';
 import { MatchRepository } from '../data/repositories/match.repository';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+import { PlayerData } from '../types/pubg-player-api.types';
+import { MatchesResponse } from '../types/pubg-matches-api.types';
 
 export class PubgStorageService {
   private matchRepository = new MatchRepository();

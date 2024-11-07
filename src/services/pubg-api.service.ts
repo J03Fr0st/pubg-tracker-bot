@@ -1,6 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiter } from '../utils/rate-limiter';
 import { PubgStorageService } from '../services/pubg-storage.service';
+import { PlayersResponse } from '../types/pubg-player-api.types';
+import { MatchesResponse } from '../types/pubg-matches-api.types';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;

@@ -1,14 +1,14 @@
 // Root Players Interface
-interface PlayersResponse {
+export interface PlayersResponse {
   data: PlayerData[];
   links?: {
       self: string;
   };
-  meta: {};
+  meta?: {};
 }
 
 // Player Data Interface
-interface PlayerData {
+export interface PlayerData {
   type: string;
   id: string;
   attributes: PlayerAttributes;
@@ -21,7 +21,7 @@ interface PlayerData {
 }
 
 // Player Attributes Interface
-interface PlayerAttributes {
+export interface PlayerAttributes {
   name: string;
   shardId: string;
   createdAt: string;
@@ -31,12 +31,12 @@ interface PlayerAttributes {
 }
 
 // Relationships for Matches
-interface RelationshipData {
+export interface RelationshipData {
   data: MatchReference[];
 }
 
 // Match Reference Interface
-interface MatchReference {
+export interface MatchReference {
   type: string;
   id: string;
 }

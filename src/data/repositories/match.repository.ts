@@ -1,3 +1,4 @@
+import { MatchesResponse, Participant } from '../../types/pubg-matches-api.types';
 import { Match, IMatch } from '../models/match.model';
 
 export class MatchRepository {
