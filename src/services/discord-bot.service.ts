@@ -105,27 +105,26 @@ export class DiscordBotService {
     private formatMatchSummary(summary: DiscordMatchGroupSummary): string {
         const { mapName, gameMode, playedAt, players } = summary;
         const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : '';
-        
+
         // Create the header with match info
-        let message = [
-            '```md',
-            '# 🎮 New PUBG Match Summary',
-            '----------------------------',
-            `📍 Map: ${this.formatMapName(mapName)}`,
-            `🎯 Mode: ${this.formatGameMode(gameMode)}`,
-            `⏰ Played: ${new Date(playedAt).toLocaleString()}`,
-            teamRankText,
-            '',
-            '## 👥 Player Statistics',
-            '----------------------------',
-        ].filter(Boolean).join('\n');
+        let message = `\`\`\`md
+# 🎮 New PUBG Match Summary
+----------------------------
+📍 Map: ${this.formatMapName(mapName)}
+🎯 Mode: ${this.formatGameMode(gameMode)}
+⏰ Played: ${new Date(playedAt).toLocaleString()}
+${teamRankText}
+
+## 👥 Player Statistics
+----------------------------
+`;
 
         // Add individual player stats
         players.forEach(player => {
-            message += this.formatPlayerStats(player);
+            message += this.formatPlayerStats(player) + '\n';
         });
 
-        message += '\n```';
+        message += '```';
         return message;
     }
 
