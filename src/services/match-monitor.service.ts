@@ -50,22 +50,51 @@ export class MatchMonitorService {
         console.log('Fetching stats for players:', playerNames.join(', '));
         const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
 
-        let newPlayerMatches: MatchMonitorPlayerMatchInfo[] = [];
+        // Create a Set to store unique match IDs with their timestamps
+        const uniqueMatches = new Map<string, { createdAt: Date; players: MatchMonitorPlayer[] }>();
+        
         for (const player of playersResponse.data) {
-            const matches = player.relationships.matches.data.slice(0, 5).map(match => ({ id: match.id }));
-            matches.reverse();
-            console.log(`Found ${matches.length} recent matches for player ${player.attributes.name}`);
-            newPlayerMatches.push({ player: { id: player.id, name: player.attributes.name }, matches });
+            const matches = player.relationships.matches.data.slice(0, 5);
+            
+            for (const match of matches) {
+                const matchDetails = await this.pubgApi.getMatchDetails(match.id);
+                const createdAt = new Date(matchDetails.data.attributes.createdAt);
+
+                if (!uniqueMatches.has(match.id)) {
+                    uniqueMatches.set(match.id, {
+                        createdAt,
+                        players: [{ id: player.id, name: player.attributes.name }]
+                    });
+                } else {
+                    const existingMatch = uniqueMatches.get(match.id);
+                    if (existingMatch) {
+                        existingMatch.players.push({ id: player.id, name: player.attributes.name });
+                    }
+                }
+            }
         }
 
         const processedMatches = await this.storage.getProcessedMatches();
         console.log(`Retrieved ${processedMatches.length} previously processed matches`);
-        
-        const newMatches = this.findNewMatches(newPlayerMatches, processedMatches);
+
+        // Convert to array, filter processed matches, and sort chronologically
+        const newMatches: MatchMonitorMatchGroup[] = Array.from(uniqueMatches.entries())
+            .filter(([matchId]) => !processedMatches.includes(matchId))
+            .sort(([, a], [, b]) => a.createdAt.getTime() - b.createdAt.getTime())
+            .map(([matchId, matchData]) => ({
+                matchId,
+                players: matchData.players
+            }));
+
         console.log(`Found ${newMatches.length} new matches to process`);
 
         for (const match of newMatches) {
             console.log(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
+            
+            // Log the match timestamp
+            const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
+            console.log(`Match ${match.matchId} played at: ${matchDetails.data.attributes.createdAt}`);
+
             const summary = await this.createMatchSummary(match);
             if (summary) {
                 console.log(`Sending match summary to Discord for match ${match.matchId}`);
@@ -78,31 +107,6 @@ export class MatchMonitorService {
         }
         
         console.log('Match check cycle completed');
-    }
-
-    private findNewMatches(playerMatches: MatchMonitorPlayerMatchInfo[], processedMatches: string[]): MatchMonitorMatchGroup[] {
-        const matchGroups: MatchMonitorMatchGroup[] = [];
-        console.log('Finding new matches from player match history');
-
-        for (const { player, matches } of playerMatches) {
-            for (const match of matches) {
-                if (processedMatches.includes(match.id)) {
-                    continue;
-                }
-
-                let group = matchGroups.find(group => group.matchId === match.id);
-                if (!group) {
-                    group = {
-                        matchId: match.id,
-                        players: [],
-                    };
-                    matchGroups.push(group);
-                }
-                group.players.push(player);
-            }
-        }
-
-        return matchGroups;
     }
 
     private async createMatchSummary(match: MatchMonitorMatchGroup): Promise<DiscordMatchGroupSummary | null> {
