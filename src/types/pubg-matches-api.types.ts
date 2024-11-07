@@ -110,9 +110,13 @@ export interface PlayerStats {
 
 // Asset export interface (Telemetry Data)
 export interface Asset {
-    type: string;
+    type: 'asset';
     id: string;
-    attributes: AssetAttributes;
+    attributes: {
+        name: string;
+        description: string;
+        URL: string;
+    };
 }
 
 // Asset Attributes Interface
