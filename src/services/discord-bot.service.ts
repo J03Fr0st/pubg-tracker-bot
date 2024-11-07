@@ -112,7 +112,7 @@ export class DiscordBotService {
 ----------------------------
 📍 Map: ${this.formatMapName(mapName)}
 🎯 Mode: ${this.formatGameMode(gameMode)}
-⏰ Played: ${new Date(playedAt).toLocaleString()}
+⏰ Played: ${new Date(playedAt).toISOString().replace('T', ' ').substring(0, 16).replace(/-/g, '/')}
 ${teamRankText}
 
 ## 👥 Player Statistics
@@ -170,6 +170,7 @@ ${teamRankText}
             `### ${player.name}`,
             `🏅 Position: #${stats.winPlace}`,
             `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
+            `🔨 DBNOs: ${stats.DBNOs}`,
             `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
             `⏱️ Survival: ${survivalMinutes}min`,
             '',
@@ -178,7 +179,9 @@ ${teamRankText}
             `🎯 Headshot %: ${accuracy}%`,
             `💊 Heals/Boosts: ${stats.heals}/${stats.boosts}`,
             `🔧 Weapons: ${stats.weaponsAcquired}`,
-            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',
+            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',           
+            `🚗 Vehicle Destroys: ${stats.vehicleDestroys}`,
+            `🛣️ Road Kills: ${stats.roadKills}`,
         ].filter(Boolean).join('\n');
     }
 } 

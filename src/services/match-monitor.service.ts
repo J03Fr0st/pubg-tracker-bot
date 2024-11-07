@@ -119,6 +119,8 @@ export class MatchMonitorService {
         const playerStats: DiscordPlayerMatchStats[] = [];
         let teamRank: number | undefined;
 
+        const globalUniquePlayers = new Set<string>(); // Global set to track all processed players
+
         for (const player of match.players) {
             const currentPlayerStats = savedMatch.participants.find(p => p.name === player.name);
             if (!currentPlayerStats) {
@@ -131,10 +133,21 @@ export class MatchMonitorService {
                 teamRank = undefined;
             }
 
-            playerStats.push({
-                name: player.name,
-                stats: currentPlayerStats.stats
-            });
+            // Find all players in the same roster as the current player
+            const roster = savedMatch.rosters.find(r => r.participantNames.some(p => p === player.name));
+            if (roster) {
+                const filteredParticipants = savedMatch.participants.filter(participant => roster.participantNames.includes(participant.name));
+                
+                filteredParticipants.forEach(participant => {
+                    if (!globalUniquePlayers.has(participant.name)) {
+                        playerStats.push({
+                            name: participant.name,
+                            stats: participant.stats
+                        });
+                        globalUniquePlayers.add(participant.name); // Add to global set
+                    }
+                });
+            }
         }
 
         return {

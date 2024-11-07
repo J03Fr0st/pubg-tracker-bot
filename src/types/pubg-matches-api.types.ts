@@ -59,8 +59,7 @@ export interface Roster {
 // Roster Attributes
 export interface RosterAttributes {
     shardId: string;
-    stats: RosterStats;
-    won: string;
+    stats: RosterStats
 }
 
 // Roster Stats Interface
