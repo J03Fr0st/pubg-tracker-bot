@@ -106,6 +106,10 @@ export class DiscordBotService {
         const { mapName, gameMode, playedAt, players } = summary;
         const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : '';
 
+        // Calculate total damage and total kills
+        const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
+        const totalKills = players.reduce((acc, player) => acc + (player.stats?.kills || 0), 0);
+
         // Create the header with match info
         let message = `\`\`\`md
 # 🎮 New PUBG Match Summary
@@ -114,7 +118,8 @@ export class DiscordBotService {
 🎯 Mode: ${this.formatGameMode(gameMode)}
 ⏰ Played: ${new Date(playedAt).toISOString().replace('T', ' ').substring(0, 16).replace(/-/g, '/')}
 ${teamRankText}
-
+💥 Total Damage: ${Math.round(totalDamage)}
+🔫 Total Kills: ${totalKills}
 ## 👥 Player Statistics
 ----------------------------
 `;
