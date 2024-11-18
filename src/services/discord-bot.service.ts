@@ -201,22 +201,38 @@ ${teamRankText}
     }
 
     private formatKillDetails(killEvents: LogPlayerKillV2[]): string {
-       
         let killResult = '';
-        // Add *** KILLS & KNOCKS ***
-        killResult += '*** KILLS & KNOCKS ***\n';
-        killResult += killEvents.map(kill => {
-            const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
-            const distance = kill.killerDamageInfo?.distance 
-                ? `${Math.round(kill.killerDamageInfo.distance/100)}m`
-                : 'N/A';
-            const isKnock = !kill.finisher?.accountId || kill.finisher.accountId !== kill.killer?.accountId;
-            const icon = isKnock ? '🔨' : '💀';
-            const action = isKnock ? 'Knock' : 'Kill';            
-            const matchDate = new Date(kill._D);
-            const timestamp = matchDate.toISOString().slice(11, 16);
-            return `${timestamp} ${icon} ${action}: [${kill.victim?.name}](https://pubg.op.gg/user/${kill.victim?.name}) (${weapon}, ${distance})`;
-        }).join('\n');
+        // Group events by type (kills and knocks)
+        const kills = killEvents.filter(kill => kill.finisher?.accountId === kill.killer?.accountId);
+        const knocks = killEvents.filter(kill => kill.dBNOMaker?.accountId === kill.killer?.accountId);
+
+        // Add *** KILLS ***
+        if (kills.length > 0) {
+            killResult += '*** KILLS ***\n';
+            killResult += kills.map(kill => {
+                const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+                const distance = kill.killerDamageInfo?.distance 
+                    ? `${Math.round(kill.killerDamageInfo.distance/100)}m`
+                    : 'N/A';
+                const timestamp = new Date(kill._D).toISOString().slice(11, 16);
+                return `${timestamp} 💀 [${kill.victim?.name}](https://pubg.op.gg/user/${kill.victim?.name}) (${weapon}, ${distance})`;
+            }).join('\n');
+        }
+
+        // Add *** KNOCKS ***
+        if (knocks.length > 0) {
+            if (kills.length > 0) killResult += '\n'; // Add spacing between sections
+            killResult += '*** KNOCKS ***\n';
+            killResult += knocks.map(knock => {
+                const weapon = this.getReadableWeaponName(knock.killerDamageInfo?.damageCauserName || '');
+                const distance = knock.dBNODamageInfo?.distance 
+                    ? `${Math.round(knock.dBNODamageInfo.distance/100)}m`
+                    : 'N/A';
+                const timestamp = new Date(knock._D).toISOString().slice(11, 16);
+                return `${timestamp} 🔨 [${knock.victim?.name}](https://pubg.op.gg/user/${knock.victim?.name}) (${weapon}, ${distance})`;
+            }).join('\n');
+        }
+
         return killResult;
     }
 
