@@ -184,7 +184,7 @@ ${teamRankText}
 
         return [
             '',
-            `### ${player.name}`,
+            `### [${player.name}](https://pubg.op.gg/user/${player.name})`,
             `🏅 Position: #${stats.winPlace}`,
             `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
             `🔨 DBNOs: ${stats.DBNOs}`,
@@ -198,6 +198,7 @@ ${teamRankText}
             `🎯 2D Replay: https://pubg.sh/${player.name}/steam/${matchId} `,
             '*** KILLS & KNOCKS ***',
             killDetails,
+            '',
         ].filter(Boolean).join('\n');
     }
 
