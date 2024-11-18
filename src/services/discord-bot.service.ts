@@ -185,7 +185,7 @@ ${teamRankText}
         return [
             '',
             `### [${player.name}](https://pubg.op.gg/user/${player.name})`,
-            `🏅 Position: #${stats.winPlace}`,
+            `🎯 2D Replay: https://pubg.sh/${player.name}/steam/${matchId} `,
             `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
             `🔨 DBNOs: ${stats.DBNOs}`,
             `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
@@ -194,16 +194,18 @@ ${teamRankText}
             '',
             `🎯 Longest Kill: ${Math.round(stats.longestKill)}m`,
             `🚶 Distance: ${kmWalked}km`,            
-            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',           
-            `🎯 2D Replay: https://pubg.sh/${player.name}/steam/${matchId} `,
-            '*** KILLS & KNOCKS ***',
-            killDetails,
-            '',
+            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',         
+            playerKills.length > 0 ? killDetails : '',
+            '###',
         ].filter(Boolean).join('\n');
     }
 
     private formatKillDetails(killEvents: LogPlayerKillV2[]): string {
-        return killEvents.map(kill => {
+       
+        let killResult = '';
+        // Add *** KILLS & KNOCKS ***
+        killResult += '*** KILLS & KNOCKS ***\n';
+        killResult += killEvents.map(kill => {
             const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
             const distance = kill.killerDamageInfo?.distance 
                 ? `${Math.round(kill.killerDamageInfo.distance/100)}m`
@@ -213,8 +215,9 @@ ${teamRankText}
             const action = isKnock ? 'Knock' : 'Kill';            
             const matchDate = new Date(kill._D);
             const timestamp = matchDate.toISOString().slice(11, 16);
-            return `${timestamp} ${icon} ${action}: ${kill.victim?.name} (${weapon}, ${distance})`;
+            return `${timestamp} ${icon} ${action}: [${kill.victim?.name}](https://pubg.op.gg/user/${kill.victim?.name}) (${weapon}, ${distance})`;
         }).join('\n');
+        return killResult;
     }
 
     private getReadableWeaponName(weaponCode: string): string {
