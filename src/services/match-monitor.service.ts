@@ -161,7 +161,8 @@ export class MatchMonitorService {
             gameMode: savedMatch.gameMode,
             playedAt: savedMatch.createdAt.toISOString(),
             players: playerStats,
-            teamRank
+            teamRank,
+            telemetryUrl: savedMatch.telemetryUrl
         };
     }
 }

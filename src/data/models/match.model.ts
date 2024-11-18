@@ -47,9 +47,10 @@ export interface IMatch extends Document {
   isCustomMatch: boolean;
   seasonState: string;
   shardId: string;
+  telemetryUrl: string;
   participants: IParticipant[];
   rosters: IRoster[];
-  telemetryUrl: string;
+  
 }
 
 const ParticipantStatsSchema = new Schema<IParticipantStats>({
@@ -99,9 +100,9 @@ const MatchSchema = new Schema<IMatch>({
   isCustomMatch: { type: Boolean, required: true },
   seasonState: { type: String, required: true },
   shardId: { type: String, required: true },
+  telemetryUrl: { type: String, required: true },
   participants: [ParticipantSchema],
-  rosters: [RosterSchema],
-  telemetryUrl: { type: String, required: true }
+  rosters: [RosterSchema]  
 }, {
   timestamps: true
 });

@@ -33,4 +33,5 @@ export interface DiscordMatchGroupSummary {
     playedAt: string;
     players: DiscordPlayerMatchStats[];
     teamRank?: number;
+    telemetryUrl?: string;
 } 
