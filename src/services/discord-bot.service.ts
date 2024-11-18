@@ -109,15 +109,7 @@ export class DiscordBotService {
 
         // Format the date and time
         const matchDate = new Date(playedAt);
-        const timeString = matchDate.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true 
-        });
-        const dateString = matchDate.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric'
-        });
+        const formattedDateTime = matchDate.toISOString().slice(0, 16).replace('T', ' ');
 
         // Calculate total damage and total kills
         const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
@@ -128,7 +120,7 @@ export class DiscordBotService {
 
         // Create the header with match info
         let message = `\`\`\`md
-# 🎮 PUBG Match Summary - ${dateString} at ${timeString}
+# 🎮 PUBG Match Summary - ${formattedDateTime}
 ----------------------------
 📍 Map: ${this.formatMapName(mapName)}
 🎯 Mode: ${this.formatGameMode(gameMode)}
@@ -213,18 +205,14 @@ ${teamRankText}
         return killEvents.map(kill => {
             const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
             const distance = kill.killerDamageInfo?.distance 
-                ? `${Math.round(kill.killerDamageInfo.distance)/1000 }m`
+                ? `${Math.round(kill.killerDamageInfo.distance/100)}m`
                 : 'N/A';
             const isKnock = !kill.finisher?.accountId || kill.finisher.accountId !== kill.killer?.accountId;
             const icon = isKnock ? '🔨' : '💀';
-            const action = isKnock ? 'Knock' : 'Kill';
-            const timestamp = new Date(kill._D).toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true
-            });
-            return `${icon} ${action} at ${timestamp}: ${kill.victim?.name} (${weapon}, ${distance})`;
+            const action = isKnock ? 'Knock' : 'Kill';            
+            const matchDate = new Date(kill._D);
+            const timestamp = matchDate.toISOString().slice(11, 16);
+            return `${timestamp} ${icon} ${action}: ${kill.victim?.name} (${weapon}, ${distance})`;
         }).join('\n');
     }
 
