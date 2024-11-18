@@ -176,7 +176,7 @@ ${teamRankText}
         return modes[mode.toLowerCase()] || mode;
     }
 
-    private formatPlayerStats(matchId: string , player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
+    private formatPlayerStats(matchId: string, player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
         const { stats } = player;
         if (!stats) {
             return '';
@@ -188,13 +188,7 @@ ${teamRankText}
             : '0';
 
         const playerKills = killEvents.filter(event => event.killer?.name === player.name);
-        const killDetails = playerKills.map(kill => {
-            const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
-            const distance = kill.killerDamageInfo?.distance 
-                ? `${Math.round(kill.killerDamageInfo.distance) /1000}m`
-                : 'N/A';            
-            return `🔫 Kill: ${kill.victim?.name} (${weapon}, ${distance})`;
-        }).join('\n');
+        const killDetails = this.formatKillDetails(playerKills);
 
         return [
             '',
@@ -210,9 +204,28 @@ ${teamRankText}
             `🚶 Distance: ${kmWalked}km`,            
             stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',           
             `🎯 2D Replay: https://pubg.sh/${player.name}/steam/${matchId} `,
-            '*** KILLS ***',
+            '*** KILLS & KNOCKS ***',
             killDetails,
         ].filter(Boolean).join('\n');
+    }
+
+    private formatKillDetails(killEvents: LogPlayerKillV2[]): string {
+        return killEvents.map(kill => {
+            const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+            const distance = kill.killerDamageInfo?.distance 
+                ? `${Math.round(kill.killerDamageInfo.distance)/1000 }m`
+                : 'N/A';
+            const isKnock = !kill.finisher?.accountId || kill.finisher.accountId !== kill.killer?.accountId;
+            const icon = isKnock ? '🔨' : '💀';
+            const action = isKnock ? 'Knock' : 'Kill';
+            const timestamp = new Date(kill._D).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+            return `${icon} ${action} at ${timestamp}: ${kill.victim?.name} (${weapon}, ${distance})`;
+        }).join('\n');
     }
 
     private getReadableWeaponName(weaponCode: string): string {
@@ -230,6 +243,7 @@ ${teamRankText}
             "WeapMk47Mutant_C": "Mk47 Mutant",
             "WeapK2_C": "K2",
             "WeapACE32_C": "ACE32",
+            "WeapHK416_C": "M416",
           
             // Designated Marksman Rifles (DMRs)
             "WeapSKS_C": "SKS",
@@ -240,6 +254,7 @@ ${teamRankText}
             "WeapQBU88_C": "QBU",
             "WeapM110_C": "M110",
             "WeapSVD_C": "Dragunov",
+            "WeapMk12_C": "Mk12",
           
             // Sniper Rifles
             "WeapKar98k_C": "Karabiner 98 Kurz",
