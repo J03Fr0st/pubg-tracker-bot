@@ -6,6 +6,7 @@ export interface MatchesResponse {
         self: string;
     };
     meta?: {};
+    telemetryUrl?: string;
 }
 
 // Match Data Interface

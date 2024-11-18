@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import { RateLimiter } from '../utils/rate-limiter';
 import { PubgStorageService } from '../services/pubg-storage.service';
 import { PlayersResponse } from '../types/pubg-player-api.types';
-import { MatchesResponse } from '../types/pubg-matches-api.types';
+import { Asset, MatchesResponse } from '../types/pubg-matches-api.types';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;
@@ -89,6 +89,16 @@ export class PubgApiService {
    */
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
     const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}`);
+
+    const asset = response.included.filter(
+      (item): item is Asset => item.type === 'asset'
+    );
+
+    const telemetryUrl = asset[0].attributes.URL;    
+
+    response.telemetryUrl = telemetryUrl;
+
+    await this.storageService.saveMatch(response);
     return response;
   }
 } 

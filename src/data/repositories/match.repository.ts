@@ -29,6 +29,7 @@ export class MatchRepository {
       isCustomMatch: matchData.attributes.isCustomMatch,
       seasonState: matchData.attributes.seasonState,
       shardId: matchData.attributes.shardId,
+      telemetryUrl: matchesResponse.telemetryUrl,
       participants: participants.map(participant => ({
         pubgId: participant.id,
         name: participant.attributes.stats.name,
