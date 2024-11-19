@@ -119,6 +119,9 @@ export class DiscordBotService {
         // Format the date and time
        const matchDate = new Date(playedAt);
        const dateString = matchDate.toLocaleTimeString('en-ZA', {
+           year: 'numeric',
+           month: '2-digit',
+           day: '2-digit',
            hour: '2-digit',
            minute: '2-digit',
            hour12: false,
