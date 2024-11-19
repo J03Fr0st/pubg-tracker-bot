@@ -255,8 +255,8 @@ export class DiscordBotService {
                     timeZone: 'Africa/Johannesburg'
                 }).replace(',', '');   
                    
-                const icon = '🤜';
-                const actionType = 'Knock'
+                const icon = '💀';
+                const actionType = 'Kill'
                 const victimName = kill.victim?.name || 'Unknown';
                 //If killDetails is not empty, add a new line before adding the kill details
                 if(killDetails !== '') {
