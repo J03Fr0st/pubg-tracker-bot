@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, TextChannel, Message } from 'discord.js';
+import { Client, Events, GatewayIntentBits, TextChannel, Message, EmbedBuilder } from 'discord.js';
 import { PubgApiService } from './pubg-api.service';
 import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
@@ -30,8 +30,17 @@ export class DiscordBotService {
 
     public async sendMatchSummary(channelId: string, summary: DiscordMatchGroupSummary): Promise<void> {
         const channel = await this.client.channels.fetch(channelId) as TextChannel;
-        const message = await this.formatMatchSummary(summary);
-        await channel.send(message);
+        if (!channel) {
+            throw new Error(`Could not find channel with ID ${channelId}`);
+        }
+        const embeds = await this.createMatchSummaryEmbeds(summary);
+        if (!embeds || !embeds.length) {
+            console.error('No embeds were created for match summary');
+            return;
+        }
+        for (const embed of embeds) {
+            await channel.send({ embeds: [embed] });
+        }
     }
 
     private setupEventHandlers(): void {
@@ -103,43 +112,50 @@ export class DiscordBotService {
         await message.reply(`Monitored players:\n${playerList}`);
     }
 
-    private async formatMatchSummary(summary: DiscordMatchGroupSummary): Promise<string> {
-        const { mapName, gameMode, playedAt, players, telemetryUrl } = summary;
-        const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : '';
+    private async createMatchSummaryEmbeds(summary: DiscordMatchGroupSummary): Promise<EmbedBuilder[]> {
+        const { mapName, gameMode, playedAt, players } = summary;
+        const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : 'N/A';
 
         // Format the date and time
         const matchDate = new Date(playedAt);
-        const formattedDateTime = matchDate.toISOString().slice(0, 16).replace('T', ' ');
+        const timeString = matchDate.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+        const dateString = matchDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
 
         // Calculate total damage and total kills
         const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
         const totalKills = players.reduce((acc, player) => acc + (player.stats?.kills || 0), 0);
 
-        // Fetch telemetry data for detailed kill events
-        const killEvents = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(telemetryUrl!, players.map(p => p.name));
+        const mainEmbed = new EmbedBuilder()
+            .setTitle(`🎮 PUBG Match Summary`)
+            .setDescription(`**Date:** ${dateString} at ${timeString}`)
+            .addFields(
+                { name: '📍 Map', value: this.formatMapName(mapName), inline: true },
+                { name: '🎯 Mode', value: this.formatGameMode(gameMode), inline: true },
+                { name: '⏰ Played', value: new Date(playedAt).toISOString().replace('T', ' ').substring(0, 16).replace(/-/g, '/'), inline: true },
+                { name: '🏆 Team Rank', value: teamRankText, inline: true },
+                { name: '💥 Total Damage', value: `${Math.round(totalDamage)}`, inline: true },
+                { name: '🔫 Total Kills', value: `${totalKills}`, inline: true }
+            )
+            .setColor(0x00AE86);
 
-        // Create the header with match info
-        let message = `\`\`\`md
-# 🎮 PUBG Match Summary - ${formattedDateTime}
-----------------------------
-📍 Map: ${this.formatMapName(mapName)}
-🎯 Mode: ${this.formatGameMode(gameMode)}
-⏰ Played: ${new Date(playedAt).toISOString().replace('T', ' ').substring(0, 16).replace(/-/g, '/')}
-${teamRankText}
-💥 Total Damage: ${Math.round(totalDamage)}
-🔫 Total Kills: ${totalKills}
-## 👥 Player Statistics
-----------------------------
+        const killEvents = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(summary.telemetryUrl!, players.map(p => p.name));
 
-`;
-
-        // Add individual player stats
-        players.forEach(player => {
-            message += this.formatPlayerStats(summary.matchId, player, killEvents) + '\n';
+        const playerEmbeds = players.map(player => {
+            const playerStats = this.formatPlayerStats(summary.matchId, player, killEvents);
+            return new EmbedBuilder()
+                .setTitle(`Player: ${player.name}`)
+                .setDescription(playerStats)
+                .setColor(0x00AE86);
         });
 
-        message += '```';
-        return message;
+        return [mainEmbed, ...playerEmbeds];
     }
 
     private formatMapName(mapName: string): string {
@@ -151,7 +167,7 @@ ${teamRankText}
             'Range_Main': 'Camp Jackal',
             'Summerland_Main': 'Karakin',
             'Tiger_Main': 'Taego',
-            'Kiki_Main': 'Deston',
+            'Kiki_Main': 'Deston'
         };
         return mapNames[mapName] || mapName;
     }
@@ -171,7 +187,7 @@ ${teamRankText}
     private formatPlayerStats(matchId: string, player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
         const { stats } = player;
         if (!stats) {
-            return '';
+            return 'No stats available';
         }
         const survivalMinutes = Math.round(stats.timeSurvived / 60);
         const kmWalked = (stats.walkDistance / 1000).toFixed(1);
@@ -179,61 +195,46 @@ ${teamRankText}
             ? ((stats.headshotKills / stats.kills) * 100).toFixed(1) 
             : '0';
 
-        const playerKills = killEvents.filter(event => event.killer?.name === player.name);
-        const killDetails = this.formatKillDetails(playerKills);
+        const killDetails = this.getKillDetails(player.name, killEvents);
 
-        return [
-            '',
-            `### [${player.name}](https://pubg.op.gg/user/${player.name})`,
-            `🎯 2D Replay: https://pubg.sh/${player.name}/steam/${matchId} `,
-            `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
-            `🔨 DBNOs: ${stats.DBNOs}`,
-            `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
-            `🎯 Headshot %: ${accuracy}%`,
-            `⏱️ Survival: ${survivalMinutes}min`,
-            '',
-            `🎯 Longest Kill: ${Math.round(stats.longestKill)}m`,
-            `🚶 Distance: ${kmWalked}km`,            
-            stats.revives > 0 ? `🛡️ Revives: ${stats.revives}` : '',         
-            playerKills.length > 0 ? killDetails : '',
-            '###',
-        ].filter(Boolean).join('\n');
+        const statsDetails = [
+            `🔫 **Kills:** ${stats.kills} (${stats.headshotKills} headshots)`,
+            `🔨 **DBNOs:** ${stats.DBNOs}`,
+            `💥 **Damage:** ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
+            `🎯 **Headshot %:** ${accuracy}%`,
+            `⏱️ **Survival:** ${survivalMinutes}min`,
+            `🎯 **Longest Kill:** ${Math.round(stats.longestKill)}m`,
+            `🚶 **Distance:** ${kmWalked}km`,            
+            stats.revives > 0 ? `🛡️ **Revives:** ${stats.revives}` : '',           
+            `[🎯 **2D Replay**](https://pubg.sh/${player.name}/steam/${matchId})`
+        ];
+
+        if (killDetails) {
+            statsDetails.push('*** KILLS ***', killDetails);
+        }
+
+        return statsDetails.filter(Boolean).join('\n');
     }
 
-    private formatKillDetails(killEvents: LogPlayerKillV2[]): string {
-        let killResult = '';
-        // Group events by type (kills and knocks)
-        const kills = killEvents.filter(kill => kill.finisher?.accountId === kill.killer?.accountId);
-        const knocks = killEvents.filter(kill => kill.dBNOMaker?.accountId === kill.killer?.accountId);
-
-        // Add *** KILLS ***
-        if (kills.length > 0) {
-            killResult += '*** KILLS ***\n';
-            killResult += kills.map(kill => {
-                const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
-                const distance = kill.killerDamageInfo?.distance 
-                    ? `${Math.round(kill.killerDamageInfo.distance/100)}m`
-                    : 'N/A';
-                const timestamp = new Date(kill._D).toISOString().slice(11, 16);
-                return `${timestamp} 💀 [${kill.victim?.name}](https://pubg.op.gg/user/${kill.victim?.name}) (${weapon}, ${distance})`;
-            }).join('\n');
+    private getKillDetails(playerName: string, killEvents: LogPlayerKillV2[]): string | null {
+        const playerKills = killEvents.filter(event => event.killer?.name === playerName || event.dBNOMaker?.name === playerName);
+        if (playerKills.length === 0) {
+            return null;
         }
 
-        // Add *** KNOCKS ***
-        if (knocks.length > 0) {
-            if (kills.length > 0) killResult += '\n'; // Add spacing between sections
-            killResult += '*** KNOCKS ***\n';
-            killResult += knocks.map(knock => {
-                const weapon = this.getReadableWeaponName(knock.killerDamageInfo?.damageCauserName || '');
-                const distance = knock.dBNODamageInfo?.distance 
-                    ? `${Math.round(knock.dBNODamageInfo.distance/100)}m`
-                    : 'N/A';
-                const timestamp = new Date(knock._D).toISOString().slice(11, 16);
-                return `${timestamp} 🔨 [${knock.victim?.name}](https://pubg.op.gg/user/${knock.victim?.name}) (${weapon}, ${distance})`;
-            }).join('\n');
-        }
-
-        return killResult;
+        return playerKills.map(kill => {
+            const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+            const distance = kill.killerDamageInfo?.distance 
+                ? `${Math.round(kill.killerDamageInfo.distance /100)}m`
+                : 'N/A';
+            
+            const isKnock = (kill.dBNOMaker?.name === playerName) && (kill.killer?.name !== playerName);
+            const icon = isKnock ? '🤜' : '💀';
+            const actionType = isKnock ? 'Knock' : 'Kill';
+            const victimName = kill.victim?.name || 'Unknown';
+                
+            return `${icon} ${actionType}: [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+        }).join('\n');
     }
 
     private getReadableWeaponName(weaponCode: string): string {
@@ -251,7 +252,6 @@ ${teamRankText}
             "WeapMk47Mutant_C": "Mk47 Mutant",
             "WeapK2_C": "K2",
             "WeapACE32_C": "ACE32",
-            "WeapHK416_C": "M416",
           
             // Designated Marksman Rifles (DMRs)
             "WeapSKS_C": "SKS",
@@ -262,7 +262,6 @@ ${teamRankText}
             "WeapQBU88_C": "QBU",
             "WeapM110_C": "M110",
             "WeapSVD_C": "Dragunov",
-            "WeapMk12_C": "Mk12",
           
             // Sniper Rifles
             "WeapKar98k_C": "Karabiner 98 Kurz",
@@ -337,7 +336,5 @@ ${teamRankText}
         .replace(/_C$/, "") // Remove "_C" suffix
         .replace(/([a-z])([A-Z])/g, "$1 $2") // Add space between camel case words
         .trim(); // Trim any extra whitespace;
-        }
-
-    
+    }
 } 
