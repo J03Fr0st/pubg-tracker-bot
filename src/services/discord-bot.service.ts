@@ -117,16 +117,16 @@ export class DiscordBotService {
         const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : 'N/A';
 
         // Format the date and time
-        const matchDate = new Date(playedAt);
-        const timeString = matchDate.toLocaleTimeString('en-US', {
+       const matchDate = new Date(playedAt);
+        const dateString = matchDate.toLocaleString('en-ZA', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
-            hour12: true
-        });
-        const dateString = matchDate.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric'
-        });
+            hour12: false,
+            timeZone: 'Africa/Johannesburg'
+        }).replace(',', '');
 
         // Calculate total damage and total kills
         const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
@@ -134,11 +134,10 @@ export class DiscordBotService {
 
         const mainEmbed = new EmbedBuilder()
             .setTitle(`🎮 PUBG Match Summary`)
-            .setDescription(`**Date:** ${dateString} at ${timeString}`)
+            .setDescription(`**⏰ Date:** ${dateString}`)
             .addFields(
                 { name: '📍 Map', value: this.formatMapName(mapName), inline: true },
                 { name: '🎯 Mode', value: this.formatGameMode(gameMode), inline: true },
-                { name: '⏰ Played', value: new Date(playedAt).toISOString().replace('T', ' ').substring(0, 16).replace(/-/g, '/'), inline: true },
                 { name: '🏆 Team Rank', value: teamRankText, inline: true },
                 { name: '💥 Total Damage', value: `${Math.round(totalDamage)}`, inline: true },
                 { name: '🔫 Total Kills', value: `${totalKills}`, inline: true }
@@ -227,111 +226,29 @@ export class DiscordBotService {
             const distance = kill.killerDamageInfo?.distance 
                 ? `${Math.round(kill.killerDamageInfo.distance /100)}m`
                 : 'N/A';
-            
+
+            const killTime = new Date(kill._D).toLocaleString('en-ZA', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZone: 'Africa/Johannesburg'
+            }).replace(',', '');
+
+
             const isKnock = (kill.dBNOMaker?.name === playerName) && (kill.killer?.name !== playerName);
             const icon = isKnock ? '🤜' : '💀';
             const actionType = isKnock ? 'Knock' : 'Kill';
             const victimName = kill.victim?.name || 'Unknown';
                 
-            return `${icon} ${actionType}: [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+            return `${killTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
         }).join('\n');
     }
 
     private getReadableWeaponName(weaponCode: string): string {
-        const weaponNameMap: { [key: string]: string } = {
-            // Assault Rifles
-            "WeapAK47_C": "AKM",
-            "WeapM416_C": "M416",
-            "WeapSCARL_C": "SCAR-L",
-            "WeapM16A4_C": "M16A4",
-            "WeapG36C_C": "G36C",
-            "WeapQBZ95_C": "QBZ-95",
-            "WeapAUG_C": "AUG A3",
-            "WeapGroza_C": "Groza",
-            "WeapBerylM762_C": "Beryl M762",
-            "WeapMk47Mutant_C": "Mk47 Mutant",
-            "WeapK2_C": "K2",
-            "WeapACE32_C": "ACE32",
-          
-            // Designated Marksman Rifles (DMRs)
-            "WeapSKS_C": "SKS",
-            "WeapSLR_C": "SLR",
-            "WeapMini14_C": "Mini 14",
-            "WeapMk14_C": "Mk14 EBR",
-            "WeapVSS_C": "VSS Vintorez",
-            "WeapQBU88_C": "QBU",
-            "WeapM110_C": "M110",
-            "WeapSVD_C": "Dragunov",
-          
-            // Sniper Rifles
-            "WeapKar98k_C": "Karabiner 98 Kurz",
-            "WeapM24_C": "M24",
-            "WeapAWM_C": "AWM",
-            "WeapWin94_C": "Winchester Model 1894",
-            "WeapMosinNagant_C": "Mosin Nagant",
-            "WeapLynxAMR_C": "Lynx AMR",
-          
-            // Submachine Guns (SMGs)
-            "WeapUZI_C": "Micro UZI",
-            "WeapUMP_C": "UMP45",
-            "WeapVector_C": "Vector",
-            "WeapTommyGun_C": "Tommy Gun",
-            "WeapPP19Bizon_C": "PP-19 Bizon",
-            "WeapMP5K_C": "MP5K",
-            "WeapP90_C": "P90",
-            "WeapJS9_C": "JS9",
-            "WeapMP9_C": "MP9",
-          
-            // Light Machine Guns (LMGs)
-            "WeapDP28_C": "DP-28",
-            "WeapM249_C": "M249",
-            "WeapMG3_C": "MG3",
-          
-            // Shotguns
-            "WeapS686_C": "S686",
-            "WeapS1897_C": "S1897",
-            "WeapS12K_C": "S12K",
-            "WeapDBS_C": "DBS",
-            "WeapO12_C": "O12",
-            "WeapSawedOff_C": "Sawed-off",
-          
-            // Pistols
-            "WeapM1911_C": "P1911",
-            "WeapM9_C": "P92",
-            "WeapR1895_C": "R1895",
-            "WeapRhino_C": "R45",
-            "WeapP18C_C": "P18C",
-            "WeapSkorpion_C": "Skorpion",
-            "WeapDeagle_C": "Desert Eagle",
-            "WeapFlareGun_C": "Flare Gun",
-            "WeapStunGun_C": "Stun Gun",
-          
-            // Melee Weapons
-            "WeapPan_C": "Pan",
-            "WeapMachete_C": "Machete",
-            "WeapCrowbar_C": "Crowbar",
-            "WeapSickle_C": "Sickle",
-          
-            // Bows
-            "WeapCrossbow_C": "Crossbow",
-          
-            // Miscellaneous
-            "WeapMortar_C": "Mortar",
-            "WeapBallisticShield_C": "Ballistic Shield",
-            "WeapM79_C": "M79",
-            "WeapPanzerFaust100M_C": "Panzerfaust",
-            "WeapStickyBomb_C": "Sticky Bomb",
-            "WeapC4_C": "C4",
-            "WeapBlueZoneGrenade_C": "Blue Zone Grenade",
-            "WeapDecoyGrenade_C": "Decoy Grenade",
-            "WeapSmokeGrenade_C": "Smoke Grenade",
-            "WeapFragGrenade_C": "Frag Grenade",
-            "WeapMolotov_C": "Molotov Cocktail",
-            "WeapStunGrenade_C": "Stun Grenade"
-          };
-          
-
-        return weaponNameMap[weaponCode] || weaponCode
+        return weaponCode
         .replace(/^Weap/, "") // Remove "Weap" prefix
         .replace(/_C$/, "") // Remove "_C" suffix
         .replace(/([a-z])([A-Z])/g, "$1 $2") // Add space between camel case words
