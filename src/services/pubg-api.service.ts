@@ -125,7 +125,8 @@ export class PubgApiService {
           return (killerName && squadPlayerNames.includes(killerName)) || 
                  (victimName && squadPlayerNames.includes(victimName)) ||
                  (dBNOMaker && squadPlayerNames.includes(dBNOMaker)) ||
-                 (finisher && squadPlayerNames.includes(finisher));
+                 (finisher && squadPlayerNames.includes(finisher)) ||
+                 (victimName && squadPlayerNames.includes(victimName));
         });
     } catch (error) {
       console.error('Error fetching telemetry data:', error);

@@ -216,15 +216,15 @@ export class DiscordBotService {
     }
 
     private getKillDetails(playerName: string, killEvents: LogPlayerKillV2[]): string | null {
-        const playerKills = killEvents.filter(event => event.killer?.name === playerName || event.dBNOMaker?.name === playerName);
+        const playerKills = killEvents.filter(event => event.killer?.name === playerName || event.dBNOMaker?.name === playerName || event.victim?.name === playerName);
         if (playerKills.length === 0) {
             return null;
         }
 
         return playerKills.map(kill => {
-            var killDetails = '';
+            let killDetails = '';
 
-            if(kill.dBNOMaker?.name === playerName) {
+            if (kill.dBNOMaker?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
                 const distance = kill.dBNODamageInfo?.distance 
                     ? `${Math.round(kill.dBNODamageInfo.distance /100)}m`
@@ -244,7 +244,7 @@ export class DiscordBotService {
                     
                 killDetails+= `${killTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
-            if(kill.killer?.name === playerName) {
+            if (kill.killer?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
                 const distance = kill.killerDamageInfo?.distance 
                     ? `${Math.round(kill.killerDamageInfo.distance /100)}m`
@@ -267,9 +267,30 @@ export class DiscordBotService {
                 }
                 killDetails+= `${killTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
+            if (kill.victim?.name === playerName) {
+                const killerName = kill.killer?.name || 'Unknown';
+                const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+                const distance = kill.killerDamageInfo?.distance 
+                    ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
+                    : 'N/A';
+
+                const killTime = new Date(kill._D).toLocaleString('en-ZA', {                    
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                    timeZone: 'Africa/Johannesburg'
+                }).replace(',', '');   
+
+                const icon = '☠️';
+                const actionType = 'Killed by';
+                if (killDetails !== '') {
+                    killDetails += '\n';
+                }
+                killDetails += `${killTime}: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
+            }
 
             return killDetails;
-            
         }).join('\n');
     }
 
