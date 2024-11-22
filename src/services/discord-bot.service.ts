@@ -147,7 +147,7 @@ export class DiscordBotService {
         const killEvents = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(summary.telemetryUrl!, players.map(p => p.name));
 
         const playerEmbeds = players.map(player => {
-            const playerStats = this.formatPlayerStats(summary.matchId, player, killEvents);
+            const playerStats = this.formatPlayerStats(matchDate,summary.matchId, player, killEvents);
             return new EmbedBuilder()
                 .setTitle(`Player: ${player.name}`)
                 .setDescription(playerStats)
@@ -183,7 +183,7 @@ export class DiscordBotService {
         return modes[mode.toLowerCase()] || mode;
     }
 
-    private formatPlayerStats(matchId: string, player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
+    private formatPlayerStats(matchStartTime: Date,matchId: string, player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
         const { stats } = player;
         if (!stats) {
             return 'No stats available';
@@ -194,7 +194,7 @@ export class DiscordBotService {
             ? ((stats.headshotKills / stats.kills) * 100).toFixed(1) 
             : '0';
 
-        const killDetails = this.getKillDetails(player.name, killEvents);
+        const killDetails = this.getKillDetails(player.name, killEvents, matchStartTime);
 
         const statsDetails = [
             `🔫 **Kills:** ${stats.kills} (${stats.headshotKills} headshots)`,
@@ -215,7 +215,7 @@ export class DiscordBotService {
         return statsDetails.filter(Boolean).join('\n');
     }
 
-    private getKillDetails(playerName: string, killEvents: LogPlayerKillV2[]): string | null {
+    private getKillDetails(playerName: string, killEvents: LogPlayerKillV2[], matchStartTime: Date): string | null {
         const playerKills = killEvents.filter(event => event.killer?.name === playerName || event.dBNOMaker?.name === playerName || event.victim?.name === playerName);
         if (playerKills.length === 0) {
             return null;
@@ -224,48 +224,34 @@ export class DiscordBotService {
         return playerKills.map(kill => {
             let killDetails = '';
 
+            const eventTime = new Date(kill._D);
+            const relativeTime = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000); // Calculate relative time in seconds
+
             if (kill.dBNOMaker?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
                 const distance = kill.dBNODamageInfo?.distance 
                     ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
                     : 'N/A';
-    
-                const killTime = new Date(kill._D).toLocaleString('en-ZA', {                   
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                    timeZone: 'Africa/Johannesburg'
-                }).replace(',', '');   
-                   
+
                 const icon = '🤜';
-                const actionType = 'Knock'
+                const actionType = 'Knock';
                 const victimName = kill.victim?.name || 'Unknown';
                     
-                killDetails+= `${killTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
             if (kill.killer?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
                 const distance = kill.killerDamageInfo?.distance 
-                    ? `${Math.round(kill.killerDamageInfo.distance /100)}m`
+                    ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
                     : 'N/A';
-    
-                const killTime = new Date(kill._D).toLocaleString('en-ZA', {                    
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                    timeZone: 'Africa/Johannesburg'
-                }).replace(',', '');   
-                   
+
                 const icon = '💀';
-                const actionType = 'Kill'
+                const actionType = 'Kill';
                 const victimName = kill.victim?.name || 'Unknown';
-                //If killDetails is not empty, add a new line before adding the kill details
-                if(killDetails !== '') {
-                    killDetails+= '\n';
+                if (killDetails !== '') {
+                    killDetails += '\n';
                 }
-                killDetails+= `${killTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
 
             if (kill.dBNOMaker?.name !== playerName && kill.victim?.name === playerName) {
@@ -275,23 +261,14 @@ export class DiscordBotService {
                     ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
                     : 'N/A';
 
-                const knockTime = new Date(kill._D).toLocaleString('en-ZA', {                    
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                    timeZone: 'Africa/Johannesburg'
-                }).replace(',', '');   
-
                 const icon = '🔻';
                 const actionType = 'Knocked by';
                 if (killDetails !== '') {
                     killDetails += '\n';
                 }
-                killDetails += `${knockTime}: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
             }
             
-            //If the victim is the player, add the kill details to the killDetails string   
             if (kill.victim?.name === playerName) {
                 const killerName = kill.killer?.name || 'Unknown';
                 const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
@@ -299,22 +276,13 @@ export class DiscordBotService {
                     ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
                     : 'N/A';
 
-                const killTime = new Date(kill._D).toLocaleString('en-ZA', {                    
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                    timeZone: 'Africa/Johannesburg'
-                }).replace(',', '');   
-
                 const icon = '☠️';
                 const actionType = 'Killed by';
                 if (killDetails !== '') {
                     killDetails += '\n';
                 }
-                killDetails += `${killTime}: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
             }
-            
 
             return killDetails;
         }).join('\n');
