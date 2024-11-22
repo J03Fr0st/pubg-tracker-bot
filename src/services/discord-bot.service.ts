@@ -225,7 +225,10 @@ export class DiscordBotService {
             let killDetails = '';
 
             const eventTime = new Date(kill._D);
-            const relativeTime = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000); // Calculate relative time in seconds
+            const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
+            const minutes = Math.floor(relativeSeconds / 60);
+            const seconds = relativeSeconds % 60;
+            const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
             if (kill.dBNOMaker?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
@@ -237,7 +240,7 @@ export class DiscordBotService {
                 const actionType = 'Knock';
                 const victimName = kill.victim?.name || 'Unknown';
                     
-                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
             if (kill.killer?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
@@ -251,7 +254,7 @@ export class DiscordBotService {
                 if (killDetails !== '') {
                     killDetails += '\n';
                 }
-                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
 
             if (kill.dBNOMaker?.name !== playerName && kill.victim?.name === playerName) {
@@ -266,7 +269,7 @@ export class DiscordBotService {
                 if (killDetails !== '') {
                     killDetails += '\n';
                 }
-                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
             }
             
             if (kill.victim?.name === playerName) {
@@ -281,7 +284,7 @@ export class DiscordBotService {
                 if (killDetails !== '') {
                     killDetails += '\n';
                 }
-                killDetails += `${relativeTime}s: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
+                killDetails += `${relativeTime}: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
             }
 
             return killDetails;
