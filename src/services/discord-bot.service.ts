@@ -227,7 +227,7 @@ export class DiscordBotService {
             if (kill.dBNOMaker?.name === playerName) {
                 const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
                 const distance = kill.dBNODamageInfo?.distance 
-                    ? `${Math.round(kill.dBNODamageInfo.distance /100)}m`
+                    ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
                     : 'N/A';
     
                 const killTime = new Date(kill._D).toLocaleString('en-ZA', {                   
@@ -288,6 +288,28 @@ export class DiscordBotService {
                     killDetails += '\n';
                 }
                 killDetails += `${killTime}: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
+            }
+            if (kill.dBNOMaker?.name !== playerName && kill.victim?.name === playerName) {
+                const dBNOMakerName = kill.dBNOMaker?.name || 'Unknown';
+                const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
+                const distance = kill.dBNODamageInfo?.distance 
+                    ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
+                    : 'N/A';
+
+                const knockTime = new Date(kill._D).toLocaleString('en-ZA', {                    
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                    timeZone: 'Africa/Johannesburg'
+                }).replace(',', '');   
+
+                const icon = '🔻';
+                const actionType = 'Knocked by';
+                if (killDetails !== '') {
+                    killDetails += '\n';
+                }
+                killDetails += `${knockTime}: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
             }
 
             return killDetails;
