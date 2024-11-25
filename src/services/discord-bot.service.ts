@@ -229,6 +229,23 @@ export class DiscordBotService {
             const seconds = relativeSeconds % 60;
             const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
+            const getKillerName = (damageInfo: any) => {
+                if (damageInfo?.damageReason === 'None') return 'Bluezone';
+                if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
+                if (damageInfo?.damageReason === 'RedZone') return 'Redzone';
+                return kill.killer?.name || kill.dBNOMaker?.name || 'Unknown Player';
+            };
+
+            const getWeaponName = (damageInfo: any) => {
+                if (!damageInfo?.damageCauserName || damageInfo.damageCauserName === 'None') {
+                    if (damageInfo?.damageReason === 'None') return 'Bluezone';
+                    if (damageInfo?.damageReason === 'Fall') return 'Fall';
+                    if (damageInfo?.damageReason === 'RedZone') return 'Bomb';
+                    return 'Unknown';
+                }
+                return this.getReadableWeaponName(damageInfo.damageCauserName);
+            };
+
             const getKillerName = (damageInfo: any, killer: any) => {
                 if (damageInfo?.damageReason === 'None') return 'Bluezone';
                 if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
