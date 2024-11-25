@@ -229,11 +229,11 @@ export class DiscordBotService {
             const seconds = relativeSeconds % 60;
             const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-            const getKillerName = (damageInfo: any) => {
+            const getKillerName = (damageInfo: any, killer: any) => {
                 if (damageInfo?.damageReason === 'None') return 'Bluezone';
                 if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
                 if (damageInfo?.damageReason === 'RedZone') return 'Redzone';
-                return kill.killer?.name || kill.dBNOMaker?.name || 'Unknown Player';
+                return killer?.name || 'Unknown Player';
             };
 
             const getWeaponName = (damageInfo: any) => {
@@ -246,54 +246,29 @@ export class DiscordBotService {
                 return this.getReadableWeaponName(damageInfo.damageCauserName);
             };
 
-            if (kill.dBNOMaker?.name === playerName) {
-                const weapon = getWeaponName(kill.dBNODamageInfo);
-                const distance = kill.dBNODamageInfo?.distance 
-                    ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
-                    : 'N/A';
-
-                const icon = '🤜';
-                const actionType = 'Knock';
-                const victimName = kill.victim?.name || 'Unknown';
-                    
-                killDetails += `${relativeTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
-            }
-            if (kill.killer?.name === playerName) {
-                const weapon = getWeaponName(kill.killerDamageInfo);
-                const distance = kill.killerDamageInfo?.distance 
-                    ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
-                    : 'N/A';
-
-                const icon = '💀';
-                const actionType = 'Kill';
-                const victimName = kill.victim?.name || 'Unknown';
-                if (killDetails !== '') {
-                    killDetails += '\n';
-                }
-                killDetails += `${relativeTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
-            }
-
-            if (kill.dBNOMaker?.name !== playerName && kill.victim?.name === playerName) {
-                const dBNOMakerName = kill.dBNOMaker?.name || 'Unknown';
-                const weapon = getWeaponName(kill.dBNODamageInfo);
-                const distance = kill.dBNODamageInfo?.distance 
-                    ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
-                    : 'N/A';
-
-                const icon = '🔻';
-                const actionType = 'Knocked by';
-                if (killDetails !== '') {
-                    killDetails += '\n';
-                }
-                killDetails += `${relativeTime}: ${icon} ${actionType} - [${dBNOMakerName}](https://www.pubgrank.org/profile/${dBNOMakerName}) (${weapon}, ${distance})`;
-            }
-            
             if (kill.victim?.name === playerName) {
-                const killerName = getKillerName(kill.killerDamageInfo);
+                // For knocks
+                if (!kill.finisher) { // This is a knock, not a finish
+                    const knockerName = getKillerName(kill.dBNODamageInfo, kill.dBNOMaker);
+                    const weapon = getWeaponName(kill.dBNODamageInfo);
+                    const distance = kill.dBNODamageInfo?.distance 
+                        ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
+                        : '0m';
+
+                    const icon = '🔻';
+                    const actionType = 'Knocked by';
+                    if (killDetails !== '') {
+                        killDetails += '\n';
+                    }
+                    killDetails += `${relativeTime}: ${icon} ${actionType} - [${knockerName}](https://www.pubgrank.org/profile/${knockerName}) (${weapon}, ${distance})`;
+                }
+
+                // For kills/finishes
+                const killerName = getKillerName(kill.killerDamageInfo, kill.killer);
                 const weapon = getWeaponName(kill.killerDamageInfo);
                 const distance = kill.killerDamageInfo?.distance 
                     ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
-                    : 'N/A';
+                    : '0m';
 
                 const icon = '☠️';
                 const actionType = 'Killed by';
