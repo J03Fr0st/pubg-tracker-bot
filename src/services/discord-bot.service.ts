@@ -223,15 +223,31 @@ export class DiscordBotService {
 
         return playerKills.map(kill => {
             let killDetails = '';
-
             const eventTime = new Date(kill._D);
             const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
             const minutes = Math.floor(relativeSeconds / 60);
             const seconds = relativeSeconds % 60;
             const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
+            const getKillerName = (damageInfo: any) => {
+                if (damageInfo?.damageReason === 'None') return 'Bluezone';
+                if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
+                if (damageInfo?.damageReason === 'RedZone') return 'Redzone';
+                return kill.killer?.name || kill.dBNOMaker?.name || 'Unknown Player';
+            };
+
+            const getWeaponName = (damageInfo: any) => {
+                if (!damageInfo?.damageCauserName || damageInfo.damageCauserName === 'None') {
+                    if (damageInfo?.damageReason === 'None') return 'Bluezone';
+                    if (damageInfo?.damageReason === 'Fall') return 'Fall';
+                    if (damageInfo?.damageReason === 'RedZone') return 'Bomb';
+                    return 'Unknown';
+                }
+                return this.getReadableWeaponName(damageInfo.damageCauserName);
+            };
+
             if (kill.dBNOMaker?.name === playerName) {
-                const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
+                const weapon = getWeaponName(kill.dBNODamageInfo);
                 const distance = kill.dBNODamageInfo?.distance 
                     ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
                     : 'N/A';
@@ -243,7 +259,7 @@ export class DiscordBotService {
                 killDetails += `${relativeTime}: ${icon} ${actionType} - [${victimName}](https://www.pubgrank.org/profile/${victimName}) (${weapon}, ${distance})`;
             }
             if (kill.killer?.name === playerName) {
-                const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+                const weapon = getWeaponName(kill.killerDamageInfo);
                 const distance = kill.killerDamageInfo?.distance 
                     ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
                     : 'N/A';
@@ -259,7 +275,7 @@ export class DiscordBotService {
 
             if (kill.dBNOMaker?.name !== playerName && kill.victim?.name === playerName) {
                 const dBNOMakerName = kill.dBNOMaker?.name || 'Unknown';
-                const weapon = this.getReadableWeaponName(kill.dBNODamageInfo?.damageCauserName || '');
+                const weapon = getWeaponName(kill.dBNODamageInfo);
                 const distance = kill.dBNODamageInfo?.distance 
                     ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
                     : 'N/A';
@@ -273,8 +289,8 @@ export class DiscordBotService {
             }
             
             if (kill.victim?.name === playerName) {
-                const killerName = kill.killer?.name || 'Unknown';
-                const weapon = this.getReadableWeaponName(kill.killerDamageInfo?.damageCauserName || '');
+                const killerName = getKillerName(kill.killerDamageInfo);
+                const weapon = getWeaponName(kill.killerDamageInfo);
                 const distance = kill.killerDamageInfo?.distance 
                     ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
                     : 'N/A';
