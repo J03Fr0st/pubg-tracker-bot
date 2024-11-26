@@ -3,6 +3,7 @@ import { PubgApiService } from './pubg-api.service';
 import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
 import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
+import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
 
 export class DiscordBotService {
     private readonly client: Client;
@@ -168,32 +169,6 @@ export class DiscordBotService {
         return [mainEmbed, ...playerEmbeds];
     }
 
-    private formatMapName(mapName: string): string {
-        const mapNames: Record<string, string> = {
-            'Baltic_Main': 'Erangel',
-            'Desert_Main': 'Miramar',
-            'Savage_Main': 'Sanhok',
-            'DihorOtok_Main': 'Vikendi',
-            'Range_Main': 'Camp Jackal',
-            'Summerland_Main': 'Karakin',
-            'Tiger_Main': 'Taego',
-            'Kiki_Main': 'Deston'
-        };
-        return mapNames[mapName] || mapName;
-    }
-
-    private formatGameMode(mode: string): string {
-        const modes: Record<string, string> = {
-            'squad': 'Squad TPP',
-            'squad-fpp': 'Squad FPP',
-            'duo': 'Duo TPP',
-            'duo-fpp': 'Duo FPP',
-            'solo': 'Solo TPP',
-            'solo-fpp': 'Solo FPP',
-        };
-        return modes[mode.toLowerCase()] || mode;
-    }
-
     private formatPlayerStats(
         matchStartTime: Date,
         matchId: string,
@@ -299,19 +274,19 @@ export class DiscordBotService {
     }
 
     private getReadableWeaponName(weaponCode: string): string {
-        const weaponMap: Record<string, string> = {
-            'WeapM249_C': 'M249',
-            'WeapHK416_C': 'M416',
-            'WeapAK47_C': 'AKM',
-            'WeapSCAR-L_C': 'SCAR-L',
-            // Add more weapon mappings as needed
-        };
-
-        return weaponMap[weaponCode] || weaponCode
+        return DAMAGE_CAUSER_NAME[weaponCode] || weaponCode
             .replace(/^Weap/, '')
             .replace(/_C$/, '')
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .trim();
+    }
+
+    private formatMapName(mapCode: string): string {
+        return MAP_NAMES[mapCode] || mapCode;
+    }
+
+    private formatGameMode(gameModeCode: string): string {
+        return GAME_MODES[gameModeCode] || gameModeCode;
     }
 
     private getPlacementColor(rank?: number): number {
