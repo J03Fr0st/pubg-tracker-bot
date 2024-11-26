@@ -54,7 +54,7 @@ export class MatchMonitorService {
         const uniqueMatches = new Map<string, { createdAt: Date; players: MatchMonitorPlayer[] }>();
         
         for (const player of playersResponse.data) {
-            const matches = player.relationships.matches.data.slice(0, 15);
+            const matches = player.relationships.matches.data.slice(0, 5);
             
             for (const match of matches) {
                 const matchDetails = await this.pubgApi.getMatchDetails(match.id);
