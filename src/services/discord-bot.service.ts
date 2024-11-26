@@ -116,7 +116,7 @@ export class DiscordBotService {
         summary: DiscordMatchGroupSummary
     ): Promise<EmbedBuilder[]> {
         const { mapName, gameMode, playedAt, players } = summary;
-        const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : 'N/A';
+        const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
 
         const matchDate = new Date(playedAt);
         const dateString = matchDate.toLocaleTimeString('en-ZA', {
@@ -206,8 +206,8 @@ export class DiscordBotService {
         const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, matchStartTime);
 
         const statsDetails = [
-            `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
-            `🔻 DBNOs: ${stats.DBNOs}`,
+            `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
+            `🔻 Knocks: ${stats.DBNOs}`,
             `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
             `🎯 Headshot %: ${accuracy}%`,
             `⏰ Survival: ${survivalMinutes}min`,
