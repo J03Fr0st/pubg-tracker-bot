@@ -240,7 +240,7 @@ export class DiscordBotService {
                 const killerName = event.killer?.name || 'Unknown Player';
                 const victimName = event.victim?.name || 'Unknown Player';
                 const weapon = event.killerDamageInfo?.damageCauserName 
-                    ? this.getReadableWeaponName(event.killerDamageInfo.damageCauserName)
+                    ? this.getReadableDamageCauserName(event.killerDamageInfo.damageCauserName)
                     : 'Unknown Weapon';
                 const distance = event.killerDamageInfo?.distance
                     ? `${Math.round(event.killerDamageInfo.distance / 100)}m`
@@ -255,7 +255,7 @@ export class DiscordBotService {
                 const attackerName = event.attacker?.name || 'Unknown Player';
                 const victimName = event.victim?.name || 'Unknown Player';
                 const weapon = event.damageCauserName 
-                    ? this.getReadableWeaponName(event.damageCauserName)
+                    ? this.getReadableDamageCauserName(event.damageCauserName)
                     : 'Unknown Weapon';
                 const distance = event.distance
                     ? `${Math.round(event.distance / 100)}m`
@@ -273,7 +273,7 @@ export class DiscordBotService {
         return eventDetails || null;
     }
 
-    private getReadableWeaponName(weaponCode: string): string {
+    private getReadableDamageCauserName(weaponCode: string): string {
         return DAMAGE_CAUSER_NAME[weaponCode] || weaponCode
             .replace(/^Weap/, '')
             .replace(/_C$/, '')
