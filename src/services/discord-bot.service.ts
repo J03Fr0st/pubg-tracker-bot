@@ -115,7 +115,7 @@ export class DiscordBotService {
     private async createMatchSummaryEmbeds(
         summary: DiscordMatchGroupSummary
     ): Promise<EmbedBuilder[]> {
-        const { mapName, gameMode, playedAt, players } = summary;
+        const { mapName, gameMode, playedAt, players, matchId } = summary;
         const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
 
         const matchDate = new Date(playedAt);
@@ -131,18 +131,26 @@ export class DiscordBotService {
 
         const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
         const totalKills = players.reduce((acc, player) => acc + (player.stats?.kills || 0), 0);
+        const totalDBNOs = players.reduce((acc, player) => acc + (player.stats?.DBNOs || 0), 0);
 
         const mainEmbed = new EmbedBuilder()
             .setTitle(`🎮 PUBG Match Summary`)
-            .setDescription(`⏰ Date: ${dateString}`)
-            .addFields(
-                { name: '🗺️ Map', value: this.formatMapName(mapName), inline: true },
-                { name: '🎯 Mode', value: this.formatGameMode(gameMode), inline: true },
-                { name: '🏆 Team Rank', value: teamRankText, inline: true },
-                { name: '💥 Total Damage', value: `${Math.round(totalDamage)}`, inline: true },
-                { name: '🔫 Total Kills', value: `${totalKills}`, inline: true }
-            )
-            .setColor(0x00AE86);
+            .setDescription([
+                `⏰ **${dateString}**`,
+                `🗺️ **${this.formatMapName(mapName)}** • ${this.formatGameMode(gameMode)}`,
+                '',
+                '**Team Performance**',
+                `🏆 Placement: **${teamRankText}**`,
+                `👥 Squad Size: **${players.length} players**`,
+                '',
+                '**Combat Summary**',                
+                `⚔️ Total Kills: **${totalKills}**`,
+                `🔻 Total Knocks: **${totalDBNOs}**`,
+                `💥 Total Damage: **${Math.round(totalDamage)}**`
+            ].join('\n'))
+            .setColor(this.getPlacementColor(summary.teamRank))
+            .setFooter({ text: `PUBG Match Tracker - ${matchId}`  })
+            .setTimestamp(matchDate);
 
         const { kills, groggies } = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(
             summary.telemetryUrl!,
@@ -304,5 +312,13 @@ export class DiscordBotService {
             .replace(/_C$/, '')
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .trim();
+    }
+
+    private getPlacementColor(rank?: number): number {
+        if (!rank) return 0x36393F; // Discord dark theme color
+        if (rank === 1) return 0xFFD700; // Gold
+        if (rank <= 3) return 0xC0C0C0; // Silver
+        if (rank <= 10) return 0xCD7F32; // Bronze
+        return 0x36393F; // Default dark color
     }
 } 
