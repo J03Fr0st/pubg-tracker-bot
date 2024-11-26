@@ -263,7 +263,7 @@ export class DiscordBotService {
                     ? `${Math.round(event.killerDamageInfo.distance / 100)}m`
                     : 'Unknown';
 
-                const icon = '💀';
+                const icon = isKiller ? '⚔️' : '☠️';
                 const actionType = isKiller ? 'Killed' : 'Killed by';
                 const targetName = isKiller ? victimName : killerName;
                 return `${relativeTime}: ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
