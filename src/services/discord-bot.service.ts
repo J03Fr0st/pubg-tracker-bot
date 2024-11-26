@@ -233,7 +233,7 @@ export class DiscordBotService {
             const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
             const minutes = Math.floor(relativeSeconds / 60);
             const seconds = relativeSeconds % 60;
-            const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            const relativeTime = `\`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}\``;
 
             if ('killer' in event) { // LogPlayerKillV2 event
                 const isKiller = event.killer?.name === playerName;
@@ -249,7 +249,7 @@ export class DiscordBotService {
                 const icon = isKiller ? '⚔️' : '☠️';
                 const actionType = isKiller ? 'Killed' : 'Killed by';
                 const targetName = isKiller ? victimName : killerName;
-                return `${relativeTime}: ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
+                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
             } else if ('attacker' in event) { // LogPlayerMakeGroggy event
                 const isAttacker = event.attacker?.name === playerName;
                 const attackerName = event.attacker?.name || 'Unknown Player';
@@ -264,7 +264,7 @@ export class DiscordBotService {
                 const icon = isAttacker ? '🔻' : '⬇️';
                 const actionType = isAttacker ? 'Knocked' : 'Knocked by';
                 const targetName = isAttacker ? victimName : attackerName;
-                return `${relativeTime}: ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
+                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
             }
 
             return ''; // Fallback for unknown event types
