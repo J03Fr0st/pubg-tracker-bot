@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, TextChannel, Message, EmbedBuilder }
 import { PubgApiService } from './pubg-api.service';
 import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
-import { LogPlayerKillV2 } from '../types/pubg-telemetry.types';
+import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 
 export class DiscordBotService {
     private readonly client: Client;
@@ -112,31 +112,31 @@ export class DiscordBotService {
         await message.reply(`Monitored players:\n${playerList}`);
     }
 
-    private async createMatchSummaryEmbeds(summary: DiscordMatchGroupSummary): Promise<EmbedBuilder[]> {
+    private async createMatchSummaryEmbeds(
+        summary: DiscordMatchGroupSummary
+    ): Promise<EmbedBuilder[]> {
         const { mapName, gameMode, playedAt, players } = summary;
         const teamRankText = summary.teamRank ? `🏆 Team Rank: #${summary.teamRank}` : 'N/A';
 
-        // Format the date and time
-       const matchDate = new Date(playedAt);
-       const dateString = matchDate.toLocaleTimeString('en-ZA', {
-           year: 'numeric',
-           month: '2-digit',
-           day: '2-digit',
-           hour: '2-digit',
-           minute: '2-digit',
-           hour12: false,
-           timeZone: 'Africa/Johannesburg'
-       }).replace(',', '');
+        const matchDate = new Date(playedAt);
+        const dateString = matchDate.toLocaleTimeString('en-ZA', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'Africa/Johannesburg'
+        }).replace(',', '');
 
-        // Calculate total damage and total kills
         const totalDamage = players.reduce((acc, player) => acc + (player.stats?.damageDealt || 0), 0);
         const totalKills = players.reduce((acc, player) => acc + (player.stats?.kills || 0), 0);
 
         const mainEmbed = new EmbedBuilder()
             .setTitle(`🎮 PUBG Match Summary`)
-            .setDescription(`**⏰ Date:** ${dateString}`)
+            .setDescription(`⏰ Date: ${dateString}`)
             .addFields(
-                { name: '📍 Map', value: this.formatMapName(mapName), inline: true },
+                { name: '🗺️ Map', value: this.formatMapName(mapName), inline: true },
                 { name: '🎯 Mode', value: this.formatGameMode(gameMode), inline: true },
                 { name: '🏆 Team Rank', value: teamRankText, inline: true },
                 { name: '💥 Total Damage', value: `${Math.round(totalDamage)}`, inline: true },
@@ -144,10 +144,13 @@ export class DiscordBotService {
             )
             .setColor(0x00AE86);
 
-        const killEvents = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(summary.telemetryUrl!, players.map(p => p.name));
+        const { kills, groggies } = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(
+            summary.telemetryUrl!,
+            players.map(p => p.name)
+        );
 
         const playerEmbeds = players.map(player => {
-            const playerStats = this.formatPlayerStats(matchDate,summary.matchId, player, killEvents);
+            const playerStats = this.formatPlayerStats(matchDate, summary.matchId, player, kills, groggies);
             return new EmbedBuilder()
                 .setTitle(`Player: ${player.name}`)
                 .setDescription(playerStats)
@@ -183,127 +186,123 @@ export class DiscordBotService {
         return modes[mode.toLowerCase()] || mode;
     }
 
-    private formatPlayerStats(matchStartTime: Date,matchId: string, player: DiscordPlayerMatchStats, killEvents: LogPlayerKillV2[]): string {
+    private formatPlayerStats(
+        matchStartTime: Date,
+        matchId: string,
+        player: DiscordPlayerMatchStats,
+        killEvents: LogPlayerKillV2[],
+        groggyEvents: LogPlayerMakeGroggy[]
+    ): string {
         const { stats } = player;
         if (!stats) {
             return 'No stats available';
         }
         const survivalMinutes = Math.round(stats.timeSurvived / 60);
         const kmWalked = (stats.walkDistance / 1000).toFixed(1);
-        const accuracy = stats.kills > 0 && stats.headshotKills > 0 
-            ? ((stats.headshotKills / stats.kills) * 100).toFixed(1) 
+        const accuracy = stats.kills > 0 && stats.headshotKills > 0
+            ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
             : '0';
 
-        const killDetails = this.getKillDetails(player.name, killEvents, matchStartTime);
+        const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, matchStartTime);
 
         const statsDetails = [
-            `🔫 **Kills:** ${stats.kills} (${stats.headshotKills} headshots)`,
-            `🔨 **DBNOs:** ${stats.DBNOs}`,
-            `💥 **Damage:** ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
-            `🎯 **Headshot %:** ${accuracy}%`,
-            `⏱️ **Survival:** ${survivalMinutes}min`,
-            `🎯 **Longest Kill:** ${Math.round(stats.longestKill)}m`,
-            `🚶 **Distance:** ${kmWalked}km`,            
-            stats.revives > 0 ? `🛡️ **Revives:** ${stats.revives}` : '',           
-            `[🎯 **2D Replay**](https://pubg.sh/${player.name}/steam/${matchId})`
+            `🔫 Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
+            `🔻 DBNOs: ${stats.DBNOs}`,
+            `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
+            `🎯 Headshot %: ${accuracy}%`,
+            `⏰ Survival: ${survivalMinutes}min`,
+            `📏 Longest Kill: ${Math.round(stats.longestKill)}m`,
+            `👣 Distance: ${kmWalked}km`,
+            stats.revives > 0 ? `🚑 Revives: ${stats.revives}` : '',
+            `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`
         ];
 
         if (killDetails) {
-            statsDetails.push('*** KILLS ***', killDetails);
+            statsDetails.push('*** KILLS & DBNOs ***', killDetails);
         }
 
         return statsDetails.filter(Boolean).join('\n');
     }
 
-    private getKillDetails(playerName: string, killEvents: LogPlayerKillV2[], matchStartTime: Date): string | null {
-        const playerKills = killEvents.filter(event => event.killer?.name === playerName || event.dBNOMaker?.name === playerName || event.victim?.name === playerName);
-        if (playerKills.length === 0) {
+    private getKillDetails(
+        playerName: string,
+        killEvents: LogPlayerKillV2[],
+        groggyEvents: LogPlayerMakeGroggy[],
+        matchStartTime: Date
+    ): string | null {
+        // Filter events to only include those where the player is involved
+        const relevantKills = killEvents.filter(event => 
+            event.killer?.name === playerName || event.victim?.name === playerName
+        );
+        const relevantGroggies = groggyEvents.filter(event => 
+            event.attacker?.name === playerName || event.victim?.name === playerName
+        );
+
+        const allEvents = [...relevantKills, ...relevantGroggies]
+            .sort((a, b) => new Date(a._D).getTime() - new Date(b._D).getTime());
+
+        if (allEvents.length === 0) {
             return null;
         }
 
-        return playerKills.map(kill => {
-            let killDetails = '';
-            const eventTime = new Date(kill._D);
+        const eventDetails = allEvents.map(event => {
+            const eventTime = new Date(event._D);
             const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
             const minutes = Math.floor(relativeSeconds / 60);
             const seconds = relativeSeconds % 60;
             const relativeTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-            const getKillerName = (damageInfo: any) => {
-                if (damageInfo?.damageReason === 'None') return 'Bluezone';
-                if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
-                if (damageInfo?.damageReason === 'RedZone') return 'Redzone';
-                return kill.killer?.name || kill.dBNOMaker?.name || 'Unknown Player';
-            };
+            if ('killer' in event) { // LogPlayerKillV2 event
+                const isKiller = event.killer?.name === playerName;
+                const killerName = event.killer?.name || 'Unknown Player';
+                const victimName = event.victim?.name || 'Unknown Player';
+                const weapon = event.killerDamageInfo?.damageCauserName 
+                    ? this.getReadableWeaponName(event.killerDamageInfo.damageCauserName)
+                    : 'Unknown Weapon';
+                const distance = event.killerDamageInfo?.distance
+                    ? `${Math.round(event.killerDamageInfo.distance / 100)}m`
+                    : 'Unknown';
 
-            const getWeaponName = (damageInfo: any) => {
-                if (!damageInfo?.damageCauserName || damageInfo.damageCauserName === 'None') {
-                    if (damageInfo?.damageReason === 'None') return 'Bluezone';
-                    if (damageInfo?.damageReason === 'Fall') return 'Fall';
-                    if (damageInfo?.damageReason === 'RedZone') return 'Bomb';
-                    return 'Unknown';
-                }
-                return this.getReadableWeaponName(damageInfo.damageCauserName);
-            };
+                const icon = '💀';
+                const actionType = isKiller ? 'Killed' : 'Killed by';
+                const targetName = isKiller ? victimName : killerName;
+                return `${relativeTime}: ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
+            } else if ('attacker' in event) { // LogPlayerMakeGroggy event
+                const isAttacker = event.attacker?.name === playerName;
+                const attackerName = event.attacker?.name || 'Unknown Player';
+                const victimName = event.victim?.name || 'Unknown Player';
+                const weapon = event.damageCauserName 
+                    ? this.getReadableWeaponName(event.damageCauserName)
+                    : 'Unknown Weapon';
+                const distance = event.distance
+                    ? `${Math.round(event.distance / 100)}m`
+                    : 'Unknown';
 
-            const getKillerName = (damageInfo: any, killer: any) => {
-                if (damageInfo?.damageReason === 'None') return 'Bluezone';
-                if (damageInfo?.damageReason === 'Fall') return 'Fall Damage';
-                if (damageInfo?.damageReason === 'RedZone') return 'Redzone';
-                return killer?.name || 'Unknown Player';
-            };
-
-            const getWeaponName = (damageInfo: any) => {
-                if (!damageInfo?.damageCauserName || damageInfo.damageCauserName === 'None') {
-                    if (damageInfo?.damageReason === 'None') return 'Bluezone';
-                    if (damageInfo?.damageReason === 'Fall') return 'Fall';
-                    if (damageInfo?.damageReason === 'RedZone') return 'Bomb';
-                    return 'Unknown';
-                }
-                return this.getReadableWeaponName(damageInfo.damageCauserName);
-            };
-
-            if (kill.victim?.name === playerName) {
-                // For knocks
-                if (!kill.finisher) { // This is a knock, not a finish
-                    const knockerName = getKillerName(kill.dBNODamageInfo, kill.dBNOMaker);
-                    const weapon = getWeaponName(kill.dBNODamageInfo);
-                    const distance = kill.dBNODamageInfo?.distance 
-                        ? `${Math.round(kill.dBNODamageInfo.distance / 100)}m`
-                        : '0m';
-
-                    const icon = '🔻';
-                    const actionType = 'Knocked by';
-                    if (killDetails !== '') {
-                        killDetails += '\n';
-                    }
-                    killDetails += `${relativeTime}: ${icon} ${actionType} - [${knockerName}](https://www.pubgrank.org/profile/${knockerName}) (${weapon}, ${distance})`;
-                }
-
-                // For kills/finishes
-                const killerName = getKillerName(kill.killerDamageInfo, kill.killer);
-                const weapon = getWeaponName(kill.killerDamageInfo);
-                const distance = kill.killerDamageInfo?.distance 
-                    ? `${Math.round(kill.killerDamageInfo.distance / 100)}m`
-                    : '0m';
-
-                const icon = '☠️';
-                const actionType = 'Killed by';
-                if (killDetails !== '') {
-                    killDetails += '\n';
-                }
-                killDetails += `${relativeTime}: ${icon} ${actionType} - [${killerName}](https://www.pubgrank.org/profile/${killerName}) (${weapon}, ${distance})`;
+                const icon = isAttacker ? '🔻' : '⬇️';
+                const actionType = isAttacker ? 'Knocked' : 'Knocked by';
+                const targetName = isAttacker ? victimName : attackerName;
+                return `${relativeTime}: ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
             }
 
-            return killDetails;
-        }).join('\n');
+            return ''; // Fallback for unknown event types
+        }).filter(Boolean).join('\n');
+
+        return eventDetails || null;
     }
 
     private getReadableWeaponName(weaponCode: string): string {
-        return weaponCode
-        .replace(/^Weap/, "") // Remove "Weap" prefix
-        .replace(/_C$/, "") // Remove "_C" suffix
-        .replace(/([a-z])([A-Z])/g, "$1 $2") // Add space between camel case words
-        .trim(); // Trim any extra whitespace;
+        const weaponMap: Record<string, string> = {
+            'WeapM249_C': 'M249',
+            'WeapHK416_C': 'M416',
+            'WeapAK47_C': 'AKM',
+            'WeapSCAR-L_C': 'SCAR-L',
+            // Add more weapon mappings as needed
+        };
+
+        return weaponMap[weaponCode] || weaponCode
+            .replace(/^Weap/, '')
+            .replace(/_C$/, '')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .trim();
     }
 } 

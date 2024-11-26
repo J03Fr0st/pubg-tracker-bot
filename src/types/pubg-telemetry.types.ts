@@ -48,3 +48,21 @@ export interface DamageInfo {
   distance?: number; // Distance between the source and victim
   isThroughPenetrableWall?: boolean; // Indicates if the damage was through a penetrable object
 }
+
+export interface LogPlayerMakeGroggy {
+  _D: string; // Timestamp of the event
+  _T: string; // Event type, should be "LogPlayerMakeGroggy"
+  attackId: number; // Unique ID for the attack
+  attacker: Character; // Information about the attacker
+  victim: Character; // Information about the victim
+  damageReason: string; // Reason for the damage (e.g., "HeadShot", "Explosion")
+  damageTypeCategory: string; // Type of damage (e.g., "Damage_Gun", "Damage_Explosion")
+  damageCauserName: string; // Name of the weapon or cause of the damage
+  damageCauserAdditionalInfo: string[]; // Additional details about the damage causer
+  VictimWeapon: string; // Weapon being used by the victim
+  VictimWeaponAdditionalInfo: string[]; // Additional details about the victim's weapon
+  distance: number; // Distance between the attacker and the victim
+  isAttackerInVehicle: boolean; // Whether the attacker was in a vehicle
+  dBNOId: number; // Unique ID for the down-but-not-out state
+  isThroughPenetrableWall: boolean; // Whether the attack passed through a penetrable wall
+}

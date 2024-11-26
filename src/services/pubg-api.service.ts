@@ -3,7 +3,7 @@ import { RateLimiter } from '../utils/rate-limiter';
 import { PubgStorageService } from '../services/pubg-storage.service';
 import { PlayersResponse } from '../types/pubg-player-api.types';
 import { Asset, MatchesResponse } from '../types/pubg-matches-api.types';
-import { LogPlayerKillV2 } from '../types/pubg-telemetry.types';
+import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 
 export class PubgApiService {
   private readonly apiClient: AxiosInstance;
@@ -109,25 +109,44 @@ export class PubgApiService {
    * @param squadPlayerNames The names of players in the squad to filter events by.
    * @returns A promise that resolves to an array of filtered LogPlayerKillV2 events.
    */
-  async fetchAndFilterLogPlayerKillV2Events(telemetryUrl: string, squadPlayerNames: string[]): Promise<LogPlayerKillV2[]> {
+  async fetchAndFilterLogPlayerKillV2Events(
+    telemetryUrl: string,
+    squadPlayerNames: string[]
+  ): Promise<{ kills: LogPlayerKillV2[]; groggies: LogPlayerMakeGroggy[] }> {
     try {
       const response = await axios.get(telemetryUrl);
       const events: any[] = response.data;
 
-      return events
+      const kills = events
         .filter(event => event._T === 'LogPlayerKillV2')
         .filter((event: LogPlayerKillV2) => {
           const killerName = event.killer?.name;
           const victimName = event.victim?.name;
           const dBNOMaker = event.dBNOMaker?.name;
           const finisher = event.finisher?.name;
-          
-          return (killerName && squadPlayerNames.includes(killerName)) || 
-                 (victimName && squadPlayerNames.includes(victimName)) ||
-                 (dBNOMaker && squadPlayerNames.includes(dBNOMaker)) ||
-                 (finisher && squadPlayerNames.includes(finisher)) ||
-                 (victimName && squadPlayerNames.includes(victimName));
+
+          return (
+            (killerName && squadPlayerNames.includes(killerName)) ||
+            (victimName && squadPlayerNames.includes(victimName)) ||
+            (dBNOMaker && squadPlayerNames.includes(dBNOMaker)) ||
+            (finisher && squadPlayerNames.includes(finisher)) ||
+            (victimName && squadPlayerNames.includes(victimName))
+          );
         });
+
+      const groggies = events
+        .filter(event => event._T === 'LogPlayerMakeGroggy')
+        .filter((event: LogPlayerMakeGroggy) => {
+          const attackerName = event.attacker?.name;
+          const victimName = event.victim?.name;
+
+          return (
+            (attackerName && squadPlayerNames.includes(attackerName)) ||
+            (victimName && squadPlayerNames.includes(victimName))
+          );
+        });
+
+      return { kills, groggies };
     } catch (error) {
       console.error('Error fetching telemetry data:', error);
       throw error;
