@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, TextChannel, Message, EmbedBuilder } from 'discord.js';
+import { Client, Events, GatewayIntentBits, TextChannel, EmbedBuilder, REST, Routes, SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { PubgApiService } from './pubg-api.service';
 import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
@@ -7,8 +7,28 @@ import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-map
 
 export class DiscordBotService {
     private readonly client: Client;
-    private readonly prefix = '!pubg';
     private readonly pubgStorageService: PubgStorageService;
+    private readonly commands = [
+        new SlashCommandBuilder()
+            .setName('add')
+            .setDescription('Add a PUBG player to monitor')
+            .addStringOption(option =>
+                option.setName('playername')
+                    .setDescription('The PUBG player name to monitor')
+                    .setRequired(true)
+            ),
+        new SlashCommandBuilder()
+            .setName('remove')
+            .setDescription('Remove a PUBG player from monitoring')
+            .addStringOption(option =>
+                option.setName('playername')
+                    .setDescription('The PUBG player name to stop monitoring')
+                    .setRequired(true)
+            ),
+        new SlashCommandBuilder()
+            .setName('list')
+            .setDescription('List all monitored PUBG players')
+    ];
 
     constructor(
         private readonly pubgApiService: PubgApiService,
@@ -26,6 +46,20 @@ export class DiscordBotService {
 
     public async initialize(): Promise<void> {
         console.log('Initializing Discord bot...');
+        
+        // Register slash commands
+        const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
+        try {
+            console.log('Started refreshing application (/) commands.');
+            await rest.put(
+                Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
+                { body: this.commands }
+            );
+            console.log('Successfully reloaded application (/) commands.');
+        } catch (error) {
+            console.error('Error registering slash commands:', error);
+        }
+
         await this.client.login(process.env.DISCORD_TOKEN);
     }
 
@@ -45,72 +79,123 @@ export class DiscordBotService {
     }
 
     private setupEventHandlers(): void {
-        this.client.on(Events.MessageCreate, async (message) => {
-            if (!message.content.startsWith(this.prefix) || message.author.bot) {
-                return;
-            }
+        this.client.on(Events.InteractionCreate, async interaction => {
+            if (!interaction.isChatInputCommand()) return;
 
-            const args = message.content.slice(this.prefix.length).trim().split(/ +/);
-            const command = args.shift()?.toLowerCase();
-
-            switch (command) {
-                case 'add':
-                    await this.handleAddPlayer(message, args);
-                    break;
-                case 'remove':
-                    await this.handleRemovePlayer(message, args);
-                    break;
-                case 'list':
-                    await this.handleListPlayers(message);
-                    break;
+            try {
+                switch (interaction.commandName) {
+                    case 'add':
+                        await this.handleAddPlayer(interaction);
+                        break;
+                    case 'remove':
+                        await this.handleRemovePlayer(interaction);
+                        break;
+                    case 'list':
+                        await this.handleListPlayers(interaction);
+                        break;
+                }
+            } catch (error) {
+                console.error('Error handling command:', error);
+                const errorEmbed = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setTitle('❌ Error')
+                    .setDescription('An unexpected error occurred while processing your command.')
+                    .setTimestamp();
+                
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+                } else {
+                    await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                }
             }
         });
     }
 
-    private async handleAddPlayer(message: Message, args: string[]): Promise<void> {
-        if (args.length < 1) {
-            await message.reply('Please provide a PUBG player name');
-            return;
-        }
+    private async handleAddPlayer(interaction: ChatInputCommandInteraction): Promise<void> {
+        await interaction.deferReply();
+        const playerName = interaction.options.getString('playername', true);
 
-        const playerName = args[0];
         try {
             const player = await this.pubgApiService.getPlayer(playerName);
-            // Save player data using storage service
             await this.pubgStorageService.addPlayer(player.data[0]);
 
-            await message.reply(`Player ${playerName} added to monitoring list`);
+            const successEmbed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setTitle('✅ Player Added')
+                .setDescription(`Successfully added **${playerName}** to monitoring list`)
+                .addFields(
+                    { name: 'Player ID', value: player.data[0].id, inline: true },
+                    { name: 'Platform', value: 'Steam', inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'PUBG Tracker Bot' });
+
+            await interaction.editReply({ embeds: [successEmbed] });
         } catch (error) {
             const err = error as Error;
-            await message.reply(`Failed to add player ${playerName}: ${err.message}`);
+            const errorEmbed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Error Adding Player')
+                .setDescription(`Failed to add player **${playerName}**`)
+                .addFields(
+                    { name: 'Error Details', value: err.message }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'PUBG Tracker Bot' });
+
+            await interaction.editReply({ embeds: [errorEmbed] });
         }
     }
 
-    private async handleRemovePlayer(message: Message, args: string[]): Promise<void> {
-        if (args.length < 1) {
-            await message.reply('Please provide a PUBG player name');
-            return;
-        }
+    private async handleRemovePlayer(interaction: ChatInputCommandInteraction): Promise<void> {
+        await interaction.deferReply();
+        const playerName = interaction.options.getString('playername', true);
 
-        const playerName = args[0];
         try {
             await this.pubgStorageService.removePlayer(playerName);
-            await message.reply(`Player ${playerName} removed from monitoring list`);
+            const successEmbed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setTitle('✅ Player Removed')
+                .setDescription(`Successfully removed **${playerName}** from monitoring list`)
+                .setTimestamp()
+                .setFooter({ text: 'PUBG Tracker Bot' });
+
+            await interaction.editReply({ embeds: [successEmbed] });
         } catch (error) {
             const err = error as Error;
-            await message.reply(`Failed to remove player ${playerName}: ${err.message}`);
+            const errorEmbed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Error Removing Player')
+                .setDescription(`Failed to remove player **${playerName}**`)
+                .addFields(
+                    { name: 'Error Details', value: err.message }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'PUBG Tracker Bot' });
+
+            await interaction.editReply({ embeds: [errorEmbed] });
         }
     }
 
-    private async handleListPlayers(message: Message): Promise<void> {
+    private async handleListPlayers(interaction: ChatInputCommandInteraction): Promise<void> {
+        await interaction.deferReply();
         const players = await this.pubgStorageService.getAllPlayers();
+
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('📋 Monitored Players')
+            .setTimestamp()
+            .setFooter({ text: 'PUBG Tracker Bot' });
+
         if (players.length === 0) {
-            await message.reply('No players are being monitored in this channel');
-            return;
+            embed.setDescription('No players are currently being monitored');
+        } else {
+            const playerList = players.map((p, index) => `${index + 1}. ${p.name}`).join('\n');
+            embed.setDescription(playerList)
+                .addFields({ name: 'Total Players', value: players.length.toString(), inline: true });
         }
 
-        const playerList = players.map(p => p.name).join('\n');
-        await message.reply(`Monitored players:\n${playerList}`);
+        await interaction.editReply({ embeds: [embed] });
     }
 
     private async createMatchSummaryEmbeds(
@@ -296,4 +381,4 @@ export class DiscordBotService {
         if (rank <= 10) return 0xCD7F32; // Bronze
         return 0x36393F; // Default dark color
     }
-} 
+}
