@@ -204,6 +204,9 @@ export class DiscordBotService {
         const { mapName, gameMode, playedAt, players, matchId } = summary;
         const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
 
+        // Generate a consistent color for this match based on matchId
+        const matchColor = this.generateMatchColor(matchId);
+
         const matchDate = new Date(playedAt);
         const dateString = matchDate.toLocaleTimeString('en-ZA', {
             year: 'numeric',
@@ -234,7 +237,7 @@ export class DiscordBotService {
                 `🔻 Total Knocks: **${totalDBNOs}**`,
                 `💥 Total Damage: **${Math.round(totalDamage)}**`
             ].join('\n'))
-            .setColor(this.getPlacementColor(summary.teamRank))
+            .setColor(matchColor)
             .setFooter({ text: `PUBG Match Tracker - ${matchId}`  })
             .setTimestamp(matchDate);
 
@@ -248,10 +251,41 @@ export class DiscordBotService {
             return new EmbedBuilder()
                 .setTitle(`Player: ${player.name}`)
                 .setDescription(playerStats)
-                .setColor(0x00AE86);
+                .setColor(matchColor); // Use the same color for player embeds
         });
 
         return [mainEmbed, ...playerEmbeds];
+    }
+
+    /**
+     * Generates a consistent color for a match based on its ID
+     * @param matchId The match ID to generate a color for
+     * @returns A color number suitable for Discord embeds
+     */
+    private generateMatchColor(matchId: string): number {
+        // Convert matchId to a number by summing char codes
+        const seed = matchId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        
+        // List of vibrant colors that look good in Discord
+        const colors = [
+            0x3498db, // Blue
+            0xe74c3c, // Red
+            0x2ecc71, // Green
+            0xf1c40f, // Yellow
+            0x9b59b6, // Purple
+            0xe67e22, // Orange
+            0x1abc9c, // Turquoise
+            0xd35400, // Pumpkin
+            0x34495e, // Navy
+            0x16a085, // Green Sea
+            0x8e44ad, // Wisteria
+            0x2980b9, // Belize Hole
+            0xc0392b, // Pomegranate
+            0x27ae60  // Nephritis
+        ];
+
+        // Use the seed to consistently select a color
+        return colors[seed % colors.length];
     }
 
     private formatPlayerStats(
