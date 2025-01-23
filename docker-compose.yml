@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+      - PUBG_API_KEY=${PUBG_API_KEY}
+      - PUBG_API_URL=${PUBG_API_URL}
+      - DEFAULT_SHARD=${DEFAULT_SHARD}
+      - MONGODB_URI=${MONGODB_URI}
+    restart: unless-stopped 
