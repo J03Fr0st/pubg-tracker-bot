@@ -368,7 +368,7 @@ export class DiscordBotService {
                 const icon = isKiller ? '⚔️' : '☠️';
                 const actionType = isKiller ? 'Killed' : 'Killed by';
                 const targetName = isKiller ? victimName : killerName;
-                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
+                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
             } else if ('attacker' in event) { // LogPlayerMakeGroggy event
                 const isAttacker = event.attacker?.name === playerName;
                 const attackerName = event.attacker?.name || 'Unknown Player';
@@ -383,7 +383,7 @@ export class DiscordBotService {
                 const icon = isAttacker ? '🔻' : '⬇️';
                 const actionType = isAttacker ? 'Knocked' : 'Knocked by';
                 const targetName = isAttacker ? victimName : attackerName;
-                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://www.pubgrank.org/profile/${targetName}) (${weapon}, ${distance})`;
+                return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
             }
 
             return ''; // Fallback for unknown event types
