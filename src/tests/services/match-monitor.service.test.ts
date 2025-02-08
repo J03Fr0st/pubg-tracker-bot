@@ -1,7 +1,7 @@
-import { MatchMonitorService } from '../match-monitor.service';
-import { PubgApiService } from '../pubg-api.service';
-import { PubgStorageService } from '../pubg-storage.service';
-import { DiscordBotService } from '../discord-bot.service';
+import { MatchMonitorService } from '../../services/match-monitor.service';
+import { PubgApiService } from '../../services/pubg-api.service';
+import { PubgStorageService } from '../../services/pubg-storage.service';
+import { DiscordBotService } from '../../services/discord-bot.service';
 
 describe('MatchMonitorService', () => {
   let service: MatchMonitorService;
@@ -16,7 +16,10 @@ describe('MatchMonitorService', () => {
     );
 
     // Set channel ID from environment variable
-    jest.spyOn(process.env, 'DISCORD_CHANNEL_ID').mockImplementation(() => mockDiscordChannelId);
+    Object.defineProperty(process.env, 'DISCORD_CHANNEL_ID', {
+      value: mockDiscordChannelId,
+      configurable: true
+    });
   });
 
   describe('#startMonitoring', () => {
