@@ -12,19 +12,21 @@ export class PubgApiService {
   private readonly storageService: PubgStorageService;
 
   constructor(
-    apiKey: string, 
+    apiKey: string,
     shard: string = 'steam',
-    storageService: PubgStorageService = new PubgStorageService()
+    storageService: PubgStorageService = new PubgStorageService(),
+    apiClient?: AxiosInstance,
+    rateLimiter?: RateLimiter
   ) {
     this.shard = shard;
-    this.apiClient = axios.create({
+    this.apiClient = apiClient ?? axios.create({
       baseURL: `https://api.pubg.com/shards/${shard}`,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Accept': 'application/vnd.api+json'
       }
     });
-    this.rateLimiter = new RateLimiter(10);
+    this.rateLimiter = rateLimiter ?? new RateLimiter(10);
     this.storageService = storageService;
   }
 
@@ -32,7 +34,7 @@ export class PubgApiService {
    * Makes a rate-limited API request
    * @param endpoint - API endpoint to call
    */
-  private async makeRequest<T>(endpoint: string): Promise<T> {
+  public async makeRequest<T>(endpoint: string): Promise<T> {
     await this.rateLimiter.tryAcquire();
     try {
       const response = await this.apiClient.get<T>(endpoint, {
