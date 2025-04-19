@@ -4,11 +4,24 @@ services:
   bot:
     build: .
     environment:
+      - NODE_ENV=production
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
       - PUBG_API_KEY=${PUBG_API_KEY}
-      - PUBG_API_URL=${PUBG_API_URL}
-      - DEFAULT_SHARD=${DEFAULT_SHARD}
+      - PUBG_API_URL=${PUBG_API_URL:-https://api.pubg.com/shards/}
+      - DEFAULT_SHARD=${DEFAULT_SHARD:-steam}
       - MONGODB_URI=${MONGODB_URI}
-    restart: unless-stopped 
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ps", "aux", "|", "grep", "node", "|", "grep", "-v", "grep", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    init: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
