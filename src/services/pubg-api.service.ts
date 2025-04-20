@@ -33,10 +33,14 @@ export class PubgApiService {
   /**
    * Makes a rate-limited API request
    * @param endpoint - API endpoint to call
+   * @param retryCount - Number of retries attempted (used internally)
    */
-  public async makeRequest<T>(endpoint: string): Promise<T> {
+  public async makeRequest<T>(endpoint: string, retryCount = 0): Promise<T> {
+    const MAX_RETRIES = 3;
+
     await this.rateLimiter.tryAcquire();
     try {
+      console.log(`Making API request to ${endpoint}`);
       const response = await this.apiClient.get<T>(endpoint, {
         timeout: 10000, // 10 second timeout
         timeoutErrorMessage: 'Request timed out while connecting to PUBG API'
@@ -44,18 +48,45 @@ export class PubgApiService {
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        // Handle rate limit exceeded
         if (error.response?.status === 429) {
-          // Handle rate limit exceeded
           const retryAfter = parseInt(error.response.headers['retry-after'] || '60', 10);
+          console.warn(`Rate limit exceeded. Retrying after ${retryAfter} seconds.`);
           await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-          return this.makeRequest<T>(endpoint);
+          return this.makeRequest<T>(endpoint, retryCount);
         }
+
+        // Handle server errors (5xx) with retry
+        if (error.response?.status && error.response.status >= 500 && retryCount < MAX_RETRIES) {
+          const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+          console.warn(`Server error (${error.response.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms.`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return this.makeRequest<T>(endpoint, retryCount + 1);
+        }
+
         // Add specific error message for timeouts
         if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out while connecting to PUBG API');
+          if (retryCount < MAX_RETRIES) {
+            const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+            console.warn(`Request timed out. Retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms.`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.makeRequest<T>(endpoint, retryCount + 1);
+          }
+          throw new Error('Request timed out while connecting to PUBG API after multiple retries');
         }
-        throw new Error(`PUBG API Error: ${error.response?.data?.errors?.[0]?.message || error.message}`);
+
+        // Handle other errors
+        const errorMessage = error.response?.data?.errors?.[0]?.message || error.message;
+        console.error(`PUBG API Error: ${errorMessage}`, {
+          status: error.response?.status,
+          endpoint,
+          errorCode: error.code
+        });
+        throw new Error(`PUBG API Error: ${errorMessage}`);
       }
+
+      // Handle non-Axios errors
+      console.error(`Unexpected error in PUBG API request:`, error);
       throw error;
     }
   }
@@ -79,7 +110,7 @@ export class PubgApiService {
     }
     const playerNamesParam = playerNames.join(',');
     const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
-    
+
     // Save player data using storage service
     for (const player of response.data) {
         await this.storageService.addPlayer(player);
