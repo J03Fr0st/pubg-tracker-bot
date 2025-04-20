@@ -2,75 +2,64 @@
 
 ## Overview
 
-This document summarizes the changes made to the Docker configuration for the PUBG Tracker Bot project. The goal was to improve the Docker setup to make it more efficient, secure, and maintainable.
+This document summarizes the improvements made to the Docker configuration for the PUBG Tracker Bot project. The goal is to ensure efficient, secure, and maintainable containerization.
 
-## Changes Made
+## Key Changes
 
 ### Dockerfile Improvements
 
-1. **Implemented Multi-Stage Builds**
-   - Created a builder stage for compiling TypeScript code
-   - Created a production stage that only includes necessary files
-   - Reduced final image size by excluding development dependencies and build artifacts
+1. **Multi-Stage Builds**
+   - Builder stage compiles TypeScript code
+   - Production stage includes only compiled code and production dependencies
+   - Final image is smaller and more secure
 
-2. **Enhanced Security**
-   - Added a non-root user (nodejs) to run the application
-   - Installed dumb-init to properly handle signals and prevent zombie processes
-   - Set NODE_ENV=production by default
+2. **Security Enhancements**
+   - Runs as a non-root user (`nodejs`)
+   - Uses `dumb-init` to handle signals and prevent zombie processes
+   - Sets `NODE_ENV=production` by default
 
 3. **Optimized Build Process**
-   - Only installing production dependencies in the final image
-   - Cleaning up apt cache to reduce image size
-   - Only copying the necessary files from the builder stage
+   - Installs only production dependencies in the final image
+   - Cleans up package manager cache to reduce image size
+   - Copies only necessary files from the builder stage
 
-4. **Added Monitoring**
-   - Implemented a health check to verify the Node.js process is running
-   - Added proper signal handling through dumb-init
+4. **Monitoring and Reliability**
+   - Health check verifies the Node.js process is running
+   - Uses `dumb-init` as the entrypoint for proper signal handling
 
 ### docker-compose.yml Improvements
 
-1. **Enhanced Environment Variable Handling**
-   - Added default values for PUBG_API_URL and DEFAULT_SHARD
-   - Added NODE_ENV=production for consistency with Dockerfile
+1. **Environment Variable Handling**
+   - Supports `.env` file for local development
+   - Allows direct environment variable configuration
+   - Provides default values for `PUBG_API_URL` and `DEFAULT_SHARD`
+   - Sets `NODE_ENV=production` for consistency
 
-2. **Added Reliability Features**
-   - Implemented the same health check as in the Dockerfile
-   - Added init: true to use an init process
-   - Configured log rotation to prevent disk space issues
+2. **Reliability and Logging**
+   - Health check configuration matches Dockerfile
+   - Uses `init: true` for signal handling
+   - Configures log rotation to prevent disk space issues
+   - `restart: unless-stopped` ensures the bot stays running
 
-3. **Improved Maintainability**
-   - Aligned configuration with the Dockerfile for consistency
+3. **Maintainability**
+   - Aligns configuration between Dockerfile and Compose for consistency
 
 ### Documentation
 
-1. **Created Comprehensive Docker Guide**
-   - Detailed instructions for setting up and running with Docker
-   - Explanation of Docker implementation details
-   - Troubleshooting section for common issues
-   - Security considerations and best practices
+- Comprehensive Docker Guide created (`DOCKER_GUIDE.md`)
+- Instructions for setup, environment variables, troubleshooting, and security
 
 ## Recommendations
 
-1. **Environment Variables**
-   - Use a `.env` file for local development
-   - For production, consider using Docker secrets or a secure environment variable management system
-   - Never commit sensitive information to version control
-
-2. **Deployment**
-   - Use `docker-compose up --build -d` for deployment
-   - Monitor container logs regularly
-   - Set up proper monitoring for the container's health status
-
-3. **Security**
-   - Regularly update the Docker image and dependencies
-   - Follow the principle of least privilege
-   - Consider implementing additional security measures for production environments
-
-4. **Future Improvements**
-   - Consider implementing a proper health check endpoint in the application
-   - Add volume mounts for persistent data if needed
-   - Explore container orchestration for larger deployments
+- Use a `.env` file for local development
+- For production, use Docker secrets or a secure environment variable management system
+- Never commit sensitive information to version control
+- Use `docker-compose up --build -d` for deployment
+- Monitor container logs and health status regularly
+- Regularly update the Docker image and dependencies
+- Follow the principle of least privilege
+- Consider persistent volumes and orchestration for production
 
 ## Conclusion
 
-The Docker configuration has been significantly improved to follow best practices for containerization. The changes enhance security, efficiency, and maintainability, making the application more robust when deployed in a containerized environment.
+The Docker configuration now follows best practices for security, efficiency, and maintainability. The application is robust and production-ready when deployed in a containerized environment.

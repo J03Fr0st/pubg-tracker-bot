@@ -195,3 +195,6 @@ For production deployments, consider:
 - Never commit your `.env` file or any files containing sensitive information to version control
 - Use Docker secrets or a secure environment variable management system for production deployments
 - Regularly update the Docker image and dependencies to patch security vulnerabilities
+- The application runs as a non-root user for improved security
+- Log rotation is configured to prevent disk space issues
+- Health checks are included to monitor the application's status
