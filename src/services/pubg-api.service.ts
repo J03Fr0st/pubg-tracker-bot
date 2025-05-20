@@ -131,8 +131,6 @@ export class PubgApiService {
     const telemetryUrl = asset[0].attributes.URL;    
 
     response.telemetryUrl = telemetryUrl;
-
-    await this.storageService.saveMatch(response);
     return response;
   }
 
