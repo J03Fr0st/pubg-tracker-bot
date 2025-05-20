@@ -1,10 +1,9 @@
-import { PlayersResponse } from '../types/pubg-player-api.types';
 import { PubgApiService } from './pubg-api.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';
 import { DiscordMatchGroupSummary, DiscordPlayerMatchStats } from '../types/discord-match-summary.types';
-import { MatchMonitorPlayer, MatchMonitorPlayerMatchInfo, MatchMonitorMatch, MatchMonitorMatchGroup } from '../types/match-monitor.types';
-
+import { MatchMonitorPlayer, MatchMonitorMatchGroup } from '../types/match-monitor.types';
+import { MatchesResponse, MatchData, Participant, Roster, Asset } from '../types/pubg-matches-api.types';
 import { appConfig } from '../config/config';
 
 export class MatchMonitorService {
@@ -167,59 +166,95 @@ export class MatchMonitorService {
     }
 
     private async createMatchSummary(match: MatchMonitorMatchGroup): Promise<DiscordMatchGroupSummary | null> {
-        console.log(`Fetching details for match ${match.matchId}`);
-        const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
+        try {
+            console.log(`Fetching details for match ${match.matchId}`);
+            const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
 
-        console.log('Saving match details to storage');
-        const savedMatch = await this.storage.saveMatch(matchDetails);        
-        if (!savedMatch) {
-            console.error(`Failed to save match ${match.matchId}`);
+            console.log('Processing match summary');
+            const playerStats: DiscordPlayerMatchStats[] = [];
+            let teamRank: number | undefined;
+
+            // Extract participants and rosters from match details
+            const participants = matchDetails.included.filter(
+                (item): item is Participant => 
+                    item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
+            );
+
+            const rosters = matchDetails.included.filter(
+                (item): item is Roster => 
+                    item.type === 'roster' && 
+                    'relationships' in item && 
+                    !!item.relationships?.participants?.data
+            );
+
+            for (const player of match.players) {
+                const participant = participants.find(p => 
+                    p.attributes.stats?.name === player.name
+                );
+                
+                if (!participant) {
+                    console.log(`No stats found for player ${player.name}`);
+                    continue;
+                }
+
+
+                if (teamRank === undefined) {
+                    teamRank = participant.attributes.stats.winPlace;
+                } else if (teamRank !== participant.attributes.stats.winPlace) {
+                    teamRank = undefined;
+                }
+
+                // Find all players in the same roster as the current player
+                const roster = rosters.find(r => 
+                    r.relationships?.participants?.data?.some((p: { id: string }) => 
+                        p.id === participant.id
+                    )
+                );
+                
+                if (roster) {
+                    const rosterParticipantIds = roster.relationships?.participants?.data?.map((p: { id: string }) => p.id) || [];
+                    const rosterParticipants = participants.filter(p => 
+                        rosterParticipantIds.includes(p.id) && p.attributes.stats
+                    );
+
+                    for (const rosterParticipant of rosterParticipants) {
+                        if (!playerStats.some(p => p.name === rosterParticipant.attributes.stats.name)) {
+                            playerStats.push({
+                                name: rosterParticipant.attributes.stats.name,
+                                stats: rosterParticipant.attributes.stats
+                            });
+                        }
+                    }
+                } else {
+                    // If no roster found, just add the current player
+                    playerStats.push({
+                        name: participant.attributes.stats.name,
+                        stats: participant.attributes.stats
+                    });
+                }
+            }
+
+            // Get telemetry URL from assets
+            const telemetryAsset = matchDetails.included.find(
+                (item): item is Asset => 
+                    item.type === 'asset' && 'attributes' in item && 'URL' in item.attributes
+            );
+
+            // Get the telemetry URL from the asset
+            const telemetryUrl = telemetryAsset?.attributes.URL || '';
+
+            return {
+                matchId: match.matchId,
+                mapName: matchDetails.data.attributes.mapName,
+                gameMode: matchDetails.data.attributes.gameMode,
+                playedAt: matchDetails.data.attributes.createdAt,
+                players: playerStats,
+                teamRank,
+                telemetryUrl
+            };
+        } catch (error) {
+            console.error('Error creating match summary:', error);
             return null;
         }
-
-        console.log('Creating match summary');
-        const playerStats: DiscordPlayerMatchStats[] = [];
-        let teamRank: number | undefined;
-
-        const globalUniquePlayers = new Set<string>(); // Global set to track all processed players
-
-        for (const player of match.players) {
-            const currentPlayerStats = savedMatch.participants.find(p => p.name === player.name);
-            if (!currentPlayerStats) {
-                console.log(`No stats found for player ${player.name}`);
-                continue;
-            }
-            if (teamRank === undefined) {
-                teamRank = currentPlayerStats.stats.winPlace;
-            } else if (teamRank !== currentPlayerStats.stats.winPlace) {
-                teamRank = undefined;
-            }
-
-            // Find all players in the same roster as the current player
-            const roster = savedMatch.rosters.find(r => r.participantNames.some(p => p === player.name));
-            if (roster) {
-                const filteredParticipants = savedMatch.participants.filter(participant => roster.participantNames.includes(participant.name));
-
-                filteredParticipants.forEach(participant => {
-                    if (!globalUniquePlayers.has(participant.name)) {
-                        playerStats.push({
-                            name: participant.name,
-                            stats: participant.stats
-                        });
-                        globalUniquePlayers.add(participant.name); // Add to global set
-                    }
-                });
-            }
-        }
-
-        return {
-            matchId: match.matchId,
-            mapName: savedMatch.mapName,
-            gameMode: savedMatch.gameMode,
-            playedAt: savedMatch.createdAt.toISOString(),
-            players: playerStats,
-            teamRank,
-            telemetryUrl: savedMatch.telemetryUrl
-        };
     }
 }

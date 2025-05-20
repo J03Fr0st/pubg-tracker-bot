@@ -1,13 +1,9 @@
-import { IPlayer, Player } from '../data/models/player.model';
-import { IMatch, Match } from '../data/models/match.model';
-import { MatchRepository } from '../data/repositories/match.repository';
+import { IPlayer } from '../data/models/player.model';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import { PlayerData } from '../types/pubg-player-api.types';
-import { MatchesResponse } from '../types/pubg-matches-api.types';
 
 export class PubgStorageService {
-  private matchRepository = new MatchRepository();
   private playerRepository = new PlayerRepository();
   private processedMatchRepository = new ProcessedMatchRepository();
 
@@ -30,18 +26,6 @@ export class PubgStorageService {
 
   //#endregion
 
-
-  //#region Match
-  public async saveMatch(matchesResponse: MatchesResponse): Promise<IMatch | null> {
-    return this.matchRepository.saveMatch(matchesResponse);
-  }  
-
-  public async getPlayerMatches(pubgId: string): Promise<IMatch[]> {
-    return this.matchRepository.getPlayerMatches(pubgId);
-  }
-
-  //#endregion
-
   //#region Processed Match
   public async getProcessedMatches(): Promise<string[]> {
     return this.processedMatchRepository.getProcessedMatches();
@@ -51,4 +35,4 @@ export class PubgStorageService {
     await this.processedMatchRepository.addProcessedMatch(matchId);
   }
   //#endregion
-} 
+}
