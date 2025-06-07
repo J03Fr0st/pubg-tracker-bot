@@ -13,10 +13,10 @@
     "test:integration": "jest --config jest.integration.config.js"
   },
   "dependencies": {
-    "axios": "^1.6.7",
+    "axios": "^1.8.2",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5",
-    "mongoose": "^8.8.0"
+    "mongoose": "^8.15.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
@@ -30,5 +30,8 @@
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "undici": "6.21.1"
   }
 }
