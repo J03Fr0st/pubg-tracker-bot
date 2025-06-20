@@ -2,13 +2,18 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches:
-      - main  # or your default branch
+    tags:
+      - 'v*'  # Trigger on version tags
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
 
 jobs:
-  build-and-push:
+  docker:
     runs-on: ubuntu-latest
-
+    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success')
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,9 +27,25 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/pubg-tracker-bot
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pubg-tracker-bot:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -185,6 +185,38 @@ npm run test:integration
 npm run test:watch
 ```
 
+## Versioning and Releases
+
+This project uses automated semantic versioning and Docker image publishing. For detailed information about the release process, see [VERSIONING.md](VERSIONING.md).
+
+### Quick Release
+
+```bash
+# Patch release (bug fixes)
+npm run release:patch
+
+# Minor release (new features)
+npm run release:minor
+
+# Major release (breaking changes)
+npm run release:major
+```
+
+### Docker Images
+
+Production images are available with semantic versioning:
+
+```bash
+# Latest stable release
+docker pull your-username/pubg-tracker-bot:latest
+
+# Specific version
+docker pull your-username/pubg-tracker-bot:v1.2.3
+
+# Development builds
+docker pull your-username/pubg-tracker-bot:dev
+```
+
 ## Contributing
 
 1. Fork the repository
