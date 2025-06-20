@@ -34,5 +34,13 @@ export class PubgStorageService {
   public async addProcessedMatch(matchId: string): Promise<void> {
     await this.processedMatchRepository.addProcessedMatch(matchId);
   }
+
+  public async removeLastProcessedMatch(): Promise<string | null> {
+    return this.processedMatchRepository.removeLastProcessedMatch();
+  }
+
+  public async getLastProcessedMatch(): Promise<{ matchId: string; processedAt: Date } | null> {
+    return this.processedMatchRepository.getLastProcessedMatch();
+  }
   //#endregion
 }

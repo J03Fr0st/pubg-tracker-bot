@@ -27,7 +27,10 @@ export class DiscordBotService {
             ),
         new SlashCommandBuilder()
             .setName('list')
-            .setDescription('List all monitored PUBG players')
+            .setDescription('List all monitored PUBG players'),
+        new SlashCommandBuilder()
+            .setName('removelastmatch')
+            .setDescription('Remove the last processed match from tracking')
     ];
 
     constructor(
@@ -92,6 +95,9 @@ export class DiscordBotService {
                         break;
                     case 'list':
                         await this.handleListPlayers(interaction);
+                        break;
+                    case 'removelastmatch':
+                        await this.handleRemoveLastMatch(interaction);
                         break;
                 }
             } catch (error) {
@@ -196,6 +202,67 @@ export class DiscordBotService {
         }
 
         await interaction.editReply({ embeds: [embed] });
+    }
+
+    private async handleRemoveLastMatch(interaction: ChatInputCommandInteraction): Promise<void> {
+        await interaction.deferReply();
+
+        try {
+            // Get details about the last match before removing it
+            const lastMatch = await this.pubgStorageService.getLastProcessedMatch();
+            
+            if (!lastMatch) {
+                const noMatchEmbed = new EmbedBuilder()
+                    .setColor(0xFFA500)
+                    .setTitle('⚠️ No Matches Found')
+                    .setDescription('There are no processed matches to remove.')
+                    .setTimestamp()
+                    .setFooter({ text: 'PUBG Tracker Bot' });
+
+                await interaction.editReply({ embeds: [noMatchEmbed] });
+                return;
+            }
+
+            // Remove the last processed match
+            const removedMatchId = await this.pubgStorageService.removeLastProcessedMatch();
+            
+            if (removedMatchId) {
+                const successEmbed = new EmbedBuilder()
+                    .setColor(0x00FF00)
+                    .setTitle('✅ Last Match Removed')
+                    .setDescription('Successfully removed the last processed match from tracking.')
+                    .addFields(
+                        { name: 'Match ID', value: removedMatchId, inline: true },
+                        { name: 'Processed At', value: lastMatch.processedAt.toLocaleString('en-ZA', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZone: 'Africa/Johannesburg'
+                        }), inline: true }
+                    )
+                    .setTimestamp()
+                    .setFooter({ text: 'PUBG Tracker Bot' });
+
+                await interaction.editReply({ embeds: [successEmbed] });
+            } else {
+                throw new Error('Failed to remove the match from database');
+            }
+        } catch (error) {
+            const err = error as Error;
+            const errorEmbed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Error Removing Match')
+                .setDescription('Failed to remove the last processed match.')
+                .addFields(
+                    { name: 'Error Details', value: err.message }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'PUBG Tracker Bot' });
+
+            await interaction.editReply({ embeds: [errorEmbed] });
+        }
     }
 
     private async createMatchSummaryEmbeds(
