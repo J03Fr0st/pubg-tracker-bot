@@ -179,9 +179,9 @@ export class PubgApiService {
         });
 
       return { kills, groggies };
-    } catch (error) {
-      console.error('Error fetching telemetry data:', error);
-      throw error;
+    } catch (telemetryError) {
+      error('Error fetching telemetry data:', telemetryError as Error);
+      throw telemetryError;
     }
   }
 } 

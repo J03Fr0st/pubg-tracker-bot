@@ -5,6 +5,7 @@ import { DiscordMatchGroupSummary, DiscordPlayerMatchStats } from '../types/disc
 import { MatchMonitorPlayer, MatchMonitorMatchGroup } from '../types/match-monitor.types';
 import { MatchesResponse, MatchData, Participant, Roster, Asset } from '../types/pubg-matches-api.types';
 import { appConfig } from '../config/config';
+import { monitor, warn, error, info, success } from '../utils/logger';
 
 export class MatchMonitorService {
     private readonly checkInterval: number;
@@ -22,7 +23,7 @@ export class MatchMonitorService {
         this.channelId = appConfig.discord.channelId;
         this.maxMatchesToProcess = appConfig.monitoring.maxMatchesToProcess;
 
-        console.log(`Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`);
+        monitor(`Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`);
     }
 
     /**
@@ -31,16 +32,16 @@ export class MatchMonitorService {
      */
     public async startMonitoring(): Promise<void> {
         if (this.isRunning) {
-            console.warn('Match monitoring is already running');
+            warn('Match monitoring is already running');
             return;
         }
 
         if (this.channelId === '') {
-            console.error('DISCORD_CHANNEL_ID is not set');
+            error('DISCORD_CHANNEL_ID is not set');
             return;
         }
 
-        console.log('Match monitoring started');
+        monitor('Match monitoring started');
         this.isRunning = true;
         this.shouldStop = false;
 
@@ -50,8 +51,8 @@ export class MatchMonitorService {
 
                 try {
                     await this.checkNewMatches();
-                } catch (error) {
-                    console.error('Error during match check:', error);
+                } catch (err) {
+                    error('Error during match check:', err as Error);
                     // Add a short delay after errors to prevent rapid retries
                     await this.delay(5000);
                 }
@@ -66,7 +67,7 @@ export class MatchMonitorService {
             }
         } finally {
             this.isRunning = false;
-            console.log('Match monitoring stopped');
+            monitor('Match monitoring stopped');
         }
     }
 
@@ -75,11 +76,11 @@ export class MatchMonitorService {
      */
     public stopMonitoring(): void {
         if (!this.isRunning) {
-            console.warn('Match monitoring is not running');
+            warn('Match monitoring is not running');
             return;
         }
 
-        console.log('Stopping match monitoring...');
+        monitor('Stopping match monitoring...');
         this.shouldStop = true;
     }
 
@@ -93,17 +94,17 @@ export class MatchMonitorService {
     }
 
     private async checkNewMatches(): Promise<void> {
-        console.log('Starting new match check cycle...');
+        monitor('Starting new match check cycle...');
         const players = await this.storage.getAllPlayers();
-        console.log(`Found ${players.length} players to monitor`);
+        monitor(`Found ${players.length} players to monitor`);
 
         if (players.length === 0) {
-            console.log('No players to monitor, skipping check');
+            info('No players to monitor, skipping check');
             return;
         }
 
         const playerNames = players.map(player => player.name);
-        console.log('Fetching stats for players:', playerNames.join(', '));
+        monitor('Fetching stats for players:', playerNames.join(', '));
         const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
 
         // Create a Set to store unique match IDs with their timestamps
@@ -131,7 +132,7 @@ export class MatchMonitorService {
         }
 
         const processedMatches = await this.storage.getProcessedMatches();
-        console.log(`Retrieved ${processedMatches.length} previously processed matches`);
+        info(`Retrieved ${processedMatches.length} previously processed matches`);
 
         // Convert to array, filter processed matches, and sort chronologically
         const newMatches: MatchMonitorMatchGroup[] = Array.from(uniqueMatches.entries())
@@ -142,35 +143,35 @@ export class MatchMonitorService {
                 players: matchData.players
             }));
 
-        console.log(`Found ${newMatches.length} new matches to process`);
+        monitor(`Found ${newMatches.length} new matches to process`);
 
         for (const match of newMatches) {
-            console.log(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
+            monitor(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
 
             // Log the match timestamp
             const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
-            console.log(`Match ${match.matchId} played at: ${matchDetails.data.attributes.createdAt}`);
+            info(`Match ${match.matchId} played at: ${matchDetails.data.attributes.createdAt}`);
 
             const summary = await this.createMatchSummary(match);
             if (summary) {
-                console.log(`Sending match summary to Discord for match ${match.matchId}`);
+                monitor(`Sending match summary to Discord for match ${match.matchId}`);
                 await this.discordBot.sendMatchSummary(this.channelId, summary);
                 await this.storage.addProcessedMatch(match.matchId);
-                console.log(`Match ${match.matchId} processed successfully`);
+                success(`Match ${match.matchId} processed successfully`);
             } else {
-                console.log(`Failed to create summary for match ${match.matchId}`);
+                warn(`Failed to create summary for match ${match.matchId}`);
             }
         }
 
-        console.log('Match check cycle completed');
+        monitor('Match check cycle completed');
     }
 
     private async createMatchSummary(match: MatchMonitorMatchGroup): Promise<DiscordMatchGroupSummary | null> {
         try {
-            console.log(`Fetching details for match ${match.matchId}`);
+            info(`Fetching details for match ${match.matchId}`);
             const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
 
-            console.log('Processing match summary');
+            info('Processing match summary');
             const playerStats: DiscordPlayerMatchStats[] = [];
             let teamRank: number | undefined;
 
@@ -193,7 +194,7 @@ export class MatchMonitorService {
                 );
                 
                 if (!participant) {
-                    console.log(`No stats found for player ${player.name}`);
+                    warn(`No stats found for player ${player.name}`);
                     continue;
                 }
 
@@ -252,8 +253,8 @@ export class MatchMonitorService {
                 teamRank,
                 telemetryUrl
             };
-        } catch (error) {
-            console.error('Error creating match summary:', error);
+        } catch (err) {
+            error('Error creating match summary:', err as Error);
             return null;
         }
     }

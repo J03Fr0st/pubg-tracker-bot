@@ -4,6 +4,7 @@ import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/disc
 import { PubgStorageService } from './pubg-storage.service';
 import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
+import { discord, success, error } from '../utils/logger';
 
 export class DiscordBotService {
     private readonly client: Client;
@@ -48,19 +49,19 @@ export class DiscordBotService {
     }
 
     public async initialize(): Promise<void> {
-        console.log('Initializing Discord bot...');
+        discord('Initializing Discord bot...');
         
         // Register slash commands
         const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
         try {
-            console.log('Started refreshing application (/) commands.');
+            discord('Started refreshing application (/) commands.');
             await rest.put(
                 Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
                 { body: this.commands }
             );
-            console.log('Successfully reloaded application (/) commands.');
-        } catch (error) {
-            console.error('Error registering slash commands:', error);
+            success('Successfully reloaded application (/) commands.');
+        } catch (err) {
+            error('Error registering slash commands:', err as Error);
         }
 
         await this.client.login(process.env.DISCORD_TOKEN);
@@ -73,7 +74,7 @@ export class DiscordBotService {
         }
         const embeds = await this.createMatchSummaryEmbeds(summary);
         if (!embeds || !embeds.length) {
-            console.error('No embeds were created for match summary');
+            error('No embeds were created for match summary');
             return;
         }
         for (const embed of embeds) {
@@ -100,8 +101,8 @@ export class DiscordBotService {
                         await this.handleRemoveLastMatch(interaction);
                         break;
                 }
-            } catch (error) {
-                console.error('Error handling command:', error);
+            } catch (err) {
+                error('Error handling command:', err as Error);
                 const errorEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setTitle('❌ Error')
