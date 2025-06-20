@@ -95,8 +95,6 @@ export class MatchMonitorService {
 
     private async checkNewMatches(): Promise<void> {
         const cycleStartTime = Date.now();
-        debug('Starting new match check cycle...');
-        
         const players = await this.storage.getAllPlayers();
 
         if (players.length === 0) {
@@ -105,8 +103,15 @@ export class MatchMonitorService {
         }
 
         const playerNames = players.map(player => player.name);
-        debug(`Fetching stats for ${players.length} players: ${playerNames.join(', ')}`);
+        
         const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
+        
+        // Log players with their match counts
+        const playerMatchInfo = playersResponse.data.map(player => {
+            const matchCount = player.relationships.matches.data.length;
+            return `${player.attributes.name}(${matchCount})`;
+        }).join(', ');
+        info(`Checking for new matches for ${players.length} players: ${playerMatchInfo}`);
 
         // Create a Set to store unique match IDs with their timestamps
         const uniqueMatches = new Map<string, { createdAt: Date; players: MatchMonitorPlayer[] }>();

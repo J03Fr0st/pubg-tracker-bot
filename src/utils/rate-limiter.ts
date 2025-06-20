@@ -8,6 +8,7 @@ export class RateLimiter {
   private readonly maxTokens: number;
   private readonly refillRate: number;
   private lastRefillTimestamp: number;
+  private isCurrentlyLimited: boolean = false;
 
   /**
    * Creates a new rate limiter instance
@@ -27,12 +28,24 @@ export class RateLimiter {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens -= 1;
+      
+      // Log recovery from rate limiting
+      if (this.isCurrentlyLimited) {
+        this.isCurrentlyLimited = false;
+        warn(`Rate limit recovered (${this.tokens.toFixed(1)}/${this.maxTokens} tokens available)`);
+      }
+      
       return true;
+    }
+    
+    // Log when we first hit rate limit (state change)
+    if (!this.isCurrentlyLimited) {
+      this.isCurrentlyLimited = true;
+      warn(`Rate limit reached - requests will be throttled (${this.tokens.toFixed(1)}/${this.maxTokens} tokens)`);
     }
     
     // Calculate wait time until next token is available
     const timeUntilNextToken = Math.ceil(1000 / this.refillRate);
-    warn(`Rate limit reached, waiting ${timeUntilNextToken}ms (${this.tokens.toFixed(1)}/${this.maxTokens} tokens)`);
     await new Promise(resolve => setTimeout(resolve, timeUntilNextToken));
     return this.tryAcquire();
   }
