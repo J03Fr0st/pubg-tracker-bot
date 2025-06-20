@@ -161,8 +161,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
+      (always() && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
+      (always() && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     needs: [auto-tag, manual-tag]
     steps:
       - name: Checkout code
@@ -188,8 +188,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
+      (always() && needs.test.result == 'success' && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
+      (always() && needs.test.result == 'success' && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     permissions:
       contents: write
       actions: read
@@ -271,8 +271,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
+      (always() && needs.release.result == 'success' && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
+      (always() && needs.release.result == 'success' && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
