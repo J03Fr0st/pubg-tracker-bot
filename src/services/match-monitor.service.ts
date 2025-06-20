@@ -172,6 +172,11 @@ export class MatchMonitorService {
                     warn(`Failed to create summary for match ${match.matchId}`);
                     failedCount++;
                 }
+                
+                // Add small delay between matches to spread out API calls
+                if (newMatches.indexOf(match) < newMatches.length - 1) {
+                    await this.delay(2000); // 2 second delay between match processing
+                }
             } catch (matchError) {
                 error(`Error processing match ${match.matchId}:`, matchError as Error);
                 failedCount++;
