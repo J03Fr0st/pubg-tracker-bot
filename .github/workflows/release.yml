@@ -159,10 +159,11 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # Run if: direct tag push OR auto-tag succeeded OR manual-tag succeeded
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (always() && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (always() && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
+      (needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
+      (needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     needs: [auto-tag, manual-tag]
     steps:
       - name: Checkout code
@@ -184,12 +185,8 @@ jobs:
         run: npm run test:integration
 
   release:
-    needs: [test, auto-tag, manual-tag]
+    needs: [test]
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (always() && needs.test.result == 'success' && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (always() && needs.test.result == 'success' && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     permissions:
       contents: write
       actions: read
@@ -267,12 +264,8 @@ jobs:
           prerelease: false
 
   docker:
-    needs: [release, auto-tag, manual-tag]
+    needs: [release]
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (always() && needs.release.result == 'success' && needs.auto-tag.result == 'success' && needs.auto-tag.outputs.should_release == 'true') ||
-      (always() && needs.release.result == 'success' && needs.manual-tag.result == 'success' && needs.manual-tag.outputs.should_release == 'true')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
