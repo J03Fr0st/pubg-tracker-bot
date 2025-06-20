@@ -41,7 +41,10 @@ export class PubgApiService {
 
     await this.rateLimiter.tryAcquire();
     try {
-      api(`Making API request to ${endpoint}`);
+      // Only log API requests in debug mode to reduce noise
+      if (process.env.NODE_ENV === 'development') {
+        api(`Making API request to ${endpoint}`);
+      }
       const response = await this.apiClient.get<T>(endpoint, {
         timeout: 10000, // 10 second timeout
         timeoutErrorMessage: 'Request timed out while connecting to PUBG API'
@@ -109,6 +112,8 @@ export class PubgApiService {
     if (playerNames.length > 10) {
       throw new Error('Cannot request stats for more than 10 players at a time.');
     }
+    
+    const startTime = Date.now();
     const playerNamesParam = playerNames.join(',');
     const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
 
@@ -116,6 +121,13 @@ export class PubgApiService {
     for (const player of response.data) {
         await this.storageService.addPlayer(player);
     }
+    
+    // Log performance in debug mode
+    if (process.env.NODE_ENV === 'development') {
+      const duration = Date.now() - startTime;
+      api(`Retrieved ${response.data.length} players in ${duration}ms`);
+    }
+    
     return response;
   }
 

@@ -5,7 +5,7 @@ import { DiscordMatchGroupSummary, DiscordPlayerMatchStats } from '../types/disc
 import { MatchMonitorPlayer, MatchMonitorMatchGroup } from '../types/match-monitor.types';
 import { MatchesResponse, MatchData, Participant, Roster, Asset } from '../types/pubg-matches-api.types';
 import { appConfig } from '../config/config';
-import { monitor, warn, error, info, success } from '../utils/logger';
+import { monitor, warn, error, info, success, debug } from '../utils/logger';
 
 export class MatchMonitorService {
     private readonly checkInterval: number;
@@ -94,17 +94,18 @@ export class MatchMonitorService {
     }
 
     private async checkNewMatches(): Promise<void> {
-        monitor('Starting new match check cycle...');
+        const cycleStartTime = Date.now();
+        debug('Starting new match check cycle...');
+        
         const players = await this.storage.getAllPlayers();
-        monitor(`Found ${players.length} players to monitor`);
 
         if (players.length === 0) {
-            info('No players to monitor, skipping check');
+            debug('No players to monitor, skipping check');
             return;
         }
 
         const playerNames = players.map(player => player.name);
-        monitor('Fetching stats for players:', playerNames.join(', '));
+        debug(`Fetching stats for ${players.length} players: ${playerNames.join(', ')}`);
         const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
 
         // Create a Set to store unique match IDs with their timestamps
@@ -132,7 +133,7 @@ export class MatchMonitorService {
         }
 
         const processedMatches = await this.storage.getProcessedMatches();
-        info(`Retrieved ${processedMatches.length} previously processed matches`);
+        debug(`Retrieved ${processedMatches.length} previously processed matches`);
 
         // Convert to array, filter processed matches, and sort chronologically
         const newMatches: MatchMonitorMatchGroup[] = Array.from(uniqueMatches.entries())
@@ -143,35 +144,48 @@ export class MatchMonitorService {
                 players: matchData.players
             }));
 
-        monitor(`Found ${newMatches.length} new matches to process`);
+        if (newMatches.length > 0) {
+            monitor(`Found ${newMatches.length} new matches to process`);
+        } else {
+            debug('No new matches found');
+        }
+
+        let processedCount = 0;
+        let failedCount = 0;
 
         for (const match of newMatches) {
-            monitor(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
+            try {
+                debug(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
 
-            // Log the match timestamp
-            const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
-            info(`Match ${match.matchId} played at: ${matchDetails.data.attributes.createdAt}`);
-
-            const summary = await this.createMatchSummary(match);
-            if (summary) {
-                monitor(`Sending match summary to Discord for match ${match.matchId}`);
-                await this.discordBot.sendMatchSummary(this.channelId, summary);
-                await this.storage.addProcessedMatch(match.matchId);
-                success(`Match ${match.matchId} processed successfully`);
-            } else {
-                warn(`Failed to create summary for match ${match.matchId}`);
+                const summary = await this.createMatchSummary(match);
+                if (summary) {
+                    await this.discordBot.sendMatchSummary(this.channelId, summary);
+                    await this.storage.addProcessedMatch(match.matchId);
+                    processedCount++;
+                    debug(`Match ${match.matchId} processed successfully`);
+                } else {
+                    warn(`Failed to create summary for match ${match.matchId}`);
+                    failedCount++;
+                }
+            } catch (matchError) {
+                error(`Error processing match ${match.matchId}:`, matchError as Error);
+                failedCount++;
             }
         }
 
-        monitor('Match check cycle completed');
+        // Summary log with performance metrics
+        const cycleTime = Date.now() - cycleStartTime;
+        if (processedCount > 0 || failedCount > 0) {
+            success(`Match cycle completed: ${processedCount} processed, ${failedCount} failed (${cycleTime}ms)`);
+        } else {
+            debug(`Match cycle completed: no new matches (${cycleTime}ms)`);
+        }
     }
 
     private async createMatchSummary(match: MatchMonitorMatchGroup): Promise<DiscordMatchGroupSummary | null> {
         try {
-            info(`Fetching details for match ${match.matchId}`);
+            debug(`Fetching details for match ${match.matchId}`);
             const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
-
-            info('Processing match summary');
             const playerStats: DiscordPlayerMatchStats[] = [];
             let teamRank: number | undefined;
 

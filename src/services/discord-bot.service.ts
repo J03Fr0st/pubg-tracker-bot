@@ -4,7 +4,7 @@ import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/disc
 import { PubgStorageService } from './pubg-storage.service';
 import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
-import { discord, success, error } from '../utils/logger';
+import { discord, success, error, debug } from '../utils/logger';
 
 export class DiscordBotService {
     private readonly client: Client;
@@ -49,12 +49,10 @@ export class DiscordBotService {
     }
 
     public async initialize(): Promise<void> {
-        discord('Initializing Discord bot...');
-        
         // Register slash commands
         const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
         try {
-            discord('Started refreshing application (/) commands.');
+            debug('Started refreshing application (/) commands.');
             await rest.put(
                 Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
                 { body: this.commands }

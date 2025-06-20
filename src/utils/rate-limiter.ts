@@ -1,3 +1,5 @@
+import { warn, debug } from './logger';
+
 /**
  * Implements a token bucket algorithm for rate limiting
  */
@@ -27,8 +29,10 @@ export class RateLimiter {
       this.tokens -= 1;
       return true;
     }
+    
     // Calculate wait time until next token is available
     const timeUntilNextToken = Math.ceil(1000 / this.refillRate);
+    warn(`Rate limit reached, waiting ${timeUntilNextToken}ms (${this.tokens.toFixed(1)}/${this.maxTokens} tokens)`);
     await new Promise(resolve => setTimeout(resolve, timeUntilNextToken));
     return this.tryAcquire();
   }
