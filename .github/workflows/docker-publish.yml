@@ -1,18 +1,14 @@
-name: Build and Push Docker Image
+name: Manual Docker Build
 
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags
-  workflow_run:
-    workflows: ["Release"]
-    types:
-      - completed
+      - 'v*'  # Trigger on version tags (for manual tag pushes)
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   docker:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success')
     
     steps:
       - name: Checkout code
