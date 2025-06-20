@@ -170,7 +170,7 @@ pubg-tracker-bot/
 - `typescript` - Programming language
 - `jest` - Testing framework
 - `eslint` - Code linting
-- `nodemon` - Development auto-reload
+- `nodemon` - Development auto-reload  
 
 ## Testing
 
