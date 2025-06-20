@@ -1,0 +1,27 @@
+name: Debug Triggers
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Debug Info
+        run: |
+          echo "=== DEBUG INFORMATION ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Commit message: $(git log --format=%B -n 1)"
+          echo "Changed files:"
+          git diff --name-only HEAD~1 HEAD || echo "No previous commit to compare"
+          echo "=========================" 
