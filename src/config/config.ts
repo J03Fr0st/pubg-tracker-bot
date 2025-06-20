@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import { warn, success } from '../utils/logger';
 
 // Load environment variables from .env file
 config();
@@ -62,7 +63,7 @@ function getNumericEnv(name: string, defaultValue: number): number {
   
   const numericValue = parseInt(value, 10);
   if (isNaN(numericValue)) {
-    console.warn(`Environment variable ${name} is not a valid number, using default: ${defaultValue}`);
+    warn(`Environment variable ${name} is not a valid number, using default: ${defaultValue}`);
     return defaultValue;
   }
   
@@ -126,12 +127,12 @@ export function validateConfig(): void {
   
   // Validate monitoring configuration
   if (appConfig.monitoring.checkIntervalMs < 5000) {
-    console.warn('Check interval is very low, this may cause rate limiting issues');
+    warn('Check interval is very low, this may cause rate limiting issues');
   }
   
   if (appConfig.monitoring.maxMatchesToProcess <= 0) {
     throw new Error('Max matches to process must be greater than 0');
   }
   
-  console.log('Configuration validated successfully');
+  success('Configuration validated successfully');
 }

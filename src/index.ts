@@ -5,6 +5,7 @@ import { DiscordBotService } from './services/discord-bot.service';
 import { MatchMonitorService } from './services/match-monitor.service';
 import { appConfig, validateConfig } from './config/config';
 import { RateLimiter } from './utils/rate-limiter';
+import { startup, database, discord, monitor, error, shutdown } from './utils/logger';
 
 /**
  * Main application entry point
@@ -13,15 +14,15 @@ async function main(): Promise<void> {
     try {
         // Validate configuration
         validateConfig();
-        console.log('Starting PUBG Tracker Bot...');
+        startup('Starting PUBG Tracker Bot...');
 
         // Connect to MongoDB
-        console.log(`Connecting to MongoDB...`);
+        database('Connecting to MongoDB...');
         await connect(appConfig.database.uri);
-        console.log('Connected to MongoDB successfully');
+        database('Connected to MongoDB successfully');
 
         // Initialize services
-        console.log('Initializing services...');
+        startup('Initializing services...');
         const rateLimiter = new RateLimiter(appConfig.pubg.maxRequestsPerMinute);
         const pubgApi = new PubgApiService(
             appConfig.pubg.apiKey,
@@ -34,11 +35,11 @@ async function main(): Promise<void> {
         const discordBot = new DiscordBotService(pubgApi);
 
         // Initialize Discord bot
-        console.log('Initializing Discord bot...');
+        discord('Initializing Discord bot...');
         await discordBot.initialize();
 
         // Start match monitoring
-        console.log('Starting match monitoring...');
+        monitor('Starting match monitoring...');
         const matchMonitor = new MatchMonitorService(pubgApi, pubgStorage, discordBot);
 
         // Handle graceful shutdown
@@ -46,8 +47,8 @@ async function main(): Promise<void> {
 
         // Start monitoring
         await matchMonitor.startMonitoring();
-    } catch (error) {
-        console.error('Fatal error during startup:', error);
+    } catch (err) {
+        error('Fatal error during startup:', err as Error);
         process.exit(1);
     }
 }
@@ -62,13 +63,13 @@ function setupGracefulShutdown(matchMonitor: MatchMonitorService): void {
     process.on('SIGTERM', () => handleShutdown(matchMonitor));
 
     // Handle uncaught exceptions and unhandled rejections
-    process.on('uncaughtException', (error) => {
-        console.error('Uncaught exception:', error);
+    process.on('uncaughtException', (err) => {
+        error('Uncaught exception:', err);
         handleShutdown(matchMonitor);
     });
 
     process.on('unhandledRejection', (reason) => {
-        console.error('Unhandled rejection:', reason);
+        error('Unhandled rejection:', reason as Error);
         handleShutdown(matchMonitor);
     });
 }
@@ -78,7 +79,7 @@ function setupGracefulShutdown(matchMonitor: MatchMonitorService): void {
  * @param matchMonitor The match monitor service to stop
  */
 async function handleShutdown(matchMonitor: MatchMonitorService): Promise<void> {
-    console.log('Shutting down gracefully...');
+    shutdown('Shutting down gracefully...');
 
     try {
         // Stop match monitoring
@@ -87,16 +88,16 @@ async function handleShutdown(matchMonitor: MatchMonitorService): Promise<void> 
         // Allow some time for cleanup
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        console.log('Shutdown complete');
+        shutdown('Shutdown complete');
         process.exit(0);
-    } catch (error) {
-        console.error('Error during shutdown:', error);
+    } catch (err) {
+        error('Error during shutdown:', err as Error);
         process.exit(1);
     }
 }
 
 // Start the application
-main().catch((error) => {
-    console.error('Unhandled error in main:', error);
+main().catch((err) => {
+    error('Unhandled error in main:', err as Error);
     process.exit(1);
 });
