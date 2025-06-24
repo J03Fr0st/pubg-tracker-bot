@@ -12,7 +12,7 @@ I've created a comprehensive PUBG telemetry analyzer that analyzes match data an
 2. **EngagementAnalyzerService** - Specialized combat analysis
 3. **PositioningAnalyzerService** - Zone and positioning analysis
 4. **CoachingTipsService** - Personalized improvement recommendations
-5. **AnalyzeMatchCommand** - Discord command interface
+5. **DiscordBotService** - Discord integration with automatic analysis
 
 ### Data Flow
 ```
@@ -70,11 +70,11 @@ src/
 ├── services/
 │   ├── telemetry-analyzer.service.ts       # Main orchestrator
 │   ├── coaching-tips.service.ts             # Tip generation
+│   ├── discord-bot.service.ts               # Discord integration with analysis
+│   ├── match-monitor.service.ts             # Match monitoring with analysis
 │   └── analyzers/
 │       ├── engagement-analyzer.service.ts   # Combat analysis
 │       └── positioning-analyzer.service.ts  # Position analysis
-├── commands/
-│   └── analyze-match.command.ts             # Discord interface
 └── types/
     └── pubg-telemetry.types.ts             # Extended type definitions
 ```
@@ -107,12 +107,14 @@ src/
 - **Color Coding**: Visual priority and performance indicators
 - **Emoji Usage**: Clear categorization and readability
 
-## 📱 Discord Command Usage
+## 📱 Automatic Analysis Integration
 
-### Basic Command
-```
-/analyze-match match-id:abc123 players:Player1,Player2,Player3,Player4
-```
+### How It Works
+The telemetry analyzer is integrated into the match monitoring system and runs automatically when new matches are detected for monitored players.
+
+1. **Add Players**: Use `/add playername:YourPlayerName` to start monitoring
+2. **Automatic Analysis**: System detects new matches and runs analysis automatically
+3. **Discord Results**: Detailed analysis embeds are sent to Discord automatically
 
 ### Response Structure
 1. **Overview Embed**: Performance scores and rankings

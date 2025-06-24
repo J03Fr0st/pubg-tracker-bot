@@ -22,31 +22,47 @@ The PUBG Telemetry Analyzer is a comprehensive system that analyzes your team's 
 
 ## How to Use
 
-### Discord Command
+### Automatic Analysis System
+The telemetry analyzer is integrated into the match monitoring system and runs automatically when new matches are detected.
+
+**Setup Commands:**
+- Add players to monitor: `/add playername:YourPlayerName`
+- Remove players: `/remove playername:YourPlayerName`
+- List monitored players: `/list`
+- Remove last processed match: `/removelastmatch`
+
+**How It Works:**
+1. Add your team members to the monitoring list using `/add`
+2. When new matches are detected, the system automatically:
+   - Fetches match details and telemetry data
+   - Runs comprehensive analysis
+   - Generates coaching tips and recommendations
+   - Sends detailed analysis embeds to Discord
+3. No manual commands needed - analysis happens automatically!
+
+### Managing Monitored Players
+
+**Adding Players:**
 ```
-/analyze-match match-id:<match_id> players:<player1,player2,player3,player4>
+/add playername:YourPlayerName
 ```
+- Adds a player to the monitoring system
+- Bot will track all future matches for this player
+- Analysis will run automatically when new matches are detected
 
-**Parameters:**
-- `match-id`: The PUBG match ID you want to analyze (required)
-- `players`: Comma-separated list of your team's player names (required)
-
-**Example:**
+**Removing Players:**
 ```
-/analyze-match match-id:abc123def456 players:PlayerOne,PlayerTwo,PlayerThree,PlayerFour
+/remove playername:YourPlayerName
 ```
+- Removes a player from monitoring
+- No more automatic analysis for this player
 
-### Getting Match IDs
-
-1. **From PUBG.op.gg:**
-   - Visit https://pubg.op.gg
-   - Search for any player from your team
-   - Click on a recent match
-   - Copy the match ID from the URL
-
-2. **From PUBG API:**
-   - Use the PUBG Developer API to retrieve recent matches
-   - Extract the match ID from the response
+**Listing Players:**
+```
+/list
+```
+- Shows all currently monitored players
+- Displays total number of tracked players
 
 ## Analysis Results
 

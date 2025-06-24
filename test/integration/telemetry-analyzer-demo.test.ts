@@ -1,6 +1,5 @@
 import { TelemetryAnalyzerService } from '../../src/services/telemetry-analyzer.service';
 import { CoachingTipsService } from '../../src/services/coaching-tips.service';
-import { AnalyzeMatchCommand } from '../../src/commands/analyze-match.command';
 
 describe('PUBG Telemetry Analyzer Demo', () => {
   let telemetryAnalyzer: TelemetryAnalyzerService;
