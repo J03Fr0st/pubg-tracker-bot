@@ -88,8 +88,8 @@ export const appConfig: AppConfig = {
     uri: requireEnv('MONGODB_URI')
   },
   monitoring: {
-    checkIntervalMs: getNumericEnv('CHECK_INTERVAL_MS', 60000),
-    maxMatchesToProcess: getNumericEnv('MAX_MATCHES_TO_PROCESS', 5)
+    checkIntervalMs: getNumericEnv('CHECK_INTERVAL_MS', 90000),
+    maxMatchesToProcess: getNumericEnv('MAX_MATCHES_TO_PROCESS', 3)
   }
 };
 
