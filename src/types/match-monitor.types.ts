@@ -15,4 +15,5 @@ export interface MatchMonitorMatch {
 export interface MatchMonitorMatchGroup {
     matchId: string;
     players: MatchMonitorPlayer[];
+    createdAt: Date;
 }

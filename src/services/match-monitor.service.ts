@@ -153,7 +153,8 @@ export class MatchMonitorService {
                 
                 newMatches.push({
                     matchId,
-                    players: uniqueMatchIds.get(matchId)!
+                    players: uniqueMatchIds.get(matchId)!,
+                    createdAt
                 });
                 
                 // Add small delay between API calls to avoid hitting rate limits
@@ -166,8 +167,8 @@ export class MatchMonitorService {
             }
         }
 
-        // Sort matches chronologically (we'll need to get createdAt from match details now)
-        // For now, process in the order we found them
+        // Sort matches chronologically (oldest first)
+        newMatches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
         
         let processedCount = 0;
         let failedCount = 0;
