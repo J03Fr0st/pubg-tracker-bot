@@ -27,7 +27,7 @@ export class PubgApiService {
         'Accept': 'application/vnd.api+json'
       }
     });
-    this.rateLimiter = rateLimiter ?? new RateLimiter(10);
+    this.rateLimiter = rateLimiter ?? new RateLimiter(8);
     this.storageService = storageService;
   }
 

@@ -4,11 +4,16 @@ import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/disc
 import { PubgStorageService } from './pubg-storage.service';
 import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
-import { discord, success, error, debug } from '../utils/logger';
+import { TelemetryAnalyzerService } from './telemetry-analyzer.service';
+import { CoachingTipsService } from './coaching-tips.service';
+import { MatchColorUtil } from '../utils/match-colors.util';
+import { discord, success, error, debug, info } from '../utils/logger';
 
 export class DiscordBotService {
     private readonly client: Client;
     private readonly pubgStorageService: PubgStorageService;
+    private readonly telemetryAnalyzer: TelemetryAnalyzerService;
+    private readonly coachingTipsService: CoachingTipsService;
     private readonly commands = [
         new SlashCommandBuilder()
             .setName('add')
@@ -45,6 +50,8 @@ export class DiscordBotService {
             ],
         });
         this.pubgStorageService = new PubgStorageService();
+        this.telemetryAnalyzer = new TelemetryAnalyzerService();
+        this.coachingTipsService = new CoachingTipsService();
         this.setupEventHandlers();
     }
 
@@ -70,13 +77,47 @@ export class DiscordBotService {
         if (!channel) {
             throw new Error(`Could not find channel with ID ${channelId}`);
         }
-        const embeds = await this.createMatchSummaryEmbeds(summary);
-        if (!embeds || !embeds.length) {
+        
+        // Create basic match summary embeds
+        const basicEmbeds = await this.createMatchSummaryEmbeds(summary);
+        if (!basicEmbeds || !basicEmbeds.length) {
             error('No embeds were created for match summary');
             return;
         }
-        for (const embed of embeds) {
+        
+        // Send basic match summary first
+        for (const embed of basicEmbeds) {
             await channel.send({ embeds: [embed] });
+        }
+        
+        // Create and send telemetry analysis embeds if telemetry URL is available
+        if (summary.telemetryUrl && summary.teamRank) {
+            try {
+                info(`🔍 Running telemetry analysis for match ${summary.matchId}`);
+                const telemetryEmbeds = await this.createTelemetryAnalysisEmbeds(summary);
+                
+                if (telemetryEmbeds && telemetryEmbeds.length > 0) {
+                    info(`📊 Sending ${telemetryEmbeds.length} telemetry analysis embeds`);
+                    for (const embed of telemetryEmbeds) {
+                        await channel.send({ embeds: [embed] });
+                    }
+                } else {
+                    debug('No telemetry analysis embeds were created');
+                }
+            } catch (analysisError) {
+                error('Error creating telemetry analysis embeds:', analysisError as Error);
+                // Send error embed to Discord so users know what happened
+                const errorEmbed = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setTitle('⚠️ Analysis Error')
+                    .setDescription('Unable to analyze match telemetry data. Basic match summary is still available above.')
+                    .setFooter({ text: 'PUBG Match Analyzer' })
+                    .setTimestamp();
+                
+                await channel.send({ embeds: [errorEmbed] });
+            }
+        } else {
+            debug('Telemetry analysis skipped - missing telemetry URL or team rank');
         }
     }
 
@@ -271,7 +312,7 @@ export class DiscordBotService {
         const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
 
         // Generate a consistent color for this match based on matchId
-        const matchColor = this.generateMatchColor(matchId);
+        const matchColor = MatchColorUtil.generateMatchColor(matchId);
 
         const matchDate = new Date(playedAt);
         const dateString = matchDate.toLocaleTimeString('en-ZA', {
@@ -323,36 +364,7 @@ export class DiscordBotService {
         return [mainEmbed, ...playerEmbeds];
     }
 
-    /**
-     * Generates a consistent color for a match based on its ID
-     * @param matchId The match ID to generate a color for
-     * @returns A color number suitable for Discord embeds
-     */
-    private generateMatchColor(matchId: string): number {
-        // Convert matchId to a number by summing char codes
-        const seed = matchId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        
-        // List of vibrant colors that look good in Discord
-        const colors = [
-            0x3498db, // Blue
-            0xe74c3c, // Red
-            0x2ecc71, // Green
-            0xf1c40f, // Yellow
-            0x9b59b6, // Purple
-            0xe67e22, // Orange
-            0x1abc9c, // Turquoise
-            0xd35400, // Pumpkin
-            0x34495e, // Navy
-            0x16a085, // Green Sea
-            0x8e44ad, // Wisteria
-            0x2980b9, // Belize Hole
-            0xc0392b, // Pomegranate
-            0x27ae60  // Nephritis
-        ];
 
-        // Use the seed to consistently select a color
-        return colors[seed % colors.length];
-    }
 
     private formatPlayerStats(
         matchStartTime: Date,
@@ -474,11 +486,191 @@ export class DiscordBotService {
         return GAME_MODES[gameModeCode] || gameModeCode;
     }
 
-    private getPlacementColor(rank?: number): number {
-        if (!rank) return 0x36393F; // Discord dark theme color
-        if (rank === 1) return 0xFFD700; // Gold
-        if (rank <= 3) return 0xC0C0C0; // Silver
-        if (rank <= 10) return 0xCD7F32; // Bronze
-        return 0x36393F; // Default dark color
+
+
+    /**
+     * Creates telemetry analysis embeds for a match summary
+     */
+    private async createTelemetryAnalysisEmbeds(summary: DiscordMatchGroupSummary): Promise<EmbedBuilder[]> {
+        if (!summary.telemetryUrl || !summary.teamRank) {
+            return [];
+        }
+
+        const teamPlayers = summary.players.map(p => p.name);
+        
+        try {
+            // Run telemetry analysis
+            const analysis = await this.telemetryAnalyzer.analyzeTelemetryData(
+                summary.telemetryUrl,
+                teamPlayers,
+                summary.matchId,
+                summary.teamRank
+            );
+
+            // Generate coaching tips
+            const coachingTips = this.coachingTipsService.generateCoachingTips(analysis);
+
+            // Use consistent match color for all embeds
+            const matchColor = MatchColorUtil.generateMatchColor(summary.matchId);
+
+            const embeds: EmbedBuilder[] = [];
+
+            // 1. Overview Embed
+            const overviewEmbed = new EmbedBuilder()
+                .setTitle('📊 Match Analysis Overview')
+                .setDescription([
+                    `🎯 **Overall Performance: ${analysis.overallRating.overallScore}/100**`,
+                    '',
+                    '**📈 Category Scores:**',
+                    ...Object.entries(analysis.overallRating.categoryScores).map(([category, score]) => {
+                        const emoji = score >= 80 ? '🟢' : score >= 60 ? '🟡' : '🔴';
+                        return `${emoji} ${category.replace('_', ' ')}: **${score}/100**`;
+                    }),
+                    '',
+                    `💪 **Strengths:** ${analysis.overallRating.strengthsAndWeaknesses.strengths.join(', ') || 'None identified'}`,
+                    `⚠️ **Weaknesses:** ${analysis.overallRating.strengthsAndWeaknesses.weaknesses.join(', ') || 'None identified'}`
+                ].join('\n'))
+                .setColor(matchColor)
+                .setFooter({ text: 'PUBG Telemetry Analysis' })
+                .setTimestamp();
+
+            embeds.push(overviewEmbed);
+
+            // 2. Critical Mistakes Embed
+            if (analysis.criticalMistakes.length > 0) {
+                const mistakesEmbed = new EmbedBuilder()
+                    .setTitle('🚨 Critical Mistakes')
+                    .setDescription(
+                        analysis.criticalMistakes.slice(0, 5).map((mistake, i) => {
+                            const impactEmoji = mistake.impact === 'HIGH' ? '🔴' : mistake.impact === 'MEDIUM' ? '🟡' : '🟢';
+                            return [
+                                `**${i + 1}. ${impactEmoji} ${mistake.type.replace('_', ' ')}**`,
+                                `${mistake.description}`,
+                                `💡 *${mistake.recommendation}*`,
+                                ''
+                            ].join('\n');
+                        }).join('\n')
+                    )
+                    .setColor(matchColor)
+                    .setFooter({ text: `${analysis.criticalMistakes.length} total mistakes identified` });
+
+                embeds.push(mistakesEmbed);
+            }
+
+            // 3. Strategic Recommendations Embed
+            if (analysis.strategicRecommendations.length > 0) {
+                const recommendationsEmbed = new EmbedBuilder()
+                    .setTitle('🎯 Strategic Recommendations')
+                    .setDescription(
+                        analysis.strategicRecommendations.slice(0, 4).map((rec, i) => {
+                            const priorityEmoji = rec.priority === 'HIGH' ? '🔴' : rec.priority === 'MEDIUM' ? '🟡' : '🟢';
+                            const categoryEmoji = rec.category === 'EARLY_GAME' ? '🌅' : rec.category === 'MID_GAME' ? '🌞' : rec.category === 'LATE_GAME' ? '🌆' : '⚙️';
+                            return [
+                                `**${i + 1}. ${priorityEmoji} ${categoryEmoji} ${rec.title}**`,
+                                `${rec.description}`,
+                                `📈 *Expected: ${rec.expectedImprovement}*`,
+                                ''
+                            ].join('\n');
+                        }).join('\n')
+                    )
+                    .setColor(matchColor)
+                    .setFooter({ text: `${analysis.strategicRecommendations.length} total recommendations` });
+
+                embeds.push(recommendationsEmbed);
+            }
+
+            // 4. Engagement Analysis Embed
+            const engagementEmbed = new EmbedBuilder()
+                .setTitle('⚔️ Combat Analysis')
+                .addFields(
+                    { name: '🎯 Engagements', value: `${analysis.engagementAnalysis.totalEngagements} total`, inline: true },
+                    { name: '✅ Won', value: `${analysis.engagementAnalysis.wonEngagements}`, inline: true },
+                    { name: '❌ Lost', value: `${analysis.engagementAnalysis.lostEngagements}`, inline: true },
+                    { name: '📏 Avg Distance', value: `${Math.round(analysis.engagementAnalysis.averageEngagementDistance)}m`, inline: true },
+                    { name: '🎭 Third Parties', value: `${analysis.engagementAnalysis.thirdPartySituations}`, inline: true },
+                    { name: '📈 Win Rate', value: analysis.engagementAnalysis.totalEngagements > 0 ? 
+                        `${Math.round((analysis.engagementAnalysis.wonEngagements / analysis.engagementAnalysis.totalEngagements) * 100)}%` : 'N/A', inline: true }
+                )
+                .setColor(matchColor)
+                .setFooter({ text: 'Combat effectiveness metrics' });
+
+            embeds.push(engagementEmbed);
+
+            // 5. Positioning Analysis Embed
+            const positioningEmbed = new EmbedBuilder()
+                .setTitle('🗺️ Positioning Analysis')
+                .addFields(
+                    { name: '🌀 Zone Management', value: analysis.positioningAnalysis.zoneManagement.rotationTiming, inline: true },
+                    { name: '💙 Blue Zone Damage', value: `${analysis.positioningAnalysis.zoneManagement.blueZoneDamage}`, inline: true },
+                    { name: '🚗 Vehicle Usage', value: `${analysis.positioningAnalysis.rotationEfficiency.vehicleUsage}`, inline: true },
+                    { name: '🏠 Compound Control', value: `${analysis.positioningAnalysis.compoundHolding.compoundsHeld} held`, inline: true },
+                    { name: '🎯 Final Circle', value: `Rank #${analysis.positioningAnalysis.finalCirclePositioning.finalCircleRank}`, inline: true },
+                    { name: '📍 Position Type', value: analysis.positioningAnalysis.finalCirclePositioning.centerControl ? 'Center' : 'Edge', inline: true }
+                )
+                .setColor(matchColor)
+                .setFooter({ text: 'Movement and positioning metrics' });
+
+            embeds.push(positioningEmbed);
+
+            // 6. Team Coordination Embed
+            const teamworkEmbed = new EmbedBuilder()
+                .setTitle('🤝 Team Coordination')
+                .addFields(
+                    { name: '🚑 Revive Success', value: `${analysis.teamCoordinationAnalysis.reviveEfficiency.successfulRevives}/${analysis.teamCoordinationAnalysis.reviveEfficiency.totalRevives}`, inline: true },
+                    { name: '📏 Team Spacing', value: `${Math.round(analysis.teamCoordinationAnalysis.teamSpreading.averageTeamDistance)}m avg`, inline: true },
+                    { name: '🎯 Focus Fire', value: `${analysis.teamCoordinationAnalysis.communicationEffectiveness.coordinatedEngagements} coordinated`, inline: true },
+                    { name: '👥 Role Distribution', value: analysis.teamCoordinationAnalysis.roleDistribution.roleEffectiveness > 70 ? 'Good' : 'Needs Work', inline: true },
+                    { name: '⚠️ Over-extensions', value: `${analysis.teamCoordinationAnalysis.teamSpreading.overExtensions}`, inline: true },
+                    { name: '🔄 Trade Efficiency', value: `${analysis.teamCoordinationAnalysis.communicationEffectiveness.simultaneousKnocks} trades`, inline: true }
+                )
+                .setColor(matchColor)
+                .setFooter({ text: 'Team coordination metrics' });
+
+            embeds.push(teamworkEmbed);
+
+            // 7. Coaching Tips Embed
+            if (coachingTips.length > 0) {
+                const tipsEmbed = new EmbedBuilder()
+                    .setTitle('🎯 Personalized Coaching Tips')
+                    .setDescription(
+                        coachingTips.slice(0, 3).map((tip, i) => {
+                            const categoryEmoji = tip.category === 'IMMEDIATE' ? '⚡' : tip.category === 'SHORT_TERM' ? '📈' : '🎯';
+                            const difficultyEmoji = tip.difficulty === 'EASY' ? '🟢' : tip.difficulty === 'MEDIUM' ? '🟡' : '🔴';
+                            const priorityEmoji = tip.priority === 'HIGH' ? '🔴' : tip.priority === 'MEDIUM' ? '🟡' : '🟢';
+                            
+                            return [
+                                `**${i + 1}. ${categoryEmoji} ${difficultyEmoji} ${priorityEmoji} ${tip.title}**`,
+                                `${tip.description}`,
+                                `📋 **Action Steps:**`,
+                                ...tip.actionSteps.slice(0, 2).map(step => `• ${step}`),
+                                `⏱️ *Timeframe: ${tip.expectedTimeframe}*`,
+                                ''
+                            ].join('\n');
+                        }).join('\n')
+                    )
+                    .setColor(matchColor)
+                    .setFooter({ text: `${coachingTips.length} total coaching tips available • Difficulty: 🟢 Easy 🟡 Medium 🔴 Hard` });
+
+                embeds.push(tipsEmbed);
+            }
+
+            return embeds;
+
+        } catch (analysisError) {
+            error('Failed to create telemetry analysis:', analysisError as Error);
+            
+            // Return error embed
+            const errorEmbed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Analysis Failed')
+                .setDescription('Unable to analyze telemetry data for this match.')
+                .addFields(
+                    { name: 'Error', value: (analysisError as Error).message || 'Unknown error', inline: false }
+                )
+                .setFooter({ text: 'PUBG Telemetry Analysis Error' })
+                .setTimestamp();
+
+            return [errorEmbed];
+        }
     }
 }

@@ -113,48 +113,63 @@ export class MatchMonitorService {
         }).join(', ');
         info(`Checking for new matches for ${players.length} players: ${playerMatchInfo}`);
 
-        // Create a Set to store unique match IDs with their timestamps
-        const uniqueMatches = new Map<string, { createdAt: Date; players: MatchMonitorPlayer[] }>();
+        // OPTIMIZED: Collect all unique match IDs first WITHOUT fetching details
+        const uniqueMatchIds = new Map<string, MatchMonitorPlayer[]>();
 
         for (const player of playersResponse.data) {
             const matches = player.relationships.matches.data.slice(0, 5);
 
             for (const match of matches) {
-                const matchDetails = await this.pubgApi.getMatchDetails(match.id);
-                const createdAt = new Date(matchDetails.data.attributes.createdAt);
-
-                if (!uniqueMatches.has(match.id)) {
-                    uniqueMatches.set(match.id, {
-                        createdAt,
-                        players: [{ id: player.id, name: player.attributes.name }]
-                    });
+                if (!uniqueMatchIds.has(match.id)) {
+                    uniqueMatchIds.set(match.id, [{ id: player.id, name: player.attributes.name }]);
                 } else {
-                    const existingMatch = uniqueMatches.get(match.id);
-                    if (existingMatch) {
-                        existingMatch.players.push({ id: player.id, name: player.attributes.name });
-                    }
+                    const existingPlayers = uniqueMatchIds.get(match.id)!;
+                    existingPlayers.push({ id: player.id, name: player.attributes.name });
                 }
             }
         }
 
+        // Filter out already processed matches BEFORE making API calls
         const processedMatches = await this.storage.getProcessedMatches();
         debug(`Retrieved ${processedMatches.length} previously processed matches`);
 
-        // Convert to array, filter processed matches, and sort chronologically
-        const newMatches: MatchMonitorMatchGroup[] = Array.from(uniqueMatches.entries())
-            .filter(([matchId]) => !processedMatches.includes(matchId))
-            .sort(([, a], [, b]) => a.createdAt.getTime() - b.createdAt.getTime())
-            .map(([matchId, matchData]) => ({
-                matchId,
-                players: matchData.players
-            }));
+        const newMatchIds = Array.from(uniqueMatchIds.keys())
+            .filter(matchId => !processedMatches.includes(matchId));
 
-        if (newMatches.length > 0) {
-            monitor(`Found ${newMatches.length} new matches to process`);
-        } else {
+        if (newMatchIds.length === 0) {
             debug('No new matches found');
+            return;
         }
 
+        monitor(`Found ${newMatchIds.length} new matches to process`);
+
+        // OPTIMIZED: Only fetch match details for NEW matches
+        const newMatches: MatchMonitorMatchGroup[] = [];
+        
+        for (const matchId of newMatchIds) {
+            try {
+                const matchDetails = await this.pubgApi.getMatchDetails(matchId);
+                const createdAt = new Date(matchDetails.data.attributes.createdAt);
+                
+                newMatches.push({
+                    matchId,
+                    players: uniqueMatchIds.get(matchId)!,
+                    createdAt
+                });
+                
+                // Add small delay between API calls to avoid hitting rate limits
+                if (newMatchIds.indexOf(matchId) < newMatchIds.length - 1) {
+                    await this.delay(1000); // 1 second delay between match detail fetches
+                }
+            } catch (matchError) {
+                error(`Error fetching details for match ${matchId}:`, matchError as Error);
+                // Continue with other matches even if one fails
+            }
+        }
+
+        // Sort matches chronologically (oldest first)
+        newMatches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        
         let processedCount = 0;
         let failedCount = 0;
 
