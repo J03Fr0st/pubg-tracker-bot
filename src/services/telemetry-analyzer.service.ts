@@ -663,40 +663,255 @@ export class TelemetryAnalyzerService {
   }
 
   private analyzeReviveEfficiency(reviveEvents: any[], teamPlayers: string[]): ReviveEfficiency {
+    const teamRevives = reviveEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    const teamGroggyEvents = reviveEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    
+    const totalRevives = teamRevives.length;
+    const successfulRevives = teamRevives.filter(e => e.result === 'revived').length;
+    
+    const reviveTimes = teamRevives
+      .filter(e => e.reviveTime)
+      .map(e => e.reviveTime);
+    
+    const averageReviveTime = reviveTimes.length > 0 
+      ? reviveTimes.reduce((sum, time) => sum + time, 0) / reviveTimes.length 
+      : 0;
+
+    let recommendation = 'Practice safe revive positioning';
+    if (totalRevives === 0) {
+      recommendation = 'No revive situations occurred';
+    } else if (successfulRevives / totalRevives < 0.7) {
+      recommendation = 'Improve revive success rate - provide better cover during revives';
+    } else if (averageReviveTime > 10) {
+      recommendation = 'Reduce revive time - find safer positions for revives';
+    } else {
+      recommendation = 'Good revive efficiency - maintain current approach';
+    }
+
     return {
-      totalRevives: 0,
-      successfulRevives: 0,
-      averageReviveTime: 0,
-      recommendation: 'Practice safe revive positioning'
+      totalRevives,
+      successfulRevives,
+      averageReviveTime: Math.round(averageReviveTime * 10) / 10,
+      recommendation
     };
   }
 
   private analyzeTeamSpreading(positionEvents: any[], teamPlayers: string[]): TeamSpreading {
+    const teamPositions = positionEvents.filter(e => teamPlayers.includes(e.character?.name));
+    
+    if (teamPositions.length < 2) {
+      return {
+        averageTeamDistance: 0,
+        optimalSpreadMaintained: 0,
+        overExtensions: 0,
+        recommendation: 'Insufficient position data for analysis'
+      };
+    }
+
+    // Group positions by timestamp to calculate distances at each moment
+    const positionsByTime = new Map<string, any[]>();
+    teamPositions.forEach(pos => {
+      const timeKey = pos._D;
+      if (!positionsByTime.has(timeKey)) {
+        positionsByTime.set(timeKey, []);
+      }
+      positionsByTime.get(timeKey)!.push(pos);
+    });
+
+    let totalDistanceSum = 0;
+    let validMeasurements = 0;
+    let optimalSpreadTime = 0;
+    let overExtensionCount = 0;
+
+    positionsByTime.forEach(positions => {
+      if (positions.length >= 2) {
+        const distances: number[] = [];
+        
+        // Calculate distances between all team members
+        for (let i = 0; i < positions.length; i++) {
+          for (let j = i + 1; j < positions.length; j++) {
+            const pos1 = positions[i].character?.location;
+            const pos2 = positions[j].character?.location;
+            
+            if (pos1 && pos2) {
+              const distance = Math.sqrt(
+                Math.pow(pos1.x - pos2.x, 2) + 
+                Math.pow(pos1.y - pos2.y, 2)
+              );
+              distances.push(distance / 100); // Convert to meters
+            }
+          }
+        }
+
+        if (distances.length > 0) {
+          const avgDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+          totalDistanceSum += avgDistance;
+          validMeasurements++;
+
+          // Check if team spread is optimal (50-150m)
+          if (avgDistance >= 50 && avgDistance <= 150) {
+            optimalSpreadTime++;
+          }
+
+          // Check for over-extensions (>200m)
+          if (distances.some(d => d > 200)) {
+            overExtensionCount++;
+          }
+        }
+      }
+    });
+
+    const averageTeamDistance = validMeasurements > 0 ? totalDistanceSum / validMeasurements : 0;
+    const optimalSpreadMaintained = validMeasurements > 0 ? (optimalSpreadTime / validMeasurements) * 100 : 0;
+
+    let recommendation = 'Maintain optimal team spacing';
+    if (averageTeamDistance < 30) {
+      recommendation = 'Team is too clustered - spread out to avoid area damage';
+    } else if (averageTeamDistance > 150) {
+      recommendation = 'Team is too spread out - stay closer for mutual support';
+    } else if (overExtensionCount > validMeasurements * 0.3) {
+      recommendation = 'Reduce over-extensions - coordinate movement better';
+    } else {
+      recommendation = 'Good team spacing - maintain current coordination';
+    }
+
     return {
-      averageTeamDistance: 0,
-      optimalSpreadMaintained: 0,
-      overExtensions: 0,
-      recommendation: 'Maintain optimal team spacing'
+      averageTeamDistance: Math.round(averageTeamDistance),
+      optimalSpreadMaintained: Math.round(optimalSpreadMaintained),
+      overExtensions: overExtensionCount,
+      recommendation
     };
   }
 
   private analyzeCommunicationEffectiveness(killEvents: any[], teamPlayers: string[]): CommunicationEffectiveness {
+    const teamKills = killEvents.filter(e => teamPlayers.includes(e.killer?.name));
+    const teamDeaths = killEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    
+    // Analyze coordinated engagements (kills within 30 seconds of each other)
+    let coordinatedEngagements = 0;
+    const killTimes = teamKills.map(k => new Date(k._D).getTime());
+    
+    for (let i = 0; i < killTimes.length - 1; i++) {
+      if (killTimes[i + 1] - killTimes[i] <= 30000) { // 30 seconds
+        coordinatedEngagements++;
+      }
+    }
+
+    // Analyze simultaneous knocks/kills (within 5 seconds)
+    let simultaneousKnocks = 0;
+    for (let i = 0; i < killTimes.length - 1; i++) {
+      if (killTimes[i + 1] - killTimes[i] <= 5000) { // 5 seconds
+        simultaneousKnocks++;
+      }
+    }
+
+    // Calculate focus fire efficiency
+    const totalKills = teamKills.length;
+    const focusFireEfficiency = totalKills > 0 ? (simultaneousKnocks / totalKills) * 100 : 0;
+
+    let recommendation = 'Improve communication for coordinated engagements';
+    if (coordinatedEngagements === 0 && totalKills > 1) {
+      recommendation = 'Work on coordinating attacks - use voice comms to focus fire';
+    } else if (focusFireEfficiency < 30) {
+      recommendation = 'Improve focus fire - all shoot the same target simultaneously';
+    } else if (focusFireEfficiency >= 60) {
+      recommendation = 'Excellent coordination - maintain current communication level';
+    } else {
+      recommendation = 'Good coordination - work on timing simultaneous attacks';
+    }
+
     return {
-      coordinatedEngagements: 0,
-      simultaneousKnocks: 0,
-      focusFireEfficiency: 0,
-      recommendation: 'Improve communication for coordinated engagements'
+      coordinatedEngagements,
+      simultaneousKnocks,
+      focusFireEfficiency: Math.round(focusFireEfficiency),
+      recommendation
     };
   }
 
   private analyzeRoleDistribution(events: any[], teamPlayers: string[]): RoleDistribution {
+    const killEvents = events.filter(e => e._T === 'LogPlayerKillV2');
+    const damageEvents = events.filter(e => e._T === 'LogPlayerTakeDamage');
+    const reviveEvents = events.filter(e => e._T === 'LogPlayerRevive');
+    const lootEvents = events.filter(e => e._T === 'LogItemPickup');
+
+    // Analyze player statistics
+    const playerStats = new Map<string, {
+      kills: number;
+      damage: number;
+      revives: number;
+      looting: number;
+    }>();
+
+    teamPlayers.forEach(player => {
+      playerStats.set(player, { kills: 0, damage: 0, revives: 0, looting: 0 });
+    });
+
+    // Count kills
+    killEvents.filter(e => teamPlayers.includes(e.killer?.name)).forEach(e => {
+      const stats = playerStats.get(e.killer.name);
+      if (stats) stats.kills++;
+    });
+
+    // Count damage dealt
+    damageEvents.filter(e => teamPlayers.includes(e.attacker?.name)).forEach(e => {
+      const stats = playerStats.get(e.attacker.name);
+      if (stats) stats.damage += e.damageInfo?.damage || 0;
+    });
+
+    // Count revives performed
+    reviveEvents.filter(e => teamPlayers.includes(e.reviver?.name)).forEach(e => {
+      const stats = playerStats.get(e.reviver.name);
+      if (stats) stats.revives++;
+    });
+
+    // Count looting activity
+    lootEvents.filter(e => teamPlayers.includes(e.character?.name)).forEach(e => {
+      const stats = playerStats.get(e.character.name);
+      if (stats) stats.looting++;
+    });
+
+    // Determine roles based on statistics
+    const sortedByKills = Array.from(playerStats.entries()).sort((a, b) => b[1].kills - a[1].kills);
+    const sortedByDamage = Array.from(playerStats.entries()).sort((a, b) => b[1].damage - a[1].damage);
+    const sortedByRevives = Array.from(playerStats.entries()).sort((a, b) => b[1].revives - a[1].revives);
+
+    const fragger = sortedByKills[0] ? sortedByKills[0][0] : teamPlayers[0] || 'Unknown';
+    const pointMan = sortedByDamage[0] ? sortedByDamage[0][0] : teamPlayers[0] || 'Unknown';
+    const support = sortedByRevives[0] ? sortedByRevives[0][0] : teamPlayers[1] || 'Unknown';
+    const igl = teamPlayers[0] || 'Unknown'; // IGL is hard to determine from telemetry
+
+    // Calculate role effectiveness based on how well-defined the roles are
+    const totalKills = sortedByKills.reduce((sum, [, stats]) => sum + stats.kills, 0);
+    const topFraggerKills = sortedByKills[0] ? sortedByKills[0][1].kills : 0;
+    const killDistribution = totalKills > 0 ? (topFraggerKills / totalKills) * 100 : 0;
+
+    let roleEffectiveness = 50; // Base score
+    
+    // Bonus for clear role separation
+    if (killDistribution > 40) roleEffectiveness += 20; // Clear fragger
+    if (sortedByRevives[0] && sortedByRevives[0][1].revives > 1) roleEffectiveness += 15; // Active support
+    if (playerStats.size >= 2) roleEffectiveness += 15; // Multiple players contributing
+
+    roleEffectiveness = Math.min(100, roleEffectiveness);
+
+    let recommendation = 'Define clearer roles for team members';
+    if (roleEffectiveness >= 80) {
+      recommendation = 'Excellent role distribution - maintain current assignments';
+    } else if (roleEffectiveness >= 60) {
+      recommendation = 'Good role clarity - fine-tune individual responsibilities';
+    } else if (totalKills === 0) {
+      recommendation = 'No combat data available for role analysis';
+    } else {
+      recommendation = 'Improve role definition - assign specific responsibilities to each player';
+    }
+
     return {
-      pointMan: teamPlayers[0] || 'Unknown',
-      support: teamPlayers[1] || 'Unknown',
-      fragger: teamPlayers[2] || 'Unknown',
-      igl: teamPlayers[3] || 'Unknown',
-      roleEffectiveness: 0,
-      recommendation: 'Define clearer roles for team members'
+      pointMan,
+      support,
+      fragger,
+      igl,
+      roleEffectiveness: Math.round(roleEffectiveness),
+      recommendation
     };
   }
 
@@ -716,8 +931,50 @@ export class TelemetryAnalyzerService {
   }
 
   private calculateTeamworkScore(events: any[], teamPlayers: string[]): number {
-    // Implementation for teamwork score calculation
-    return 65; // Placeholder
+    // Get team coordination analysis data
+    const reviveEvents = events.filter(e => e._T === 'LogPlayerRevive');
+    const positionEvents = events.filter(e => e._T === 'LogPlayerPosition');
+    const killEvents = events.filter(e => e._T === 'LogPlayerKillV2');
+
+    const reviveEfficiency = this.analyzeReviveEfficiency(reviveEvents, teamPlayers);
+    const teamSpreading = this.analyzeTeamSpreading(positionEvents, teamPlayers);
+    const communicationEffectiveness = this.analyzeCommunicationEffectiveness(killEvents, teamPlayers);
+    const roleDistribution = this.analyzeRoleDistribution(events, teamPlayers);
+
+    let score = 0;
+    let components = 0;
+
+    // Revive efficiency component (25% of score)
+    if (reviveEfficiency.totalRevives > 0) {
+      const reviveSuccessRate = (reviveEfficiency.successfulRevives / reviveEfficiency.totalRevives) * 100;
+      score += reviveSuccessRate * 0.25;
+      components += 0.25;
+    }
+
+    // Team spreading component (25% of score)
+    if (teamSpreading.averageTeamDistance > 0) {
+      const spreadingScore = Math.max(0, 100 - Math.abs(teamSpreading.optimalSpreadMaintained - 75)); // Optimal around 75%
+      score += spreadingScore * 0.25;
+      components += 0.25;
+    }
+
+    // Communication effectiveness component (25% of score)
+    score += communicationEffectiveness.focusFireEfficiency * 0.25;
+    components += 0.25;
+
+    // Role distribution component (25% of score)
+    score += roleDistribution.roleEffectiveness * 0.25;
+    components += 0.25;
+
+    // If no data available, use a base score
+    if (components === 0) {
+      return 50; // Neutral score when no data
+    }
+
+    // Normalize score based on available components
+    const normalizedScore = score / components;
+
+    return Math.round(Math.max(0, Math.min(100, normalizedScore)));
   }
 
   private calculateDecisionMakingScore(events: any[], teamPlayers: string[], teamRank: number): number {
