@@ -544,24 +544,185 @@ export class TelemetryAnalyzerService {
            this.WEAPON_CATEGORIES.Shotgun.some(w => weapon.includes(w));
   }
 
+  private isWeaponItem(itemId: string): boolean {
+    return itemId.includes('Weapon_') || 
+           itemId.includes('Item_Weapon_') ||
+           this.WEAPON_CATEGORIES.AR.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.SMG.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.Shotgun.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.SR.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.LMG.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.Pistol.some((w: string) => itemId.includes(w)) ||
+           this.WEAPON_CATEGORIES.DMR.some((w: string) => itemId.includes(w));
+  }
+
+  private isHealingItem(itemId: string): boolean {
+    return itemId.includes('Item_Heal_') ||
+           itemId.includes('FirstAid') ||
+           itemId.includes('Bandage') ||
+           itemId.includes('Medikit') ||
+           itemId.includes('Painkiller') ||
+           itemId.includes('EnergyDrink') ||
+           itemId.includes('Adrenaline') ||
+           itemId.includes('Syringe');
+  }
+
+  private isThrowableItem(itemId: string): boolean {
+    return itemId.includes('Item_Weapon_Grenade') ||
+           itemId.includes('Item_Weapon_Molotov') ||
+           itemId.includes('Item_Weapon_Smoke') ||
+           itemId.includes('Item_Weapon_Flashbang') ||
+           itemId.includes('Item_Weapon_Stun') ||
+           itemId.includes('Grenade') ||
+           itemId.includes('Molotov') ||
+           itemId.includes('Smoke') ||
+           itemId.includes('Flashbang');
+  }
+
   private detectLateRotations(events: any[], teamPlayers: string[]): number {
-    // Implementation for detecting late rotations
-    return 0; // Placeholder
+    const zoneEvents = events.filter(e => e._T === 'LogZoneUpdate');
+    const positionEvents = events.filter(e => e._T === 'LogPlayerPosition' && teamPlayers.includes(e.character?.name));
+    const damageEvents = events.filter(e => e._T === 'LogPlayerTakeDamage' && 
+                                      e.damageReason === 'BluezoneFinish' && 
+                                      teamPlayers.includes(e.victim?.name));
+    
+    let lateRotationCount = 0;
+    
+    // Simple heuristic: if team took significant blue zone damage, they were likely rotating late
+    if (damageEvents.length > 0) {
+      const totalBlueDamage = damageEvents.reduce((total, e) => total + (e.damage || 0), 0);
+      
+      // Each 50 damage from blue zone indicates a likely late rotation
+      lateRotationCount = Math.floor(totalBlueDamage / 50);
+    }
+    
+    // Additional check: look for position events very close to zone updates
+    zoneEvents.forEach(zoneEvent => {
+      const zoneTime = new Date(zoneEvent._D).getTime();
+      
+      // Check if team was still moving/positioning within 30 seconds after zone update
+      const lateMovements = positionEvents.filter(pos => {
+        const posTime = new Date(pos._D).getTime();
+        return posTime > zoneTime && (posTime - zoneTime) <= 30000; // 30 seconds after zone update
+      });
+      
+      if (lateMovements.length > 5) { // Significant movement after zone closed
+        lateRotationCount++;
+      }
+    });
+    
+    return Math.min(lateRotationCount, 5); // Cap at 5 to avoid extreme values
   }
 
   private detectThirdPartySituations(events: any[], teamPlayers: string[]): number {
-    // Implementation for detecting third party situations
-    return 0; // Placeholder
+    const killEvents = events.filter(e => e._T === 'LogPlayerKillV2');
+    const teamDeaths = killEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    
+    let thirdPartyCount = 0;
+    
+    teamDeaths.forEach(death => {
+      const deathTime = new Date(death._D).getTime();
+      
+      // Look for other engagements within 2 minutes before this death
+      const recentKills = killEvents.filter(k => {
+        const killTime = new Date(k._D).getTime();
+        const timeDiff = Math.abs(deathTime - killTime) / 1000; // Convert to seconds
+        return timeDiff <= 120 && timeDiff > 0; // Within 2 minutes, but not the same event
+      });
+      
+      // Check if there were kills involving the team recently
+      const teamInvolvedInRecentKills = recentKills.some(k => 
+        teamPlayers.includes(k.killer?.name) || teamPlayers.includes(k.victim?.name)
+      );
+      
+      // Check if the killer is not someone the team was recently fighting
+      const recentEnemies = recentKills
+        .filter(k => teamPlayers.includes(k.victim?.name))
+        .map(k => k.killer?.name)
+        .filter(name => name && !teamPlayers.includes(name));
+      
+      const killerName = death.killer?.name;
+      const isThirdParty = teamInvolvedInRecentKills && 
+                          killerName && 
+                          !teamPlayers.includes(killerName) && 
+                          !recentEnemies.includes(killerName);
+      
+      if (isThirdParty) {
+        thirdPartyCount++;
+      }
+    });
+    
+    return thirdPartyCount;
   }
 
   private detectOverExtensions(positionEvents: any[], teamPlayers: string[]): number {
-    // Implementation for detecting team over-extensions
-    return 0; // Placeholder
+    const teamPositions = positionEvents.filter(e => teamPlayers.includes(e.character?.name));
+    
+    if (teamPositions.length < 2) return 0;
+    
+    // Group positions by timestamp
+    const positionsByTime = new Map<string, any[]>();
+    teamPositions.forEach(pos => {
+      const timeKey = pos._D;
+      if (!positionsByTime.has(timeKey)) {
+        positionsByTime.set(timeKey, []);
+      }
+      positionsByTime.get(timeKey)!.push(pos);
+    });
+    
+    let overExtensionCount = 0;
+    const maxSafeDistance = 300; // 300 meters is considered over-extended
+    
+    positionsByTime.forEach(positions => {
+      if (positions.length >= 2) {
+        // Calculate distances between all team members
+        for (let i = 0; i < positions.length; i++) {
+          for (let j = i + 1; j < positions.length; j++) {
+            const pos1 = positions[i].character?.location;
+            const pos2 = positions[j].character?.location;
+            
+            if (pos1 && pos2) {
+              const distance = Math.sqrt(
+                Math.pow(pos1.x - pos2.x, 2) + 
+                Math.pow(pos1.y - pos2.y, 2)
+              );
+              const distanceInMeters = distance / 100; // Convert to meters
+              
+              if (distanceInMeters > maxSafeDistance) {
+                overExtensionCount++;
+                return; // Count this timestamp only once
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    return overExtensionCount;
   }
 
   private calculateEarlyLootTime(lootEvents: any[], teamPlayers: string[]): number {
-    // Implementation for calculating early looting time
-    return 0; // Placeholder
+    const teamLootEvents = lootEvents.filter(e => teamPlayers.includes(e.character?.name));
+    
+    if (teamLootEvents.length === 0) return 0;
+    
+    // Find the time span of early game looting (first 10 minutes)
+    const sortedEvents = teamLootEvents.sort((a, b) => new Date(a._D).getTime() - new Date(b._D).getTime());
+    const firstLoot = new Date(sortedEvents[0]._D);
+    
+    // Find when early game looting phase ended
+    const earlyGameEvents = sortedEvents.filter(e => {
+      const timestamp = new Date(e._D);
+      const elapsed = (timestamp.getTime() - firstLoot.getTime()) / 1000;
+      return elapsed <= 600; // First 10 minutes
+    });
+    
+    if (earlyGameEvents.length === 0) return 0;
+    
+    const lastEarlyLoot = new Date(earlyGameEvents[earlyGameEvents.length - 1]._D);
+    const earlyLootTimeSeconds = (lastEarlyLoot.getTime() - firstLoot.getTime()) / 1000;
+    
+    return Math.round(earlyLootTimeSeconds);
   }
 
   private calculateAverageEngagementDistance(killEvents: any[], teamPlayers: string[]): number {
@@ -574,8 +735,85 @@ export class TelemetryAnalyzerService {
   }
 
   private analyzeWeaponEffectiveness(killEvents: any[], weaponFireEvents: any[], teamPlayers: string[]): WeaponEffectiveness[] {
-    // Implementation for weapon effectiveness analysis
-    return []; // Placeholder
+    const teamKills = killEvents.filter(e => teamPlayers.includes(e.killer?.name));
+    
+    if (teamKills.length === 0) return [];
+    
+    // Group kills by weapon type
+    const weaponStats = new Map<string, { kills: number; shots: number; }>();
+    
+    teamKills.forEach(kill => {
+      const weaponName = kill.killerDamageInfo?.damageCauserName || 'Unknown';
+      if (!weaponStats.has(weaponName)) {
+        weaponStats.set(weaponName, { kills: 0, shots: 0 });
+      }
+      weaponStats.get(weaponName)!.kills++;
+    });
+    
+    // Add shot counts from weapon fire events (if available)
+    const teamFireEvents = weaponFireEvents.filter(e => teamPlayers.includes(e.character?.name));
+    teamFireEvents.forEach(fireEvent => {
+      const weaponName = fireEvent.weaponId || 'Unknown';
+      const fireCount = fireEvent.fireCount || 1;
+      
+      if (!weaponStats.has(weaponName)) {
+        weaponStats.set(weaponName, { kills: 0, shots: 0 });
+      }
+      weaponStats.get(weaponName)!.shots += fireCount;
+    });
+    
+    // Convert to WeaponEffectiveness array
+    const effectiveness: WeaponEffectiveness[] = [];
+    
+    weaponStats.forEach((stats, weaponName) => {
+      const accuracy = stats.shots > 0 ? (stats.kills / stats.shots) * 100 : 0;
+      
+      effectiveness.push({
+        weapon: weaponName,
+        kills: stats.kills,
+        shots: stats.shots,
+        accuracy: Math.round(accuracy * 100) / 100, // Round to 2 decimal places
+        averageDistance: 0, // Would need additional data from kill events
+        recommendation: this.generateWeaponRecommendation(weaponName, stats.kills, accuracy)
+      });
+    });
+    
+    // Sort by kills descending
+    return effectiveness.sort((a, b) => b.kills - a.kills);
+  }
+
+  private generateWeaponRecommendation(weaponName: string, kills: number, accuracy: number): string {
+    if (kills === 0) {
+      return `Consider practicing with ${weaponName} or switching to a more suitable weapon`;
+    }
+    
+    if (accuracy > 0) {
+      if (accuracy >= 5) {
+        return `Excellent performance with ${weaponName} - maintain current usage`;
+      } else if (accuracy >= 2) {
+        return `Good ${weaponName} usage - work on positioning for better shots`;
+      } else {
+        return `${weaponName} accuracy needs improvement - practice aim and recoil control`;
+      }
+    }
+    
+    // No shot data available
+    if (kills >= 3) {
+      return `Strong performance with ${weaponName} - continue current strategy`;
+    } else if (kills >= 1) {
+      return `${weaponName} is working well - consider using it more frequently`;
+    }
+    
+    return `Limited data for ${weaponName} - gather more experience with this weapon`;
+  }
+
+  private isSniperrRifle(weaponName: string): boolean {
+    return this.WEAPON_CATEGORIES.SR.some((w: string) => weaponName.includes(w)) ||
+           this.WEAPON_CATEGORIES.DMR.some((w: string) => weaponName.includes(w));
+  }
+
+  private isAssaultRifle(weaponName: string): boolean {
+    return this.WEAPON_CATEGORIES.AR.some((w: string) => weaponName.includes(w));
   }
 
   private analyzeEngagementPositioning(killEvents: any[], teamPlayers: string[]): EngagementPositioning {
@@ -916,18 +1154,226 @@ export class TelemetryAnalyzerService {
   }
 
   private calculatePositioningScore(events: any[], teamPlayers: string[]): number {
-    // Implementation for positioning score calculation
-    return 75; // Placeholder
+    let score = 0;
+    let components = 0;
+    
+    // Zone management component (30% of positioning score)
+    const zoneEvents = events.filter(e => e._T === 'LogZoneUpdate');
+    const damageEvents = events.filter(e => e._T === 'LogPlayerTakeDamage' && e.damageReason === 'BluezoneFinish');
+    const teamBlueDamage = damageEvents
+      .filter(e => teamPlayers.includes(e.victim?.name))
+      .reduce((total, e) => total + (e.damage || 0), 0);
+    
+    // Score based on blue zone damage (less damage = higher score)
+    let zoneScore = 100;
+    if (teamBlueDamage > 200) zoneScore = 20;
+    else if (teamBlueDamage > 100) zoneScore = 50;
+    else if (teamBlueDamage > 50) zoneScore = 70;
+    else if (teamBlueDamage > 20) zoneScore = 85;
+    
+    score += zoneScore * 0.3;
+    components += 0.3;
+
+    // Rotation efficiency component (25% of positioning score)
+    const vehicleEvents = events.filter(e => e._T === 'LogVehicleRide');
+    const teamVehicleUsage = vehicleEvents.filter(e => teamPlayers.includes(e.character?.name)).length;
+    
+    let rotationScore = 50; // Base score
+    if (teamVehicleUsage >= 5) rotationScore = 90;
+    else if (teamVehicleUsage >= 3) rotationScore = 75;
+    else if (teamVehicleUsage >= 1) rotationScore = 60;
+    else rotationScore = 30;
+    
+    score += rotationScore * 0.25;
+    components += 0.25;
+
+    // Team spread component (25% of positioning score)
+    const positionEvents = events.filter(e => e._T === 'LogPlayerPosition');
+    const teamSpreading = this.analyzeTeamSpreading(positionEvents, teamPlayers);
+    const spreadScore = teamSpreading.optimalSpreadMaintained || 50;
+    
+    score += spreadScore * 0.25;
+    components += 0.25;
+
+    // Final circle performance (20% of positioning score)
+    const killEvents = events.filter(e => e._T === 'LogPlayerKillV2');
+    const teamDeaths = killEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    const lateGameDeaths = teamDeaths.filter(e => {
+      const timestamp = new Date(e._D);
+      const matchStart = new Date(events[0]?._D || timestamp);
+      const elapsed = (timestamp.getTime() - matchStart.getTime()) / 1000;
+      return elapsed > 1800; // Deaths after 30 minutes (late game)
+    });
+
+    let finalCircleScore = 80;
+    if (lateGameDeaths.length === 0) finalCircleScore = 95;
+    else if (lateGameDeaths.length === 1) finalCircleScore = 70;
+    else finalCircleScore = 40;
+    
+    score += finalCircleScore * 0.2;
+    components += 0.2;
+
+    return Math.round(Math.max(0, Math.min(100, score / components)));
   }
 
   private calculateEngagementScore(events: any[], teamPlayers: string[]): number {
-    // Implementation for engagement score calculation
-    return 70; // Placeholder
+    const killEvents = events.filter(e => e._T === 'LogPlayerKillV2');
+    const damageEvents = events.filter(e => e._T === 'LogPlayerTakeDamage');
+    
+    const teamKills = killEvents.filter(e => teamPlayers.includes(e.killer?.name));
+    const teamDeaths = killEvents.filter(e => teamPlayers.includes(e.victim?.name));
+    
+    let score = 0;
+    let components = 0;
+
+    // Kill/Death ratio component (40% of engagement score)
+    const totalEngagements = teamKills.length + teamDeaths.length;
+    if (totalEngagements > 0) {
+      const kdRatio = teamKills.length / Math.max(1, teamDeaths.length);
+      let kdScore = 50;
+      
+      if (kdRatio >= 3) kdScore = 95;
+      else if (kdRatio >= 2) kdScore = 85;
+      else if (kdRatio >= 1.5) kdScore = 75;
+      else if (kdRatio >= 1) kdScore = 65;
+      else if (kdRatio >= 0.5) kdScore = 45;
+      else kdScore = 25;
+      
+      score += kdScore * 0.4;
+      components += 0.4;
+    }
+
+    // Damage efficiency component (30% of engagement score)
+    const teamDamageDealt = damageEvents
+      .filter(e => teamPlayers.includes(e.attacker?.name))
+      .reduce((total, e) => total + (e.damageInfo?.damage || 0), 0);
+    
+    const teamDamageTaken = damageEvents
+      .filter(e => teamPlayers.includes(e.victim?.name))
+      .reduce((total, e) => total + (e.damageInfo?.damage || 0), 0);
+
+    if (teamDamageDealt > 0 || teamDamageTaken > 0) {
+      const damageRatio = teamDamageDealt / Math.max(1, teamDamageTaken);
+      let damageScore = 50;
+      
+      if (damageRatio >= 2) damageScore = 90;
+      else if (damageRatio >= 1.5) damageScore = 80;
+      else if (damageRatio >= 1) damageScore = 70;
+      else if (damageRatio >= 0.7) damageScore = 60;
+      else damageScore = 40;
+      
+      score += damageScore * 0.3;
+      components += 0.3;
+    }
+
+    // Engagement range appropriateness (20% of engagement score)
+    const averageDistance = this.calculateAverageEngagementDistance(killEvents, teamPlayers);
+    let rangeScore = 60; // Default moderate score
+    
+    // Optimal engagement range is typically 50-150m
+    if (averageDistance >= 50 && averageDistance <= 150) rangeScore = 85;
+    else if (averageDistance >= 30 && averageDistance <= 200) rangeScore = 70;
+    else if (averageDistance < 30) rangeScore = 50; // Too close, risky
+    else rangeScore = 45; // Too far, less effective
+    
+    score += rangeScore * 0.2;
+    components += 0.2;
+
+    // Third-party avoidance (10% of engagement score)
+    const thirdParties = this.detectThirdPartySituations(events, teamPlayers);
+    let thirdPartyScore = 80;
+    if (thirdParties > 2) thirdPartyScore = 30;
+    else if (thirdParties > 1) thirdPartyScore = 50;
+    else if (thirdParties === 1) thirdPartyScore = 70;
+    
+    score += thirdPartyScore * 0.1;
+    components += 0.1;
+
+    // If no engagement data, return neutral score
+    if (components === 0) return 50;
+
+    return Math.round(Math.max(0, Math.min(100, score / components)));
   }
 
   private calculateLootingScore(events: any[], teamPlayers: string[]): number {
-    // Implementation for looting score calculation
-    return 80; // Placeholder
+    const lootEvents = events.filter(e => e._T === 'LogItemPickup');
+    const useEvents = events.filter(e => e._T === 'LogPlayerUseItem');
+    
+    let score = 0;
+    let components = 0;
+
+    // Early game looting efficiency (30% of looting score)
+    const teamLootEvents = lootEvents.filter(e => teamPlayers.includes(e.character?.name));
+    const earlyGameLootEvents = teamLootEvents.filter(e => {
+      const timestamp = new Date(e._D);
+      const matchStart = new Date(events[0]?._D || timestamp);
+      const elapsed = (timestamp.getTime() - matchStart.getTime()) / 1000;
+      return elapsed <= 600; // First 10 minutes
+    });
+
+    let lootEfficiencyScore = 70; // Default score
+    if (earlyGameLootEvents.length >= 50) lootEfficiencyScore = 90; // Very efficient
+    else if (earlyGameLootEvents.length >= 30) lootEfficiencyScore = 80; // Good
+    else if (earlyGameLootEvents.length >= 20) lootEfficiencyScore = 70; // Average  
+    else if (earlyGameLootEvents.length >= 10) lootEfficiencyScore = 60; // Slow
+    else lootEfficiencyScore = 40; // Very slow
+
+    score += lootEfficiencyScore * 0.3;
+    components += 0.3;
+
+    // Weapon looting (25% of looting score)
+    const weaponLootEvents = teamLootEvents.filter(e => {
+      const itemName = e.item?.itemId || '';
+      return this.isWeaponItem(itemName);
+    });
+
+    let weaponScore = 50;
+    if (weaponLootEvents.length >= 8) weaponScore = 85; // Good weapon variety
+    else if (weaponLootEvents.length >= 6) weaponScore = 75;
+    else if (weaponLootEvents.length >= 4) weaponScore = 65;
+    else if (weaponLootEvents.length >= 2) weaponScore = 55;
+    else weaponScore = 35; // Limited weapon options
+
+    score += weaponScore * 0.25;
+    components += 0.25;
+
+    // Healing item usage (25% of looting score)
+    const healingUseEvents = useEvents.filter(e => {
+      const itemName = e.item?.itemId || '';
+      return this.isHealingItem(itemName) && teamPlayers.includes(e.character?.name);
+    });
+
+    let healingScore = 60;
+    if (healingUseEvents.length >= 15) healingScore = 90; // Proactive healing
+    else if (healingUseEvents.length >= 10) healingScore = 80;
+    else if (healingUseEvents.length >= 7) healingScore = 70;
+    else if (healingUseEvents.length >= 4) healingScore = 60;
+    else if (healingUseEvents.length >= 1) healingScore = 50;
+    else healingScore = 30; // Poor healing management
+
+    score += healingScore * 0.25;
+    components += 0.25;
+
+    // Throwable usage (20% of looting score)
+    const throwableUseEvents = useEvents.filter(e => {
+      const itemName = e.item?.itemId || '';
+      return this.isThrowableItem(itemName) && teamPlayers.includes(e.character?.name);
+    });
+
+    let throwableScore = 50;
+    if (throwableUseEvents.length >= 8) throwableScore = 95; // Excellent tactical usage
+    else if (throwableUseEvents.length >= 5) throwableScore = 85;
+    else if (throwableUseEvents.length >= 3) throwableScore = 75;
+    else if (throwableUseEvents.length >= 1) throwableScore = 65;
+    else throwableScore = 45; // Limited tactical item usage
+
+    score += throwableScore * 0.2;
+    components += 0.2;
+
+    // If no looting data, return neutral score
+    if (components === 0) return 60;
+
+    return Math.round(Math.max(0, Math.min(100, score / components)));
   }
 
   private calculateTeamworkScore(events: any[], teamPlayers: string[]): number {
