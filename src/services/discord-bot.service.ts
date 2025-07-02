@@ -4,16 +4,12 @@ import { DiscordPlayerMatchStats, DiscordMatchGroupSummary } from '../types/disc
 import { PubgStorageService } from './pubg-storage.service';
 import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
-import { TelemetryAnalyzerService } from './telemetry-analyzer.service';
-import { CoachingTipsService } from './coaching-tips.service';
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { discord, success, error, debug, info } from '../utils/logger';
 
 export class DiscordBotService {
     private readonly client: Client;
     private readonly pubgStorageService: PubgStorageService;
-    private readonly telemetryAnalyzer: TelemetryAnalyzerService;
-    private readonly coachingTipsService: CoachingTipsService;
     private readonly commands = [
         new SlashCommandBuilder()
             .setName('add')
@@ -50,8 +46,6 @@ export class DiscordBotService {
             ],
         });
         this.pubgStorageService = new PubgStorageService();
-        this.telemetryAnalyzer = new TelemetryAnalyzerService();
-        this.coachingTipsService = new CoachingTipsService();
         this.setupEventHandlers();
     }
 
