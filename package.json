@@ -1,6 +1,6 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0",
+  "version": "1.2.0.1",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {
@@ -13,15 +13,12 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test:integration": "jest --config jest.integration.config.js",
-    "version:patch": "npm version patch --no-git-tag-version",
-    "version:minor": "npm version minor --no-git-tag-version",
-    "version:major": "npm version major --no-git-tag-version",
-    "pre-release": "npm run test && npm run build",
-    "tag:create": "git add package.json package-lock.json && git commit -m \"chore: prepare release\" && git tag \"v$(node -pe \"require('./package.json').version\")\"",
-    "tag:push": "git push origin main --follow-tags",
-    "release:patch": "npm run pre-release && npm run version:patch && npm run tag:create && npm run tag:push",
-    "release:minor": "npm run pre-release && npm run version:minor && npm run tag:create && npm run tag:push",
-    "release:major": "npm run pre-release && npm run version:major && npm run tag:create && npm run tag:push",
+    "version:build": "node scripts/increment-build.js",
+    "version:patch": "node scripts/increment-version.js patch",
+    "version:minor": "node scripts/increment-version.js minor",
+    "version:major": "node scripts/increment-version.js major",
+    "docker:build": "npm run build && docker build -t pubg-tracker-bot .",
+    "docker:run": "docker run -p 3000:3000 pubg-tracker-bot",
     "prepare": "husky"
   },
   "dependencies": {

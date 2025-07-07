@@ -13,10 +13,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run test:integration` - Run integration tests
 - `npm run test:watch` - Run tests in watch mode for development
 
-### Release Commands
-- `npm run release:patch` - Create patch release (bug fixes)
-- `npm run release:minor` - Create minor release (new features)  
-- `npm run release:major` - Create major release (breaking changes)
+### Versioning Commands
+- `npm run version:build` - Increment build number (automated on each commit)
+- `npm run version:patch` - Increment patch version (bug fixes, resets build to 0)
+- `npm run version:minor` - Increment minor version (new features, resets patch and build to 0)
+- `npm run version:major` - Increment major version (breaking changes, resets minor, patch, and build to 0)
+
+### Docker Commands
+- `npm run docker:build` - Build Docker image locally
+- `npm run docker:run` - Run Docker container locally
 
 ## Architecture Overview
 
@@ -102,9 +107,25 @@ The project includes Docker support with:
 - docker-compose.yml for local development with MongoDB
 - Automated CI/CD pipeline for Docker image publishing
 
+## Automated Versioning System
+
+The project uses an automated build numbering system:
+- **Build numbers** increment automatically on each commit via Husky pre-commit hooks
+- **Version format**: `major.minor.patch.build` (e.g., `1.2.0.15`)
+- **Docker tags** are created automatically for each build:
+  - `latest` - Always points to the most recent build
+  - `1.2.0.15` - Full semantic version with build number
+  - `build-15` - Build number only
+
+### Manual Version Control
+- Use `npm run version:patch/minor/major` for semantic version changes
+- Semantic version changes reset the build number to 0
+- Build numbers increment automatically with each commit
+
 ## Important Notes
 
 - The application uses MongoDB for persistence - ensure database connectivity before startup
 - PUBG API has rate limits - monitor the rate limiter logs if experiencing issues
 - Match processing is throttled to prevent overwhelming the Discord API
 - All sensitive data should be provided via environment variables, never hardcoded
+- Docker images are automatically built and tagged with version numbers on each push to main
