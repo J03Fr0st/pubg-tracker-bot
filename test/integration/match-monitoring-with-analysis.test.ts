@@ -9,17 +9,17 @@ jest.mock('discord.js', () => ({
     login: jest.fn().mockResolvedValue(undefined),
     channels: {
       fetch: jest.fn().mockResolvedValue({
-        send: jest.fn().mockResolvedValue(undefined)
-      })
-    }
+        send: jest.fn().mockResolvedValue(undefined),
+      }),
+    },
   })),
   Events: {
-    InteractionCreate: 'interactionCreate'
+    InteractionCreate: 'interactionCreate',
   },
   GatewayIntentBits: {
     Guilds: 1,
     GuildMessages: 2,
-    MessageContent: 4
+    MessageContent: 4,
   },
   EmbedBuilder: jest.fn(() => ({
     setTitle: jest.fn().mockReturnThis(),
@@ -27,20 +27,20 @@ jest.mock('discord.js', () => ({
     setColor: jest.fn().mockReturnThis(),
     setFooter: jest.fn().mockReturnThis(),
     setTimestamp: jest.fn().mockReturnThis(),
-    addFields: jest.fn().mockReturnThis()
+    addFields: jest.fn().mockReturnThis(),
   })),
   REST: jest.fn(() => ({
     setToken: jest.fn().mockReturnThis(),
-    put: jest.fn().mockResolvedValue(undefined)
+    put: jest.fn().mockResolvedValue(undefined),
   })),
   Routes: {
-    applicationCommands: jest.fn(() => 'mock-route')
+    applicationCommands: jest.fn(() => 'mock-route'),
   },
   SlashCommandBuilder: jest.fn(() => ({
     setName: jest.fn().mockReturnThis(),
     setDescription: jest.fn().mockReturnThis(),
-    addStringOption: jest.fn().mockReturnThis()
-  }))
+    addStringOption: jest.fn().mockReturnThis(),
+  })),
 }));
 
 describe('Match Monitoring with Telemetry Analysis Integration', () => {
@@ -56,8 +56,8 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     mockPubgApiService = {
       fetchAndFilterLogPlayerKillV2Events: jest.fn().mockResolvedValue({
         kills: [],
-        groggies: []
-      })
+        groggies: [],
+      }),
     } as any;
 
     discordBotService = new DiscordBotService(mockPubgApiService);
@@ -77,7 +77,7 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
       playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
       telemetryUrl: 'https://invalid-telemetry-url.com/data.json',
-      players: [{ name: 'TestPlayer', stats: undefined }]
+      players: [{ name: 'TestPlayer', stats: undefined }],
     };
 
     const mockSend = jest.fn().mockResolvedValue(undefined);
@@ -85,8 +85,9 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
 
     // Should not throw an error, and should send only the basic match summary
-    await expect(discordBotService.sendMatchSummary('test-channel-id', mockMatchSummary))
-      .resolves.not.toThrow();
+    await expect(
+      discordBotService.sendMatchSummary('test-channel-id', mockMatchSummary)
+    ).resolves.not.toThrow();
 
     console.log('✅ Error handled gracefully');
     console.log('   ✓ Basic match summary still sent');
@@ -99,5 +100,5 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
 
 // Helper function to prevent the jest process from hanging
 afterAll(async () => {
-  await new Promise<void>(resolve => setTimeout(resolve, 100));
-}); 
+  await new Promise<void>((resolve) => setTimeout(resolve, 100));
+});

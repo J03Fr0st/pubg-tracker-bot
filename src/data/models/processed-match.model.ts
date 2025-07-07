@@ -8,11 +8,14 @@ export interface IProcessedMatch extends Document {
   processedAt: Date;
 }
 
-const ProcessedMatchSchema = new Schema<IProcessedMatch>({
-  matchId: { type: String, required: true, unique: true },
-  processedAt: { type: Date, default: Date.now }
-}, {
-  timestamps: true // This will add createdAt and updatedAt fields
-});
+const ProcessedMatchSchema = new Schema<IProcessedMatch>(
+  {
+    matchId: { type: String, required: true, unique: true },
+    processedAt: { type: Date, default: Date.now },
+  },
+  {
+    timestamps: true, // This will add createdAt and updatedAt fields
+  }
+);
 
-export const ProcessedMatch = model<IProcessedMatch>('ProcessedMatch', ProcessedMatchSchema); 
+export const ProcessedMatch = model<IProcessedMatch>('ProcessedMatch', ProcessedMatchSchema);

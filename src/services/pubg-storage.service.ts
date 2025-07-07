@@ -22,7 +22,7 @@ export class PubgStorageService {
 
   public async updatePlayerLastMatch(playerName: string, matchId: string): Promise<void> {
     await this.playerRepository.updatePlayerLastMatch(playerName, matchId);
-  }  
+  }
 
   //#endregion
 

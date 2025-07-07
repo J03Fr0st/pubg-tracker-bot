@@ -20,13 +20,15 @@ export class PubgApiService {
     rateLimiter?: RateLimiter
   ) {
     this.shard = shard;
-    this.apiClient = apiClient ?? axios.create({
-      baseURL: `https://api.pubg.com/shards/${shard}`,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/vnd.api+json'
-      }
-    });
+    this.apiClient =
+      apiClient ??
+      axios.create({
+        baseURL: `https://api.pubg.com/shards/${shard}`,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/vnd.api+json',
+        },
+      });
     this.rateLimiter = rateLimiter ?? new RateLimiter(8);
     this.storageService = storageService;
   }
@@ -47,7 +49,7 @@ export class PubgApiService {
       }
       const response = await this.apiClient.get<T>(endpoint, {
         timeout: 10000, // 10 second timeout
-        timeoutErrorMessage: 'Request timed out while connecting to PUBG API'
+        timeoutErrorMessage: 'Request timed out while connecting to PUBG API',
       });
       return response.data;
     } catch (apiError) {
@@ -56,15 +58,21 @@ export class PubgApiService {
         if (apiError.response?.status === 429) {
           const retryAfter = parseInt(apiError.response.headers['retry-after'] || '60', 10);
           warn(`Rate limit exceeded. Retrying after ${retryAfter} seconds.`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
           return this.makeRequest<T>(endpoint, retryCount);
         }
 
         // Handle server errors (5xx) with retry
-        if (apiError.response?.status && apiError.response.status >= 500 && retryCount < MAX_RETRIES) {
+        if (
+          apiError.response?.status &&
+          apiError.response.status >= 500 &&
+          retryCount < MAX_RETRIES
+        ) {
           const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
-          warn(`Server error (${apiError.response.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms.`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          warn(
+            `Server error (${apiError.response.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms.`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
           return this.makeRequest<T>(endpoint, retryCount + 1);
         }
 
@@ -73,7 +81,7 @@ export class PubgApiService {
           if (retryCount < MAX_RETRIES) {
             const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
             warn(`Request timed out. Retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms.`);
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
             return this.makeRequest<T>(endpoint, retryCount + 1);
           }
           throw new Error('Request timed out while connecting to PUBG API after multiple retries');
@@ -84,7 +92,7 @@ export class PubgApiService {
         error(`PUBG API Error: ${errorMessage}`, {
           status: apiError.response?.status,
           endpoint,
-          errorCode: apiError.code
+          errorCode: apiError.code,
         });
         throw new Error(`PUBG API Error: ${errorMessage}`);
       }
@@ -99,7 +107,9 @@ export class PubgApiService {
    * Searches for a player by their name and saves to database
    */
   public async getPlayer(playerName: string): Promise<PlayersResponse> {
-    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerName}`);    
+    const response = await this.makeRequest<PlayersResponse>(
+      `/players?filter[playerNames]=${playerName}`
+    );
     return response;
   }
 
@@ -112,22 +122,24 @@ export class PubgApiService {
     if (playerNames.length > 10) {
       throw new Error('Cannot request stats for more than 10 players at a time.');
     }
-    
+
     const startTime = Date.now();
     const playerNamesParam = playerNames.join(',');
-    const response = await this.makeRequest<PlayersResponse>(`/players?filter[playerNames]=${playerNamesParam}`);
+    const response = await this.makeRequest<PlayersResponse>(
+      `/players?filter[playerNames]=${playerNamesParam}`
+    );
 
     // Save player data using storage service
     for (const player of response.data) {
-        await this.storageService.addPlayer(player);
+      await this.storageService.addPlayer(player);
     }
-    
+
     // Log performance in debug mode
     if (process.env.NODE_ENV === 'development') {
       const duration = Date.now() - startTime;
       api(`Retrieved ${response.data.length} players in ${duration}ms`);
     }
-    
+
     return response;
   }
 
@@ -137,11 +149,9 @@ export class PubgApiService {
   public async getMatchDetails(matchId: string): Promise<MatchesResponse> {
     const response = await this.makeRequest<MatchesResponse>(`matches/${matchId}`);
 
-    const asset = response.included.filter(
-      (item): item is Asset => item.type === 'asset'
-    );
+    const asset = response.included.filter((item): item is Asset => item.type === 'asset');
 
-    const telemetryUrl = asset[0].attributes.URL;    
+    const telemetryUrl = asset[0].attributes.URL;
 
     response.telemetryUrl = telemetryUrl;
     return response;
@@ -162,7 +172,7 @@ export class PubgApiService {
       const events: any[] = response.data;
 
       const kills = events
-        .filter(event => event._T === 'LogPlayerKillV2')
+        .filter((event) => event._T === 'LogPlayerKillV2')
         .filter((event: LogPlayerKillV2) => {
           const killerName = event.killer?.name;
           const victimName = event.victim?.name;
@@ -179,7 +189,7 @@ export class PubgApiService {
         });
 
       const groggies = events
-        .filter(event => event._T === 'LogPlayerMakeGroggy')
+        .filter((event) => event._T === 'LogPlayerMakeGroggy')
         .filter((event: LogPlayerMakeGroggy) => {
           const attackerName = event.attacker?.name;
           const victimName = event.victim?.name;
@@ -196,4 +206,4 @@ export class PubgApiService {
       throw telemetryError;
     }
   }
-} 
+}

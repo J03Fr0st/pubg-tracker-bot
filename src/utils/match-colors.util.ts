@@ -10,7 +10,7 @@ export class MatchColorUtil {
   public static generateMatchColor(matchId: string): number {
     // Convert matchId to a number by summing char codes
     const seed = matchId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    
+
     // List of vibrant colors that look good in Discord
     const colors = [
       0x3498db, // Blue
@@ -26,7 +26,7 @@ export class MatchColorUtil {
       0x8e44ad, // Wisteria
       0x2980b9, // Belize Hole
       0xc0392b, // Pomegranate
-      0x27ae60  // Nephritis
+      0x27ae60, // Nephritis
     ];
 
     // Use the seed to consistently select a color
@@ -39,10 +39,10 @@ export class MatchColorUtil {
    * @returns A color number based on placement performance
    */
   public static getPlacementColor(rank?: number): number {
-    if (!rank) return 0x36393F; // Discord dark theme color
-    if (rank === 1) return 0xFFD700; // Gold
-    if (rank <= 3) return 0xC0C0C0; // Silver
-    if (rank <= 10) return 0xCD7F32; // Bronze
-    return 0x36393F; // Default dark color
+    if (!rank) return 0x36393f; // Discord dark theme color
+    if (rank === 1) return 0xffd700; // Gold
+    if (rank <= 3) return 0xc0c0c0; // Silver
+    if (rank <= 10) return 0xcd7f32; // Bronze
+    return 0x36393f; // Default dark color
   }
-} 
+}

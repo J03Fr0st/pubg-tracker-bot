@@ -18,4 +18,4 @@ describe('Example Test Suite', () => {
     const result = `${greeting} ${name}`;
     expect(result).toBe('Hello World');
   });
-}); 
+});

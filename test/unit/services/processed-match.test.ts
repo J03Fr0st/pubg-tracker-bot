@@ -6,8 +6,8 @@ jest.mock('../../../src/data/models/processed-match.model', () => ({
     findOne: jest.fn(),
     findByIdAndDelete: jest.fn(),
     create: jest.fn(),
-    find: jest.fn()
-  }
+    find: jest.fn(),
+  },
 }));
 
 import { ProcessedMatch } from '../../../src/data/models/processed-match.model';
@@ -26,8 +26,8 @@ describe('ProcessedMatchRepository', () => {
       // Arrange
       mockProcessedMatch.findOne.mockReturnValue({
         sort: jest.fn().mockReturnValue({
-          select: jest.fn().mockResolvedValue(null)
-        })
+          select: jest.fn().mockResolvedValue(null),
+        }),
       } as any);
 
       // Act
@@ -42,13 +42,13 @@ describe('ProcessedMatchRepository', () => {
       // Arrange
       const mockMatch = {
         _id: 'some-id',
-        matchId: 'match-123'
+        matchId: 'match-123',
       };
 
       mockProcessedMatch.findOne.mockReturnValue({
         sort: jest.fn().mockReturnValue({
-          select: jest.fn().mockResolvedValue(mockMatch)
-        })
+          select: jest.fn().mockResolvedValue(mockMatch),
+        }),
       } as any);
 
       mockProcessedMatch.findByIdAndDelete.mockResolvedValue(mockMatch as any);
@@ -68,8 +68,8 @@ describe('ProcessedMatchRepository', () => {
       // Arrange
       mockProcessedMatch.findOne.mockReturnValue({
         sort: jest.fn().mockReturnValue({
-          select: jest.fn().mockResolvedValue(null)
-        })
+          select: jest.fn().mockResolvedValue(null),
+        }),
       } as any);
 
       // Act
@@ -83,13 +83,13 @@ describe('ProcessedMatchRepository', () => {
       // Arrange
       const mockMatch = {
         matchId: 'match-123',
-        processedAt: new Date('2023-01-01T12:00:00Z')
+        processedAt: new Date('2023-01-01T12:00:00Z'),
       };
 
       mockProcessedMatch.findOne.mockReturnValue({
         sort: jest.fn().mockReturnValue({
-          select: jest.fn().mockResolvedValue(mockMatch)
-        })
+          select: jest.fn().mockResolvedValue(mockMatch),
+        }),
       } as any);
 
       // Act
@@ -98,9 +98,9 @@ describe('ProcessedMatchRepository', () => {
       // Assert
       expect(result).toEqual({
         matchId: 'match-123',
-        processedAt: new Date('2023-01-01T12:00:00Z')
+        processedAt: new Date('2023-01-01T12:00:00Z'),
       });
       expect(mockProcessedMatch.findOne().sort).toHaveBeenCalledWith({ processedAt: -1 });
     });
   });
-}); 
+});

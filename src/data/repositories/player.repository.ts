@@ -1,4 +1,4 @@
-import {MatchReference, PlayerData } from '../../types/pubg-player-api.types';
+import { MatchReference, PlayerData } from '../../types/pubg-player-api.types';
 import { Player, IPlayer } from '../models/player.model';
 
 export class PlayerRepository {
@@ -16,7 +16,7 @@ export class PlayerRepository {
         updatedAt: new Date(playerData.attributes.updatedAt),
         patchVersion: playerData.attributes.patchVersion,
         titleId: playerData.attributes.titleId,
-        matches: playerData.relationships.matches.data.map((match: MatchReference) => match.id)
+        matches: playerData.relationships.matches.data.map((match: MatchReference) => match.id),
       },
       { upsert: true, new: true }
     );
@@ -28,10 +28,7 @@ export class PlayerRepository {
   }
 
   public async updatePlayerLastMatch(playerName: string, matchId: string): Promise<void> {
-    await Player.updateOne(
-      { name: playerName },
-      { $set: { lastMatchId: matchId } }
-    );
+    await Player.updateOne({ name: playerName }, { $set: { lastMatchId: matchId } });
   }
 
   public async findPlayerByPubgId(pubgId: string): Promise<IPlayer | null> {
@@ -41,4 +38,4 @@ export class PlayerRepository {
   public async getAllPlayers(): Promise<IPlayer[]> {
     return Player.find();
   }
-} 
+}

@@ -50,7 +50,6 @@ export interface IMatch extends Document {
   telemetryUrl: string;
   participants: IParticipant[];
   rosters: IRoster[];
-  
 }
 
 const ParticipantStatsSchema = new Schema<IParticipantStats>({
@@ -75,36 +74,39 @@ const ParticipantStatsSchema = new Schema<IParticipantStats>({
   vehicleDestroys: { type: Number, required: true },
   walkDistance: { type: Number, required: true },
   weaponsAcquired: { type: Number, required: true },
-  winPlace: { type: Number, required: true }
+  winPlace: { type: Number, required: true },
 });
 
 const ParticipantSchema = new Schema<IParticipant>({
   pubgId: { type: String, required: true },
   name: { type: String, required: true },
-  stats: { type: ParticipantStatsSchema, required: true }
+  stats: { type: ParticipantStatsSchema, required: true },
 });
 
 const RosterSchema = new Schema<IRoster>({
   rosterId: { type: String, required: true },
   teamId: { type: String, required: true },
   rank: { type: Number, required: true },
-  participantNames: [{ type: String, required: true }]
+  participantNames: [{ type: String, required: true }],
 });
 
-const MatchSchema = new Schema<IMatch>({
-  matchId: { type: String, required: true, unique: true },
-  gameMode: { type: String, required: true },
-  mapName: { type: String, required: true },
-  duration: { type: Number, required: true },
-  createdAt: { type: Date, required: true },
-  isCustomMatch: { type: Boolean, required: true },
-  seasonState: { type: String, required: true },
-  shardId: { type: String, required: true },
-  telemetryUrl: { type: String, required: true },
-  participants: [ParticipantSchema],
-  rosters: [RosterSchema]  
-}, {
-  timestamps: true
-});
+const MatchSchema = new Schema<IMatch>(
+  {
+    matchId: { type: String, required: true, unique: true },
+    gameMode: { type: String, required: true },
+    mapName: { type: String, required: true },
+    duration: { type: Number, required: true },
+    createdAt: { type: Date, required: true },
+    isCustomMatch: { type: Boolean, required: true },
+    seasonState: { type: String, required: true },
+    shardId: { type: String, required: true },
+    telemetryUrl: { type: String, required: true },
+    participants: [ParticipantSchema],
+    rosters: [RosterSchema],
+  },
+  {
+    timestamps: true,
+  }
+);
 
-export const Match = model<IMatch>('Match', MatchSchema); 
+export const Match = model<IMatch>('Match', MatchSchema);

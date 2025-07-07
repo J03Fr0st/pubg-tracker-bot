@@ -14,19 +14,19 @@ export interface AppConfig {
     clientId: string;
     channelId: string;
   };
-  
+
   // PUBG API configuration
   pubg: {
     apiKey: string;
     shard: string;
     maxRequestsPerMinute: number;
   };
-  
+
   // Database configuration
   database: {
     uri: string;
   };
-  
+
   // Monitoring configuration
   monitoring: {
     checkIntervalMs: number;
@@ -60,13 +60,13 @@ function getNumericEnv(name: string, defaultValue: number): number {
   if (!value) {
     return defaultValue;
   }
-  
+
   const numericValue = parseInt(value, 10);
   if (isNaN(numericValue)) {
     warn(`Environment variable ${name} is not a valid number, using default: ${defaultValue}`);
     return defaultValue;
   }
-  
+
   return numericValue;
 }
 
@@ -77,20 +77,20 @@ export const appConfig: AppConfig = {
   discord: {
     token: requireEnv('DISCORD_TOKEN'),
     clientId: requireEnv('DISCORD_CLIENT_ID'),
-    channelId: requireEnv('DISCORD_CHANNEL_ID')
+    channelId: requireEnv('DISCORD_CHANNEL_ID'),
   },
   pubg: {
     apiKey: requireEnv('PUBG_API_KEY'),
     shard: requireEnv('PUBG_SHARD', 'steam'),
-    maxRequestsPerMinute: getNumericEnv('PUBG_MAX_REQUESTS_PER_MINUTE', 10)
+    maxRequestsPerMinute: getNumericEnv('PUBG_MAX_REQUESTS_PER_MINUTE', 10),
   },
   database: {
-    uri: requireEnv('MONGODB_URI')
+    uri: requireEnv('MONGODB_URI'),
   },
   monitoring: {
     checkIntervalMs: getNumericEnv('CHECK_INTERVAL_MS', 90000),
-    maxMatchesToProcess: getNumericEnv('MAX_MATCHES_TO_PROCESS', 3)
-  }
+    maxMatchesToProcess: getNumericEnv('MAX_MATCHES_TO_PROCESS', 3),
+  },
 };
 
 /**
@@ -102,37 +102,37 @@ export function validateConfig(): void {
   if (!appConfig.discord.token) {
     throw new Error('Discord token is required');
   }
-  
+
   if (!appConfig.discord.clientId) {
     throw new Error('Discord client ID is required');
   }
-  
+
   if (!appConfig.discord.channelId) {
     throw new Error('Discord channel ID is required');
   }
-  
+
   // Validate PUBG API configuration
   if (!appConfig.pubg.apiKey) {
     throw new Error('PUBG API key is required');
   }
-  
+
   if (appConfig.pubg.maxRequestsPerMinute <= 0) {
     throw new Error('PUBG max requests per minute must be greater than 0');
   }
-  
+
   // Validate database configuration
   if (!appConfig.database.uri) {
     throw new Error('MongoDB URI is required');
   }
-  
+
   // Validate monitoring configuration
   if (appConfig.monitoring.checkIntervalMs < 5000) {
     warn('Check interval is very low, this may cause rate limiting issues');
   }
-  
+
   if (appConfig.monitoring.maxMatchesToProcess <= 0) {
     throw new Error('Max matches to process must be greater than 0');
   }
-  
+
   success('Configuration validated successfully');
 }

@@ -2,7 +2,7 @@
 export interface PlayersResponse {
   data: PlayerData[];
   links?: {
-      self: string;
+    self: string;
   };
   meta?: {};
 }
@@ -13,10 +13,10 @@ export interface PlayerData {
   id: string;
   attributes: PlayerAttributes;
   relationships: {
-      matches: RelationshipData;
+    matches: RelationshipData;
   };
   links?: {
-      self: string;
+    self: string;
   };
 }
 
