@@ -1,6 +1,6 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0.4",
+  "version": "1.2.0.5",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {
@@ -19,7 +19,7 @@
     "version:major": "node scripts/increment-version.js major",
     "docker:build": "npm run build && docker build -t pubg-tracker-bot .",
     "docker:run": "docker run -p 3000:3000 pubg-tracker-bot",
-    "prepare": "husky"
+    "prepare": "command -v husky >/dev/null 2>&1 && husky || true"
   },
   "dependencies": {
     "@j03fr0st/pubg-ts": "^1.0.1-beta",
