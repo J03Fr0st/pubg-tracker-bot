@@ -1,4 +1,4 @@
-import { PubgApiService } from './pubg-api.service';
+import { PubgClient, Participant, Roster, Asset, Player, Shard } from '@j03fr0st/pubg-ts';
 import { PubgStorageService } from './pubg-storage.service';
 import { DiscordBotService } from './discord-bot.service';
 import {
@@ -6,13 +6,6 @@ import {
   DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
 import { MatchMonitorPlayer, MatchMonitorMatchGroup } from '../types/match-monitor.types';
-import {
-  MatchesResponse,
-  MatchData,
-  Participant,
-  Roster,
-  Asset,
-} from '../types/pubg-matches-api.types';
 import { appConfig } from '../config/config';
 import { monitor, warn, error, info, success, debug } from '../utils/logger';
 
@@ -22,15 +15,22 @@ export class MatchMonitorService {
   private readonly maxMatchesToProcess: number;
   private isRunning: boolean = false;
   private shouldStop: boolean = false;
+  private readonly pubgClient: PubgClient;
 
   constructor(
-    private readonly pubgApi: PubgApiService,
     private readonly storage: PubgStorageService,
-    private readonly discordBot: DiscordBotService
+    private readonly discordBot: DiscordBotService,
+    apiKey: string,
+    shard: Shard = 'steam'
   ) {
     this.checkInterval = appConfig.monitoring.checkIntervalMs;
     this.channelId = appConfig.discord.channelId;
     this.maxMatchesToProcess = appConfig.monitoring.maxMatchesToProcess;
+
+    this.pubgClient = new PubgClient({
+      apiKey,
+      shard: shard,
+    });
 
     monitor(
       `Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`
@@ -115,10 +115,34 @@ export class MatchMonitorService {
 
     const playerNames = players.map((player) => player.name);
 
-    const playersResponse = await this.pubgApi.getStatsForPlayers(playerNames);
+    // Get players data from PUBG API
+    const allPlayersData: Player[] = [];
+    for (const playerName of playerNames) {
+      try {
+        const playerResponse = await this.pubgClient.players.getPlayerByName(playerName);
+        if (Array.isArray(playerResponse.data)) {
+          allPlayersData.push(...playerResponse.data);
+        } else {
+          allPlayersData.push(playerResponse.data as Player);
+        }
+
+        // Save to storage for compatibility
+        const playerData = Array.isArray(playerResponse.data)
+          ? playerResponse.data[0]
+          : (playerResponse.data as Player);
+        await this.storage.addPlayer({
+          id: playerData.id,
+          type: playerData.type,
+          attributes: playerData.attributes,
+          relationships: playerData.relationships,
+        });
+      } catch (error) {
+        warn(`Failed to get data for player ${playerName}: ${error}`);
+      }
+    }
 
     // Log players with their match counts
-    const playerMatchInfo = playersResponse.data
+    const playerMatchInfo = allPlayersData
       .map((player) => {
         const matchCount = player.relationships.matches.data.length;
         return `${player.attributes.name}(${matchCount})`;
@@ -129,7 +153,7 @@ export class MatchMonitorService {
     // OPTIMIZED: Collect all unique match IDs first WITHOUT fetching details
     const uniqueMatchIds = new Map<string, MatchMonitorPlayer[]>();
 
-    for (const player of playersResponse.data) {
+    for (const player of allPlayersData) {
       const matches = player.relationships.matches.data.slice(0, 5);
 
       for (const match of matches) {
@@ -162,7 +186,7 @@ export class MatchMonitorService {
 
     for (const matchId of newMatchIds) {
       try {
-        const matchDetails = await this.pubgApi.getMatchDetails(matchId);
+        const matchDetails = await this.pubgClient.matches.getMatch(matchId);
         const createdAt = new Date(matchDetails.data.attributes.createdAt);
 
         newMatches.push({
@@ -228,7 +252,7 @@ export class MatchMonitorService {
   ): Promise<DiscordMatchGroupSummary | null> {
     try {
       debug(`Fetching details for match ${match.matchId}`);
-      const matchDetails = await this.pubgApi.getMatchDetails(match.matchId);
+      const matchDetails = await this.pubgClient.matches.getMatch(match.matchId);
       const playerStats: DiscordPlayerMatchStats[] = [];
       let teamRank: number | undefined;
 
@@ -289,9 +313,8 @@ export class MatchMonitorService {
       }
 
       // Get telemetry URL from assets
-      const telemetryAsset = matchDetails.included.find(
-        (item): item is Asset =>
-          item.type === 'asset' && 'attributes' in item && 'URL' in item.attributes
+      const telemetryAsset = matchDetails.included?.find(
+        (item): item is Asset => item.type === 'asset'
       );
 
       // Get the telemetry URL from the asset

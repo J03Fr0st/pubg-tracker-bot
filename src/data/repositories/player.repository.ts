@@ -1,4 +1,4 @@
-import { MatchReference, PlayerData } from '../../types/pubg-player-api.types';
+import { Player as PlayerData } from '@j03fr0st/pubg-ts';
 import { Player, IPlayer } from '../models/player.model';
 
 export class PlayerRepository {
@@ -16,7 +16,7 @@ export class PlayerRepository {
         updatedAt: new Date(playerData.attributes.updatedAt),
         patchVersion: playerData.attributes.patchVersion,
         titleId: playerData.attributes.titleId,
-        matches: playerData.relationships.matches.data.map((match: MatchReference) => match.id),
+        matches: playerData.relationships.matches.data.map((match) => match.id),
       },
       { upsert: true, new: true }
     );

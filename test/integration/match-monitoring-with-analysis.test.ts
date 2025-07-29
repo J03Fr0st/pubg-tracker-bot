@@ -1,6 +1,33 @@
 import { DiscordBotService } from '../../src/services/discord-bot.service';
-import { PubgApiService } from '../../src/services/pubg-api.service';
 import { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
+
+// Mock axios
+jest.mock('axios', () => ({
+  get: jest.fn().mockResolvedValue({
+    data: [
+      { _T: 'LogPlayerKillV2', killer: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
+      { _T: 'LogPlayerMakeGroggy', attacker: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
+    ],
+  }),
+}));
+
+// Mock the @j03fr0st/pubg-ts library
+jest.mock('@j03fr0st/pubg-ts', () => ({
+  PubgClient: jest.fn(() => ({
+    players: {
+      getPlayerByName: jest.fn(),
+    },
+    matches: {
+      getMatch: jest.fn(),
+    },
+    telemetry: {
+      getTelemetryData: jest.fn().mockResolvedValue([
+        { _T: 'LogPlayerKillV2', killer: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
+        { _T: 'LogPlayerMakeGroggy', attacker: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
+      ]),
+    },
+  })),
+}));
 
 // Mock Discord.js to avoid actual Discord connections in tests
 jest.mock('discord.js', () => ({
@@ -45,22 +72,14 @@ jest.mock('discord.js', () => ({
 
 describe('Match Monitoring with Telemetry Analysis Integration', () => {
   let discordBotService: DiscordBotService;
-  let mockPubgApiService: jest.Mocked<PubgApiService>;
 
   beforeEach(() => {
     // Mock environment variables
     process.env.DISCORD_TOKEN = 'mock-token';
     process.env.DISCORD_CLIENT_ID = 'mock-client-id';
+    process.env.PUBG_API_KEY = 'mock-api-key';
 
-    // Create mock PUBG API service
-    mockPubgApiService = {
-      fetchAndFilterLogPlayerKillV2Events: jest.fn().mockResolvedValue({
-        kills: [],
-        groggies: [],
-      }),
-    } as any;
-
-    discordBotService = new DiscordBotService(mockPubgApiService);
+    discordBotService = new DiscordBotService('mock-api-key', 'pc-na' as any);
   });
 
   afterEach(() => {

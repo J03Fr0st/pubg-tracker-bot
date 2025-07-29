@@ -1,7 +1,7 @@
+import { Player as PlayerData } from '@j03fr0st/pubg-ts';
 import { IPlayer } from '../data/models/player.model';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
-import { PlayerData } from '../types/pubg-player-api.types';
 
 export class PubgStorageService {
   private playerRepository = new PlayerRepository();

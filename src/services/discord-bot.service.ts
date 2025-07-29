@@ -9,20 +9,91 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from 'discord.js';
-import { PubgApiService } from './pubg-api.service';
+import { PubgClient, Player, Shard } from '@j03fr0st/pubg-ts';
 import {
   DiscordPlayerMatchStats,
   DiscordMatchGroupSummary,
 } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
-import { LogPlayerKillV2, LogPlayerMakeGroggy } from '../types/pubg-telemetry.types';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
 import { MatchColorUtil } from '../utils/match-colors.util';
-import { discord, success, error, debug, info } from '../utils/logger';
+import { success, error, debug } from '../utils/logger';
+
+// Telemetry types for kill events
+interface LogPlayerKillV2 {
+  _D: string;
+  _T: string;
+  attackId: number;
+  victim: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  killer?: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  dBNOMaker?: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  finisher?: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  killerDamageInfo?: {
+    damageCauserName: string;
+    damageReason: string;
+    damageTypeCategory: string;
+    distance?: number;
+  };
+}
+
+interface LogPlayerMakeGroggy {
+  _D: string;
+  _T: string;
+  attackId: number;
+  attacker: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  victim: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  damageReason: string;
+  damageTypeCategory: string;
+  damageCauserName: string;
+  distance: number;
+}
 
 export class DiscordBotService {
   private readonly client: Client;
   private readonly pubgStorageService: PubgStorageService;
+  private readonly pubgClient: PubgClient;
   private readonly commands = [
     new SlashCommandBuilder()
       .setName('add')
@@ -48,7 +119,7 @@ export class DiscordBotService {
       .setDescription('Remove the last processed match from tracking'),
   ];
 
-  constructor(private readonly pubgApiService: PubgApiService) {
+  constructor(apiKey: string, shard: Shard = 'pc-na') {
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -57,6 +128,10 @@ export class DiscordBotService {
       ],
     });
     this.pubgStorageService = new PubgStorageService();
+    this.pubgClient = new PubgClient({
+      apiKey,
+      shard: shard as any, // Cast to handle type compatibility
+    });
     this.setupEventHandlers();
   }
 
@@ -139,15 +214,24 @@ export class DiscordBotService {
     const playerName = interaction.options.getString('playername', true);
 
     try {
-      const player = await this.pubgApiService.getPlayer(playerName);
-      await this.pubgStorageService.addPlayer(player.data[0]);
+      const playerResponse = await this.pubgClient.players.getPlayerByName(playerName);
+      const player = Array.isArray(playerResponse.data)
+        ? playerResponse.data[0]
+        : (playerResponse.data as Player);
+
+      await this.pubgStorageService.addPlayer({
+        id: player.id,
+        type: player.type,
+        attributes: player.attributes,
+        relationships: player.relationships,
+      });
 
       const successEmbed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Player Added')
         .setDescription(`Successfully added **${playerName}** to monitoring list`)
         .addFields(
-          { name: 'Player ID', value: player.data[0].id, inline: true },
+          { name: 'Player ID', value: player.id, inline: true },
           { name: 'Platform', value: 'Steam', inline: true }
         )
         .setTimestamp()
@@ -308,7 +392,7 @@ export class DiscordBotService {
     const totalDBNOs = players.reduce((acc, player) => acc + (player.stats?.DBNOs || 0), 0);
 
     const mainEmbed = new EmbedBuilder()
-      .setTitle(`🎮 PUBG Match Summary`)
+      .setTitle('🎮 PUBG Match Summary')
       .setDescription(
         [
           `⏰ **${dateString}**`,
@@ -328,10 +412,13 @@ export class DiscordBotService {
       .setFooter({ text: `PUBG Match Tracker - ${matchId}` })
       .setTimestamp(matchDate);
 
-    const { kills, groggies } = await this.pubgApiService.fetchAndFilterLogPlayerKillV2Events(
-      summary.telemetryUrl!,
-      players.map((p) => p.name)
-    );
+    const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl!);
+    const kills = telemetryData.filter(
+      (event) => event._T === 'LogPlayerKillV2'
+    ) as unknown as LogPlayerKillV2[];
+    const groggies = telemetryData.filter(
+      (event) => event._T === 'LogPlayerMakeGroggy'
+    ) as unknown as LogPlayerMakeGroggy[];
 
     const playerEmbeds = players.map((player) => {
       const playerStats = this.formatPlayerStats(
@@ -435,7 +522,8 @@ export class DiscordBotService {
           const actionType = isKiller ? 'Killed' : 'Killed by';
           const targetName = isKiller ? victimName : killerName;
           return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
-        } else if ('attacker' in event) {
+        }
+        if ('attacker' in event) {
           // LogPlayerMakeGroggy event
           const isAttacker = event.attacker?.name === playerName;
           const attackerName = event.attacker?.name || 'Unknown Player';

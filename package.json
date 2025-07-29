@@ -1,6 +1,6 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0.2",
+  "version": "1.2.0.3",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {
@@ -22,6 +22,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@j03fr0st/pubg-ts": "^1.0.1-beta",
     "axios": "^1.8.2",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5",

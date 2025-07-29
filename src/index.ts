@@ -1,10 +1,9 @@
 import { connect } from 'mongoose';
-import { PubgApiService } from './services/pubg-api.service';
+import { Shard } from '@j03fr0st/pubg-ts';
 import { PubgStorageService } from './services/pubg-storage.service';
 import { DiscordBotService } from './services/discord-bot.service';
 import { MatchMonitorService } from './services/match-monitor.service';
 import { appConfig, validateConfig } from './config/config';
-import { RateLimiter } from './utils/rate-limiter';
 import { startup, database, discord, monitor, error, shutdown } from './utils/logger';
 
 /**
@@ -23,16 +22,8 @@ async function main(): Promise<void> {
 
     // Initialize services
     startup('Initializing services...');
-    const rateLimiter = new RateLimiter(appConfig.pubg.maxRequestsPerMinute);
-    const pubgApi = new PubgApiService(
-      appConfig.pubg.apiKey,
-      appConfig.pubg.shard,
-      undefined,
-      undefined,
-      rateLimiter
-    );
     const pubgStorage = new PubgStorageService();
-    const discordBot = new DiscordBotService(pubgApi);
+    const discordBot = new DiscordBotService(appConfig.pubg.apiKey, appConfig.pubg.shard as Shard);
 
     // Initialize Discord bot
     discord('Initializing Discord bot...');
@@ -40,7 +31,12 @@ async function main(): Promise<void> {
 
     // Start match monitoring
     monitor('Starting match monitoring...');
-    const matchMonitor = new MatchMonitorService(pubgApi, pubgStorage, discordBot);
+    const matchMonitor = new MatchMonitorService(
+      pubgStorage,
+      discordBot,
+      appConfig.pubg.apiKey,
+      appConfig.pubg.shard as Shard
+    );
 
     // Handle graceful shutdown
     setupGracefulShutdown(matchMonitor);
