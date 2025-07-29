@@ -36,7 +36,7 @@ switch (versionType) {
 }
 
 // Create version string
-const versionString = `${version.major}.${version.minor}.${version.patch}`;
+const versionString = `${version.major}.${version.minor}.${version.patch}.${version.build}`;
 
 // Update version.json
 fs.writeFileSync(versionFile, JSON.stringify(version, null, 2) + '\n');

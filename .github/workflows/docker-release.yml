@@ -1,4 +1,4 @@
-name: Docker Release 
+name: Docker Release
 
 on:
   push:
@@ -23,10 +23,13 @@ jobs:
       - name: Get version info
         id: version
         run: |
-          VERSION=$(node -pe "require('./version.json')")
-          BUILD_VERSION="${VERSION.major}.${VERSION.minor}.${VERSION.patch}.${VERSION.build}"
+          MAJOR=$(node -pe "require('./version.json').major")
+          MINOR=$(node -pe "require('./version.json').minor")
+          PATCH=$(node -pe "require('./version.json').patch")
+          BUILD=$(node -pe "require('./version.json').build")
+          BUILD_VERSION="${MAJOR}.${MINOR}.${PATCH}.${BUILD}"
           echo "version=$BUILD_VERSION" >> $GITHUB_OUTPUT
-          echo "build_number=${VERSION.build}" >> $GITHUB_OUTPUT
+          echo "build_number=${BUILD}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -68,4 +71,4 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ steps.version.outputs.build_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY 
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
