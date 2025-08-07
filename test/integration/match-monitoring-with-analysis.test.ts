@@ -115,8 +115,6 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     // Verify that only the basic match summary was sent
     expect(mockSend.mock.calls.length).toBeGreaterThan(0);
   });
-
-
 });
 
 // Helper function to prevent the jest process from hanging
