@@ -90,6 +90,33 @@ interface LogPlayerMakeGroggy {
   distance: number;
 }
 
+interface LogPlayerTakeDamage {
+  _D: string;
+  _T: string;
+  attackId: number;
+  attacker?: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  victim: {
+    name: string;
+    teamId: number;
+    health: number;
+    location: { x: number; y: number; z: number };
+    ranking: number;
+    accountId: string;
+  };
+  damageReason: string;
+  damageTypeCategory: string;
+  damageCauserName: string;
+  damage: number;
+  distance: number;
+}
+
 export class DiscordBotService {
   private readonly client: Client;
   private readonly pubgStorageService: PubgStorageService;
@@ -419,6 +446,9 @@ export class DiscordBotService {
     const groggies = telemetryData.filter(
       (event) => event._T === 'LogPlayerMakeGroggy'
     ) as unknown as LogPlayerMakeGroggy[];
+    const damageEvents = telemetryData.filter(
+      (event) => event._T === 'LogPlayerTakeDamage'
+    ) as unknown as LogPlayerTakeDamage[];
 
     const playerEmbeds = players.map((player) => {
       const playerStats = this.formatPlayerStats(
@@ -426,7 +456,8 @@ export class DiscordBotService {
         summary.matchId,
         player,
         kills,
-        groggies
+        groggies,
+        damageEvents
       );
       return new EmbedBuilder()
         .setTitle(`Player: ${player.name}`)
@@ -442,7 +473,8 @@ export class DiscordBotService {
     matchId: string,
     player: DiscordPlayerMatchStats,
     killEvents: LogPlayerKillV2[],
-    groggyEvents: LogPlayerMakeGroggy[]
+    groggyEvents: LogPlayerMakeGroggy[],
+    damageEvents: LogPlayerTakeDamage[]
   ): string {
     const { stats } = player;
     if (!stats) {
@@ -455,7 +487,7 @@ export class DiscordBotService {
         ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
         : '0';
 
-    const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, matchStartTime);
+    const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, damageEvents, matchStartTime);
 
     const statsDetails = [
       `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
@@ -480,6 +512,7 @@ export class DiscordBotService {
     playerName: string,
     killEvents: LogPlayerKillV2[],
     groggyEvents: LogPlayerMakeGroggy[],
+    damageEvents: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): string | null {
     // Filter events to only include those where the player is involved
@@ -506,6 +539,9 @@ export class DiscordBotService {
         const seconds = relativeSeconds % 60;
         const relativeTime = `\`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}\``;
 
+        // Find corresponding damage event for this kill/knock
+        const damageInfo = this.findDamageForEvent(event, damageEvents, playerName);
+
         if ('killer' in event) {
           // LogPlayerKillV2 event
           const isKiller = event.killer?.name === playerName;
@@ -521,7 +557,8 @@ export class DiscordBotService {
           const icon = isKiller ? '⚔️' : '☠️';
           const actionType = isKiller ? 'Killed' : 'Killed by';
           const targetName = isKiller ? victimName : killerName;
-          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
+          const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
+          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
         if ('attacker' in event) {
           // LogPlayerMakeGroggy event
@@ -536,7 +573,8 @@ export class DiscordBotService {
           const icon = isAttacker ? '🔻' : '⬇️';
           const actionType = isAttacker ? 'Knocked' : 'Knocked by';
           const targetName = isAttacker ? victimName : attackerName;
-          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
+          const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
+          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
 
         return ''; // Fallback for unknown event types
@@ -545,6 +583,53 @@ export class DiscordBotService {
       .join('\n');
 
     return eventDetails || null;
+  }
+
+  private findDamageForEvent(
+    event: LogPlayerKillV2 | LogPlayerMakeGroggy,
+    damageEvents: LogPlayerTakeDamage[],
+    playerName: string
+  ): LogPlayerTakeDamage | null {
+    // Find damage events that match the attack ID and involve the same players
+    const matchingDamageEvents = damageEvents.filter((damageEvent) => {
+      // Check if attack IDs match
+      if (damageEvent.attackId !== event.attackId) {
+        return false;
+      }
+
+      // For kill events, check if the damage event involves the same killer and victim
+      if ('killer' in event) {
+        const isKiller = event.killer?.name === playerName;
+        const targetName = isKiller ? event.victim?.name : event.killer?.name;
+
+        return (
+          damageEvent.attacker?.name === (isKiller ? playerName : event.killer?.name) &&
+          damageEvent.victim?.name === targetName
+        );
+      }
+
+      // For groggy events, check if the damage event involves the same attacker and victim
+      if ('attacker' in event) {
+        const isAttacker = event.attacker?.name === playerName;
+        const targetName = isAttacker ? event.victim?.name : event.attacker?.name;
+
+        return (
+          damageEvent.attacker?.name === (isAttacker ? playerName : event.attacker?.name) &&
+          damageEvent.victim?.name === targetName
+        );
+      }
+
+      return false;
+    });
+
+    // Return the damage event with the highest damage amount (in case of multiple hits)
+    if (matchingDamageEvents.length > 0) {
+      return matchingDamageEvents.reduce((max, current) =>
+        current.damage > max.damage ? current : max
+      );
+    }
+
+    return null;
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {
