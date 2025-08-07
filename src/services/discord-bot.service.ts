@@ -502,7 +502,7 @@ export class DiscordBotService {
     ];
 
     if (killDetails) {
-      statsDetails.push('*** KILLS & DBNOs ***', killDetails);
+      statsDetails.push('*** KILLS, DBNOs & ASSISTS ***', killDetails);
     }
 
     return statsDetails.filter(Boolean).join('\n');
@@ -523,7 +523,10 @@ export class DiscordBotService {
       (event) => event.attacker?.name === playerName || event.victim?.name === playerName
     );
 
-    const allEvents = [...relevantKills, ...relevantGroggies].sort(
+    // Find assist events (damage events where player damaged someone but didn't get the kill)
+    const assistEvents = this.findAssistEvents(playerName, damageEvents, killEvents, groggyEvents);
+
+    const allEvents = [...relevantKills, ...relevantGroggies, ...assistEvents].sort(
       (a, b) => new Date(a._D).getTime() - new Date(b._D).getTime()
     );
 
@@ -576,6 +579,17 @@ export class DiscordBotService {
           const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
           return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
+        if ('damage' in event) {
+          // Assist event (LogPlayerTakeDamage)
+          const victimName = event.victim?.name || 'Unknown Player';
+          const weapon = event.damageCauserName
+            ? this.getReadableDamageCauserName(event.damageCauserName)
+            : 'Unknown Weapon';
+          const distance = event.distance ? `${Math.round(event.distance / 100)}m` : 'Unknown';
+          const damageText = `, ${Math.round(event.damage)} damage`;
+
+          return `${relativeTime} 🎯 Assisted - [${victimName}](https://pubg.op.gg/user/${victimName}) (${weapon}, ${distance}${damageText})`;
+        }
 
         return ''; // Fallback for unknown event types
       })
@@ -583,6 +597,41 @@ export class DiscordBotService {
       .join('\n');
 
     return eventDetails || null;
+  }
+
+  private findAssistEvents(
+    playerName: string,
+    damageEvents: LogPlayerTakeDamage[],
+    killEvents: LogPlayerKillV2[],
+    groggyEvents: LogPlayerMakeGroggy[]
+  ): LogPlayerTakeDamage[] {
+    // Find damage events where the player damaged someone but didn't get the kill/knock
+    return damageEvents.filter((damageEvent) => {
+      // Only consider events where the player is the attacker
+      if (damageEvent.attacker?.name !== playerName) {
+        return false;
+      }
+
+      const victimName = damageEvent.victim?.name;
+      if (!victimName) {
+        return false;
+      }
+
+      // Check if this player got the kill for this victim
+      const gotKill = killEvents.some(
+        (killEvent) =>
+          killEvent.killer?.name === playerName && killEvent.victim?.name === victimName
+      );
+
+      // Check if this player got the knock for this victim
+      const gotKnock = groggyEvents.some(
+        (groggyEvent) =>
+          groggyEvent.attacker?.name === playerName && groggyEvent.victim?.name === victimName
+      );
+
+      // If the player didn't get the kill or knock, it's an assist
+      return !gotKill && !gotKnock;
+    });
   }
 
   private findDamageForEvent(
