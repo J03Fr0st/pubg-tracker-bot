@@ -621,14 +621,13 @@ export class DiscordBotService {
               : 'Unknown';
             const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
             return `${relativeTime} 🎯 Assisted - [${victimName}](https://pubg.op.gg/user/${victimName}) (${weapon}, ${assistDistance}${damageText})`;
-          } else {
-            // Show as normal knock/knocked by
-            const icon = isAttacker ? '🔻' : '⬇️';
-            const actionType = isAttacker ? 'Knocked' : 'Knocked by';
-            const targetName = isAttacker ? victimName : attackerName;
-            const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
-            return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
           }
+          // Show as normal knock/knocked by
+          const icon = isAttacker ? '🔻' : '⬇️';
+          const actionType = isAttacker ? 'Knocked' : 'Knocked by';
+          const targetName = isAttacker ? victimName : attackerName;
+          const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
+          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
         if ('damage' in event && 'attacker' in event) {
           // Assist event (LogPlayerTakeDamage)
