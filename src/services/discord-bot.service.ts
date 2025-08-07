@@ -351,7 +351,9 @@ export class DiscordBotService {
         return;
       }
 
-      debug(`Found last match to remove: ${lastMatch.matchId} processed at ${lastMatch.processedAt}`);
+      debug(
+        `Found last match to remove: ${lastMatch.matchId} processed at ${lastMatch.processedAt}`
+      );
 
       // Remove the last processed match
       const removedMatchId = await this.pubgStorageService.removeLastProcessedMatch();
@@ -558,15 +560,18 @@ export class DiscordBotService {
     // Find assist events (damage events where player damaged someone but didn't get the kill)
     const assistEvents = this.findAssistEvents(playerName, damageEvents, killEvents, groggyEvents);
 
-    const allEvents = [...relevantKills, ...relevantGroggies, ...assistEvents, ...groggyEventsAsAssists].sort(
-      (a, b) => new Date(a._D).getTime() - new Date(b._D).getTime()
-    );
+    const allEvents = [
+      ...relevantKills,
+      ...relevantGroggies,
+      ...assistEvents,
+      ...groggyEventsAsAssists,
+    ].sort((a, b) => new Date(a._D).getTime() - new Date(b._D).getTime());
 
     if (allEvents.length === 0) {
       return null;
     }
 
-        const eventDetails = allEvents
+    const eventDetails = allEvents
       .map((event) => {
         const eventTime = new Date(event._D);
         const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
@@ -610,9 +615,12 @@ export class DiscordBotService {
           const isAssist = playerStats.DBNOs === 0 && isAttacker;
 
           if (isAssist) {
-            // Show as assist instead of knock
+            // Show as assist instead of knock - use the groggy event's distance
+            const assistDistance = event.distance
+              ? `${Math.round(event.distance / 100)}m`
+              : 'Unknown';
             const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
-            return `${relativeTime} 🎯 Assisted - [${victimName}](https://pubg.op.gg/user/${victimName}) (${weapon}, ${distance}${damageText})`;
+            return `${relativeTime} 🎯 Assisted - [${victimName}](https://pubg.op.gg/user/${victimName}) (${weapon}, ${assistDistance}${damageText})`;
           } else {
             // Show as normal knock/knocked by
             const icon = isAttacker ? '🔻' : '⬇️';
@@ -654,7 +662,7 @@ export class DiscordBotService {
 
     // Get all victims that the player actually knocked (these should NOT be assists)
     const victimsPlayerKnocked = new Set<string>();
-    groggyEvents.forEach(groggyEvent => {
+    groggyEvents.forEach((groggyEvent) => {
       if (groggyEvent.attacker?.name === playerName && groggyEvent.victim?.name) {
         victimsPlayerKnocked.add(groggyEvent.victim.name);
       }
@@ -662,7 +670,7 @@ export class DiscordBotService {
 
     // Get all victims that the player actually killed (these should NOT be assists)
     const victimsPlayerKilled = new Set<string>();
-    killEvents.forEach(killEvent => {
+    killEvents.forEach((killEvent) => {
       if (killEvent.killer?.name === playerName && killEvent.victim?.name) {
         victimsPlayerKilled.add(killEvent.victim.name);
       }
@@ -694,11 +702,13 @@ export class DiscordBotService {
 
       // Check if someone else killed or knocked this victim (indicating a potential assist)
       const someoneElseKilledOrKnocked =
-        killEvents.some(killEvent =>
-          killEvent.killer?.name !== playerName && killEvent.victim?.name === victimName
+        killEvents.some(
+          (killEvent) =>
+            killEvent.killer?.name !== playerName && killEvent.victim?.name === victimName
         ) ||
-        groggyEvents.some(groggyEvent =>
-          groggyEvent.attacker?.name !== playerName && groggyEvent.victim?.name === victimName
+        groggyEvents.some(
+          (groggyEvent) =>
+            groggyEvent.attacker?.name !== playerName && groggyEvent.victim?.name === victimName
         );
 
       // If the player didn't get the kill or knock, but someone else did, it's an assist
