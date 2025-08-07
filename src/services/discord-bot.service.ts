@@ -487,7 +487,13 @@ export class DiscordBotService {
         ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
         : '0';
 
-    const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, damageEvents, matchStartTime);
+    const killDetails = this.getKillDetails(
+      player.name,
+      killEvents,
+      groggyEvents,
+      damageEvents,
+      matchStartTime
+    );
 
     const statsDetails = [
       `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,

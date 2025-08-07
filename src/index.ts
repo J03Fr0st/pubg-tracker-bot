@@ -1,10 +1,12 @@
 import { connect } from 'mongoose';
+
 import { Shard } from '@j03fr0st/pubg-ts';
-import { PubgStorageService } from './services/pubg-storage.service';
+
+import { appConfig, validateConfig } from './config/config';
 import { DiscordBotService } from './services/discord-bot.service';
 import { MatchMonitorService } from './services/match-monitor.service';
-import { appConfig, validateConfig } from './config/config';
-import { startup, database, discord, monitor, error, shutdown } from './utils/logger';
+import { PubgStorageService } from './services/pubg-storage.service';
+import { database, discord, error, monitor, shutdown, startup } from './utils/logger';
 
 /**
  * Main application entry point
