@@ -9,7 +9,14 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from 'discord.js';
-import { PubgClient, Player, Shard } from '@j03fr0st/pubg-ts';
+import {
+  PubgClient,
+  Player,
+  Shard,
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  LogPlayerTakeDamage,
+} from '@j03fr0st/pubg-ts';
 import {
   DiscordPlayerMatchStats,
   DiscordMatchGroupSummary,
@@ -18,104 +25,6 @@ import { PubgStorageService } from './pubg-storage.service';
 import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { success, error, debug } from '../utils/logger';
-
-// Telemetry types for kill events
-interface LogPlayerKillV2 {
-  _D: string;
-  _T: string;
-  attackId: number;
-  victim: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  killer?: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  dBNOMaker?: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  finisher?: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  killerDamageInfo?: {
-    damageCauserName: string;
-    damageReason: string;
-    damageTypeCategory: string;
-    distance?: number;
-  };
-}
-
-interface LogPlayerMakeGroggy {
-  _D: string;
-  _T: string;
-  attackId: number;
-  attacker: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  victim: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  damageReason: string;
-  damageTypeCategory: string;
-  damageCauserName: string;
-  distance: number;
-}
-
-interface LogPlayerTakeDamage {
-  _D: string;
-  _T: string;
-  attackId: number;
-  attacker?: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  victim: {
-    name: string;
-    teamId: number;
-    health: number;
-    location: { x: number; y: number; z: number };
-    ranking: number;
-    accountId: string;
-  };
-  damageReason: string;
-  damageTypeCategory: string;
-  damageCauserName: string;
-  damage: number;
-  distance: number;
-}
 
 export class DiscordBotService {
   private readonly client: Client;
@@ -587,12 +496,10 @@ export class DiscordBotService {
           const isKiller = event.killer?.name === playerName;
           const killerName = event.killer?.name || 'Unknown Player';
           const victimName = event.victim?.name || 'Unknown Player';
-          const weapon = event.killerDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(event.killerDamageInfo.damageCauserName)
+          const weapon = event.damageCauserName
+            ? this.getReadableDamageCauserName(event.damageCauserName)
             : 'Unknown Weapon';
-          const distance = event.killerDamageInfo?.distance
-            ? `${Math.round(event.killerDamageInfo.distance / 100)}m`
-            : 'Unknown';
+          const distance = event.distance ? `${Math.round(event.distance / 100)}m` : 'Unknown';
 
           const icon = isKiller ? '⚔️' : '☠️';
           const actionType = isKiller ? 'Killed' : 'Killed by';
@@ -600,7 +507,7 @@ export class DiscordBotService {
           const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
           return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
-        if ('attacker' in event && 'damageCauserName' in event) {
+        if (event._T === 'LogPlayerMakeGroggy') {
           // LogPlayerMakeGroggy event
           const isAttacker = event.attacker?.name === playerName;
           const attackerName = event.attacker?.name || 'Unknown Player';
@@ -629,7 +536,7 @@ export class DiscordBotService {
           const damageText = damageInfo ? `, ${Math.round(damageInfo.damage)} damage` : '';
           return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance}${damageText})`;
         }
-        if ('damage' in event && 'attacker' in event) {
+        if (event._T === 'LogPlayerTakeDamage') {
           // Assist event (LogPlayerTakeDamage)
           const victimName = event.victim?.name || 'Unknown Player';
           const weapon = event.damageCauserName
@@ -725,7 +632,7 @@ export class DiscordBotService {
   }
 
   private findDamageForEvent(
-    event: LogPlayerKillV2 | LogPlayerMakeGroggy,
+    event: LogPlayerKillV2 | LogPlayerMakeGroggy | LogPlayerTakeDamage,
     damageEvents: LogPlayerTakeDamage[],
     playerName: string
   ): LogPlayerTakeDamage | null {
