@@ -9,15 +9,26 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from 'discord.js';
-import { PubgClient, Player, Shard, LogPlayerKillV2, LogPlayerMakeGroggy } from '@j03fr0st/pubg-ts';
+import {
+  PubgClient,
+  Player,
+  Shard,
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  assetManager,
+  DAMAGE_CAUSER_NAME,
+  MAP_NAMES,
+  GAME_MODES,
+} from '@j03fr0st/pubg-ts';
 import {
   DiscordPlayerMatchStats,
   DiscordMatchGroupSummary,
 } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
-import { MAP_NAMES, GAME_MODES, DAMAGE_CAUSER_NAME } from '../constants/pubg-mappings';
+// No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { success, error, debug } from '../utils/logger';
+import { DamageInfoUtils } from '../utils/damage-info.util';
 
 export class DiscordBotService {
   private readonly client: Client;
@@ -428,8 +439,9 @@ export class DiscordBotService {
       (event) => event.attacker?.name === playerName || event.victim?.name === playerName
     );
 
+    // Sort events by time
     const allEvents = [...relevantKills, ...relevantGroggies].sort(
-      (a, b) => new Date(a._D).getTime() - new Date(b._D).getTime()
+      (a, b) => new Date(a._D ?? 0).getTime() - new Date(b._D ?? 0).getTime()
     );
 
     if (allEvents.length === 0) {
@@ -438,7 +450,7 @@ export class DiscordBotService {
 
     const eventDetails = allEvents
       .map((event) => {
-        const eventTime = new Date(event._D);
+        const eventTime = event._D ? new Date(event._D) : matchStartTime;
         const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
         const minutes = Math.floor(relativeSeconds / 60);
         const seconds = relativeSeconds % 60;
@@ -449,10 +461,16 @@ export class DiscordBotService {
           const isKiller = event.killer?.name === playerName;
           const killerName = event.killer?.name || 'Unknown Player';
           const victimName = event.victim?.name || 'Unknown Player';
-          const weapon = event.damageCauserName
-            ? this.getReadableDamageCauserName(event.damageCauserName)
+
+          const primaryDamageInfo = event.killerDamageInfo
+            ? DamageInfoUtils.getFirst(event.killerDamageInfo)
+            : null;
+          const weapon = primaryDamageInfo?.damageCauserName
+            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
             : 'Unknown Weapon';
-          const distance = event.distance ? `${Math.round(event.distance / 100)}m` : 'Unknown';
+          const distance = primaryDamageInfo?.distance
+            ? `${Math.round(primaryDamageInfo.distance / 100)}m`
+            : 'Unknown';
 
           const icon = isKiller ? '⚔️' : '☠️';
           const actionType = isKiller ? 'Killed' : 'Killed by';
@@ -484,21 +502,47 @@ export class DiscordBotService {
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {
-    return (
-      DAMAGE_CAUSER_NAME[weaponCode] ||
-      weaponCode
-        .replace(/^Weap/, '')
-        .replace(/_C$/, '')
-        .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .trim()
-    );
+    // Try pubg-ts built-in dictionary first
+    const pubgDictionaryName = DAMAGE_CAUSER_NAME?.[weaponCode];
+    if (pubgDictionaryName) {
+      return pubgDictionaryName;
+    }
+
+    // Try pubg-ts asset manager
+    const assetName = assetManager?.getDamageCauserName?.(weaponCode);
+    if (assetName && assetName !== weaponCode) {
+      return assetName;
+    }
+
+    // pubg-ts dictionaries should cover most cases
+
+    // Final fallback: format the weapon code
+    return weaponCode
+      .replace(/^Weap/, '')
+      .replace(/_C$/, '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .trim();
   }
 
   private formatMapName(mapCode: string): string {
-    return MAP_NAMES[mapCode] || mapCode;
+    // Try pubg-ts built-in dictionary first
+    const pubgDictionaryName = MAP_NAMES?.[mapCode];
+    if (pubgDictionaryName) {
+      return pubgDictionaryName;
+    }
+
+    // Use pubg-ts asset manager as fallback
+    return assetManager?.getMapName?.(mapCode) || mapCode;
   }
 
   private formatGameMode(gameModeCode: string): string {
-    return GAME_MODES[gameModeCode] || gameModeCode;
+    // Try pubg-ts built-in dictionary first
+    const pubgDictionaryName = GAME_MODES?.[gameModeCode];
+    if (pubgDictionaryName) {
+      return pubgDictionaryName;
+    }
+
+    // Use pubg-ts asset manager as fallback
+    return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
   }
 }
