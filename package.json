@@ -1,14 +1,16 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0.18",
+  "version": "1.2.0.19",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc",
     "dev": "nodemon --exec ts-node src/index.ts",
+    "dev:console": "CONSOLE_OUTPUT=true nodemon --exec ts-node src/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:console": "CONSOLE_OUTPUT=true npm run dev",
     "lint": "eslint . --ext .ts",
     "format": "biome format --write .",
     "format:check": "biome format .",

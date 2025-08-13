@@ -153,3 +153,6 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 .aider*
+
+# Crush
+.crush/
