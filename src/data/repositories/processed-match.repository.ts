@@ -17,6 +17,16 @@ export class ProcessedMatchRepository {
   }
 
   /**
+   * Removes a processed match by its matchId
+   * @param matchId - The match identifier to remove
+   * @returns True if a document was deleted, false otherwise
+   */
+  public async removeProcessedMatch(matchId: string): Promise<boolean> {
+    const result = await ProcessedMatch.deleteOne({ matchId });
+    return (result as { deletedCount?: number }).deletedCount === 1;
+  }
+
+  /**
    * Removes the last processed match (most recently added)
    * @returns The match ID that was removed, or null if no matches exist
    */

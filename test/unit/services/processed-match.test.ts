@@ -7,6 +7,7 @@ jest.mock('../../../src/data/models/processed-match.model', () => ({
     findByIdAndDelete: jest.fn(),
     create: jest.fn(),
     find: jest.fn(),
+    deleteOne: jest.fn(),
   },
 }));
 
@@ -63,6 +64,21 @@ describe('ProcessedMatchRepository', () => {
     });
   });
 
+  describe('removeProcessedMatch', () => {
+    test('should return true when a match is deleted', async () => {
+      mockProcessedMatch.deleteOne.mockResolvedValue({ deletedCount: 1 } as any);
+      const result = await repository.removeProcessedMatch('match-123');
+      expect(result).toBe(true);
+      expect(mockProcessedMatch.deleteOne).toHaveBeenCalledWith({ matchId: 'match-123' });
+    });
+
+    test('should return false when no match is deleted', async () => {
+      mockProcessedMatch.deleteOne.mockResolvedValue({ deletedCount: 0 } as any);
+      const result = await repository.removeProcessedMatch('missing');
+      expect(result).toBe(false);
+      expect(mockProcessedMatch.deleteOne).toHaveBeenCalledWith({ matchId: 'missing' });
+    });
+  });
   describe('getLastProcessedMatch', () => {
     test('should return null when no matches exist', async () => {
       // Arrange

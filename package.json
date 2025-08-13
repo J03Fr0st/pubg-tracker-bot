@@ -1,6 +1,6 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0.20",
+  "version": "1.2.0.21",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test:integration": "jest --config jest.integration.config.js",
+    "update-commands": "node scripts/update-discord-commands.js",
     "version:build": "node scripts/increment-build.js",
     "version:patch": "node scripts/increment-version.js patch",
     "version:minor": "node scripts/increment-version.js minor",
