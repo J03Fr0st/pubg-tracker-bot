@@ -15,6 +15,8 @@ import {
   Shard,
   LogPlayerKillV2,
   LogPlayerMakeGroggy,
+  LogPlayerRevive,
+  LogPlayerTakeDamage,
   assetManager,
   DAMAGE_CAUSER_NAME,
   MAP_NAMES,
@@ -25,6 +27,8 @@ import {
   DiscordMatchGroupSummary,
 } from '../types/discord-match-summary.types';
 import { PubgStorageService } from './pubg-storage.service';
+import { TelemetryProcessorService } from './telemetry-processor.service';
+import { PlayerAnalysis, KillChain, AssistInfo } from '../types/analytics-results.types';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { success, error, debug } from '../utils/logger';
@@ -34,6 +38,7 @@ export class DiscordBotService {
   private readonly client: Client;
   private readonly pubgStorageService: PubgStorageService;
   private readonly pubgClient: PubgClient;
+  private readonly telemetryProcessor: TelemetryProcessorService;
   private readonly commands = [
     new SlashCommandBuilder()
       .setName('add')
@@ -57,6 +62,15 @@ export class DiscordBotService {
     new SlashCommandBuilder()
       .setName('removelastmatch')
       .setDescription('Remove the last processed match from tracking'),
+    new SlashCommandBuilder()
+      .setName('removematch')
+      .setDescription('Remove a specific processed match by matchId')
+      .addStringOption((option) =>
+        option
+          .setName('matchid')
+          .setDescription('The matchId of the match to remove')
+          .setRequired(true)
+      ),
   ];
 
   constructor(apiKey: string, shard: Shard = 'pc-na') {
@@ -72,6 +86,7 @@ export class DiscordBotService {
       apiKey,
       shard: shard as any, // Cast to handle type compatibility
     });
+    this.telemetryProcessor = new TelemetryProcessorService();
     this.setupEventHandlers();
   }
 
@@ -130,6 +145,9 @@ export class DiscordBotService {
             break;
           case 'removelastmatch':
             await this.handleRemoveLastMatch(interaction);
+            break;
+          case 'removematch':
+            await this.handleRemoveMatch(interaction);
             break;
         }
       } catch (err) {
@@ -314,6 +332,46 @@ export class DiscordBotService {
     }
   }
 
+  private async handleRemoveMatch(interaction: ChatInputCommandInteraction): Promise<void> {
+    await interaction.deferReply();
+    const userName = interaction.user.username;
+    const matchId = interaction.options.getString('matchid', true);
+    debug(`User ${userName} requested to remove match ${matchId}`);
+    try {
+      const deleted = await this.pubgStorageService.removeProcessedMatch(matchId);
+      if (deleted) {
+        const successEmbed = new EmbedBuilder()
+          .setColor(0x00ff00)
+          .setTitle('✅ Match Removed')
+          .setDescription('Successfully removed the processed match from tracking.')
+          .addFields({ name: 'Match ID', value: matchId, inline: true })
+          .setTimestamp()
+          .setFooter({ text: 'PUBG Tracker Bot' });
+        await interaction.editReply({ embeds: [successEmbed] });
+      } else {
+        const notFoundEmbed = new EmbedBuilder()
+          .setColor(0xffa500)
+          .setTitle('⚠️ Match Not Found')
+          .setDescription('No processed match with that matchId exists.')
+          .addFields({ name: 'Match ID', value: matchId, inline: true })
+          .setTimestamp()
+          .setFooter({ text: 'PUBG Tracker Bot' });
+        await interaction.editReply({ embeds: [notFoundEmbed] });
+      }
+    } catch (err) {
+      const errorObj = err as Error;
+      error(`Error removing match ${matchId} for user ${userName}: ${errorObj.message}`);
+      const errorEmbed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Error Removing Match')
+        .setDescription('Failed to remove the processed match.')
+        .addFields({ name: 'Error Details', value: errorObj.message })
+        .setTimestamp()
+        .setFooter({ text: 'PUBG Tracker Bot' });
+      await interaction.editReply({ embeds: [errorEmbed] });
+    }
+  }
+
   private async createMatchSummaryEmbeds(
     summary: DiscordMatchGroupSummary
   ): Promise<EmbedBuilder[]> {
@@ -361,29 +419,40 @@ export class DiscordBotService {
       .setFooter({ text: `PUBG Match Tracker - ${matchId}` })
       .setTimestamp(matchDate);
 
-    const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl!);
-    const kills = telemetryData.filter(
-      (event) => event._T === 'LogPlayerKillV2'
-    ) as unknown as LogPlayerKillV2[];
-    const groggies = telemetryData.filter(
-      (event) => event._T === 'LogPlayerMakeGroggy'
-    ) as unknown as LogPlayerMakeGroggy[];
+    if (!summary.telemetryUrl) {
+      debug('No telemetry URL available, using basic player embeds');
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+    }
 
-    const playerEmbeds = players.map((player) => {
-      const playerStats = this.formatPlayerStats(
+    try {
+      // Fetch raw telemetry data
+      const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl);
+      const trackedPlayerNames = players.map((p) => p.name);
+
+      debug(`Processing telemetry for ${trackedPlayerNames.length} players`);
+      // Process using our new service
+      const matchAnalysis = await this.telemetryProcessor.processMatchTelemetry(
+        telemetryData, // Raw TelemetryEvent[] - no conversion needed!
+        matchId,
         matchDate,
-        summary.matchId,
-        player,
-        kills,
-        groggies
+        trackedPlayerNames
       );
-      return new EmbedBuilder()
-        .setTitle(`Player: ${player.name}`)
-        .setDescription(playerStats)
-        .setColor(matchColor); // Use the same color for player embeds
-    });
 
-    return [mainEmbed, ...playerEmbeds];
+      // Create enhanced embeds
+      const enhancedPlayerEmbeds = players.map((player) => {
+        const analysis = matchAnalysis.playerAnalyses.get(player.name);
+        return analysis
+          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId)
+          : this.createBasicPlayerEmbed(player, matchColor, matchId);
+      });
+
+      success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
+      return [mainEmbed, ...enhancedPlayerEmbeds];
+    } catch (err) {
+      error(`Telemetry processing failed: ${(err as Error).message}`);
+      // Fallback to basic embeds
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+    }
   }
 
   private formatPlayerStats(
@@ -399,6 +468,7 @@ export class DiscordBotService {
     }
     const survivalMinutes = Math.round(stats.timeSurvived / 60);
     const kmWalked = (stats.walkDistance / 1000).toFixed(1);
+
     const accuracy =
       stats.kills > 0 && stats.headshotKills > 0
         ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
@@ -502,6 +572,11 @@ export class DiscordBotService {
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {
+    // Handle null/undefined weapon codes
+    if (!weaponCode) {
+      return 'Unknown Weapon';
+    }
+
     // Try pubg-ts built-in dictionary first
     const pubgDictionaryName = DAMAGE_CAUSER_NAME?.[weaponCode];
     if (pubgDictionaryName) {
@@ -544,5 +619,368 @@ export class DiscordBotService {
 
     // Use pubg-ts asset manager as fallback
     return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
+  }
+
+  private createBasicPlayerEmbeds(
+    players: DiscordPlayerMatchStats[],
+    matchColor: number,
+    matchId: string
+  ): EmbedBuilder[] {
+    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId));
+  }
+
+  private createBasicPlayerEmbed(
+    player: DiscordPlayerMatchStats,
+    matchColor: number,
+    matchId: string
+  ): EmbedBuilder {
+    const { stats } = player;
+    if (!stats) {
+      return new EmbedBuilder()
+        .setTitle(`Player: ${player.name}`)
+        .setDescription('No stats available')
+        .setColor(matchColor);
+    }
+
+    const survivalMinutes = Math.round(stats.timeSurvived / 60);
+    const kmWalked = (stats.walkDistance / 1000).toFixed(1);
+    const accuracy =
+      stats.kills > 0 && stats.headshotKills > 0
+        ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
+        : '0';
+
+    const basicStats = [
+      `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
+      `🔻 Knocks: ${stats.DBNOs}`,
+      `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
+      `🎯 Headshot %: ${accuracy}%`,
+      `⏰ Survival: ${survivalMinutes}min`,
+      `📏 Longest Kill: ${Math.round(stats.longestKill)}m`,
+      `👣 Distance: ${kmWalked}km`,
+      stats.revives > 0 ? `🚑 Revives: ${stats.revives}` : '',
+      `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return new EmbedBuilder()
+      .setTitle(`Player: ${player.name}`)
+      .setDescription(basicStats)
+      .setColor(matchColor);
+  }
+
+  /**
+   * Creates an enhanced Discord embed for a player using telemetry analysis data.
+   *
+   * This embed includes advanced statistics like weapon mastery, kill chains,
+   * calculated assists, and an enhanced timeline of combat events.
+   *
+   * @param player - Player match statistics from PUBG API
+   * @param analysis - Enhanced telemetry analysis for this player
+   * @param matchColor - Hex color code for the embed
+   * @param matchId - Match identifier for replay links
+   * @returns Discord EmbedBuilder with enhanced player statistics
+   */
+  private createEnhancedPlayerEmbed(
+    player: DiscordPlayerMatchStats,
+    analysis: PlayerAnalysis,
+    matchColor: number,
+    matchId: string
+  ): EmbedBuilder {
+    const statsDescription = this.formatEnhancedStats(player, analysis, matchId);
+
+    return new EmbedBuilder()
+      .setTitle(`Player: ${player.name}`)
+      .setDescription(statsDescription)
+      .setColor(matchColor);
+  }
+
+  /**
+   * Formats enhanced player statistics into a rich Discord message format.
+   *
+   * Combines basic match stats with advanced telemetry analytics including
+   * weapon efficiency, kill chains, assists, and detailed combat timeline.
+   *
+   * @param player - Player match statistics from PUBG API
+   * @param analysis - Enhanced telemetry analysis for this player
+   * @param matchId - Match identifier for replay links
+   * @returns Formatted string suitable for Discord embed description
+   */
+  private formatEnhancedStats(
+    player: DiscordPlayerMatchStats,
+    analysis: PlayerAnalysis,
+    matchId: string
+  ): string {
+    const { stats } = player;
+    if (!stats) return 'No stats available';
+
+    const sections = [
+      // Enhanced combat stats
+      this.formatCombatStats(stats, analysis),
+
+      // Kill chains
+      this.formatKillChains(analysis.killChains),
+
+      // Assists
+      this.formatAssists(analysis.calculatedAssists),
+
+      // Enhanced timeline using raw telemetry events
+      this.formatEnhancedTimeline(analysis),
+
+      // Basic info
+      `⏰ Survival: ${Math.round(stats.timeSurvived / 60)}min • ${(stats.walkDistance / 1000).toFixed(1)}km`,
+      `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`,
+    ];
+
+    return sections.filter(Boolean).join('\n\n');
+  }
+
+  /**
+   * Formats enhanced combat statistics section for Discord display.
+   *
+   * Includes K/D ratio, damage dealt/taken, average kill distance, and headshot percentage.
+   *
+   * @param stats - Basic player statistics from PUBG API
+   * @param analysis - Enhanced telemetry analysis with calculated metrics
+   * @returns Formatted combat statistics string
+   */
+  private formatCombatStats(stats: any, analysis: PlayerAnalysis): string {
+    return [
+      '⚔️ **COMBAT STATS**',
+      `🎯 Kills: **${stats.kills}** (${stats.headshotKills} HS)`,
+      `💀 K/D Ratio: **${analysis.kdRatio.toFixed(2)}**`,
+      `💥 Damage Dealt: **${analysis.totalDamageDealt.toFixed(0)}**`,
+      `🩸 Damage Taken: **${analysis.totalDamageTaken.toFixed(0)}**`,
+    ].join('\n');
+  }
+
+  /**
+   * Formats kill chain statistics for Discord display.
+   *
+   * Shows multi-kill achievements including doubles, triples, quads, and best chain timing.
+   *
+   * @param chains - Array of kill chain data from telemetry analysis
+   * @returns Formatted kill chains string, or empty string if no chains found
+   */
+  private formatKillChains(chains: KillChain[]): string {
+    if (!chains.length) return '';
+
+    const bestChain = chains.reduce((best, current) =>
+      current.kills.length > best.kills.length ? current : best
+    );
+
+    const multiKills = chains.reduce(
+      (counts, chain) => {
+        const killCount = chain.kills.length;
+        if (killCount === 2) counts.doubles++;
+        else if (killCount === 3) counts.triples++;
+        else if (killCount >= 4) counts.quads++;
+        return counts;
+      },
+      { doubles: 0, triples: 0, quads: 0 }
+    );
+
+    const elements = [];
+    if (bestChain.kills.length >= 2) {
+      elements.push(
+        `🔥 Best: **${bestChain.kills.length} kills** (${bestChain.duration.toFixed(1)}s)`
+      );
+    }
+    if (multiKills.doubles) elements.push(`⚡ Doubles: **${multiKills.doubles}**`);
+    if (multiKills.triples) elements.push(`💫 Triples: **${multiKills.triples}**`);
+    if (multiKills.quads) elements.push(`🌟 Quads+: **${multiKills.quads}**`);
+
+    return elements.length > 0 ? `**KILL CHAINS**\n${elements.join(' • ')}` : '';
+  }
+
+  /**
+   * Formats calculated assist statistics for Discord display.
+   *
+   * Shows total assists broken down by type: damage assists, knockdown assists, and combined.
+   *
+   * @param assists - Array of calculated assist contributions
+   * @returns Formatted assists string, or empty string if no assists found
+   */
+  private formatAssists(assists: AssistInfo[]): string {
+    if (!assists.length) return '';
+
+    const assistTypes = assists.reduce(
+      (counts, assist) => {
+        counts[assist.assistType]++;
+        return counts;
+      },
+      { damage: 0, knockdown: 0, both: 0 } as Record<string, number>
+    );
+
+    const elements = [`🤝 Total: **${assists.length}**`];
+    if (assistTypes.damage) elements.push(`💥 Damage: **${assistTypes.damage}**`);
+    if (assistTypes.knockdown) elements.push(`🔻 Knockdown: **${assistTypes.knockdown}**`);
+    if (assistTypes.both) elements.push(`⭐ Combined: **${assistTypes.both}**`);
+
+    return `**CALCULATED ASSISTS**\n${elements.join(' • ')}`;
+  }
+
+  /**
+   * Creates an enhanced timeline of combat events using raw telemetry data.
+   *
+   * Combines kills, knockdowns, and revives in chronological order with precise timing,
+   * weapon information, and clickable player links to pubg.op.gg.
+   *
+   * @param analysis - Player telemetry analysis containing raw event data
+   * @returns Formatted timeline string showing up to 10 most recent events
+   */
+  private formatEnhancedTimeline(analysis: PlayerAnalysis): string {
+    // Filter out events without valid timestamps
+    const validKills = analysis.killEvents.filter((k) => k._D);
+    const validKnockdowns = analysis.knockdownEvents.filter((k) => k._D);
+    const validRevives = analysis.reviveEvents.filter((r) => r._D);
+    // Include significant damage events (>= 20 damage) for more interesting timeline
+    const significantDamage = analysis.damageEvents.filter((d) => d._D && d.damage >= 20);
+    // Include player's own deaths and knockdowns
+    const validDeaths = analysis.deathEvents.filter((k) => k._D);
+    const validKnockedDown = analysis.knockedDownEvents.filter((k) => k._D);
+
+    // Combine raw telemetry events for timeline
+    const timelineEvents = [
+      ...validKills.map((k) => ({ type: 'kill', event: k, time: new Date(k._D!) })),
+      ...validKnockdowns.map((k) => ({ type: 'knockdown', event: k, time: new Date(k._D!) })),
+      ...validRevives.map((r) => ({ type: 'revive', event: r, time: new Date(r._D!) })),
+      ...significantDamage.map((d) => ({ type: 'damage', event: d, time: new Date(d._D!) })),
+      ...validDeaths.map((k) => ({ type: 'death', event: k, time: new Date(k._D!) })),
+      ...validKnockedDown.map((k) => ({ type: 'knocked', event: k, time: new Date(k._D!) })),
+    ]
+      .sort((a, b) => a.time.getTime() - b.time.getTime())
+      .slice(0, 8); // Limit to 8 events to avoid spam
+
+    if (!timelineEvents.length) return '';
+
+    const timeline = timelineEvents
+      .map(({ type, event }) => {
+        const matchTime = this.formatMatchTime(event._D!, analysis.matchStartTime);
+        if (type === 'kill') {
+          const kill = event as LogPlayerKillV2;
+          const victimName = kill.victim?.name || 'Unknown Player';
+
+          // Use killerDamageInfo for more accurate weapon and distance data
+          const primaryDamageInfo = kill.killerDamageInfo
+            ? DamageInfoUtils.getFirst(kill.killerDamageInfo)
+            : null;
+
+          const weapon = primaryDamageInfo?.damageCauserName
+            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
+            : this.getReadableDamageCauserName(kill.damageCauserName);
+
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : kill.distance && !isNaN(kill.distance)
+                ? Math.round(kill.distance / 100)
+                : 0;
+
+          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
+          return `\`${matchTime}\` ⚔️ Killed [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
+        }
+        if (type === 'knockdown') {
+          const knockdown = event as LogPlayerMakeGroggy;
+          const victimName = knockdown.victim?.name || 'Unknown Player';
+
+          // Use groggyDamage for more accurate weapon and distance data
+          const primaryDamageInfo = knockdown.groggyDamage
+            ? DamageInfoUtils.getFirst(knockdown.groggyDamage)
+            : null;
+
+          const weapon = primaryDamageInfo?.damageCauserName
+            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
+            : this.getReadableDamageCauserName(knockdown.damageCauserName);
+
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : knockdown.distance && !isNaN(knockdown.distance)
+                ? Math.round(knockdown.distance / 100)
+                : 0;
+
+          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
+          return `\`${matchTime}\` 🔻 Knocked [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
+        }
+        if (type === 'revive') {
+          const revive = event as LogPlayerRevive;
+          const victimName = revive.victim?.name || 'Unknown Player';
+          return `\`${matchTime}\` 🚑 Revived [${victimName}](https://pubg.op.gg/user/${victimName})`;
+        }
+        if (type === 'damage') {
+          const damage = event as LogPlayerTakeDamage;
+          const weapon = this.getReadableDamageCauserName(damage.damageCauserName);
+          const victimName = damage.victim?.name || 'Unknown Player';
+          const dmgAmount = damage.damage && !isNaN(damage.damage) ? Math.round(damage.damage) : 0;
+          const weaponInfo = weapon === 'Unknown Weapon' ? 'environment' : weapon;
+          return `\`${matchTime}\` 💥 Hit [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${dmgAmount} dmg)`;
+        }
+        if (type === 'death') {
+          const death = event as LogPlayerKillV2;
+          const killerName = death.killer?.name || 'Unknown Player';
+
+          // Use killerDamageInfo for more accurate weapon and distance data
+          const primaryDamageInfo = death.killerDamageInfo
+            ? DamageInfoUtils.getFirst(death.killerDamageInfo)
+            : null;
+
+          const weapon = primaryDamageInfo?.damageCauserName
+            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
+            : this.getReadableDamageCauserName(death.damageCauserName);
+
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : death.distance && !isNaN(death.distance)
+                ? Math.round(death.distance / 100)
+                : 0;
+
+          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
+          return `\`${matchTime}\` ☠️ Killed by [${killerName}](https://pubg.op.gg/user/${killerName}) (${weaponInfo}, ${distance}m)`;
+        }
+        if (type === 'knocked') {
+          const knocked = event as LogPlayerMakeGroggy;
+          const attackerName = knocked.attacker?.name || 'Unknown Player';
+
+          // Use groggyDamage for more accurate weapon and distance data
+          const primaryDamageInfo = knocked.groggyDamage
+            ? DamageInfoUtils.getFirst(knocked.groggyDamage)
+            : null;
+
+          const weapon = primaryDamageInfo?.damageCauserName
+            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
+            : this.getReadableDamageCauserName(knocked.damageCauserName);
+
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : knocked.distance && !isNaN(knocked.distance)
+                ? Math.round(knocked.distance / 100)
+                : 0;
+
+          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
+          return `\`${matchTime}\` 🔻 Knocked by [${attackerName}](https://pubg.op.gg/user/${attackerName}) (${weaponInfo}, ${distance}m)`;
+        }
+        return '';
+      })
+      .filter(Boolean);
+
+    return timeline.length > 0 ? `**TIMELINE**\n${timeline.join('\n')}` : '';
+  }
+
+  /**
+   * Converts absolute event timestamp to relative match time in MM:SS format.
+   *
+   * @param eventTime - ISO timestamp string of the event
+   * @param matchStart - Match start time for calculating relative offset
+   * @returns Formatted time string (e.g., '05:23' for 5 minutes 23 seconds into match)
+   */
+  private formatMatchTime(eventTime: string, matchStart: Date): string {
+    const eventDate = new Date(eventTime);
+    const relativeSeconds = Math.round((eventDate.getTime() - matchStart.getTime()) / 1000);
+    const minutes = Math.floor(relativeSeconds / 60);
+    const seconds = relativeSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
 }

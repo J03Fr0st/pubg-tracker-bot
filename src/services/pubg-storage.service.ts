@@ -35,6 +35,10 @@ export class PubgStorageService {
     await this.processedMatchRepository.addProcessedMatch(matchId);
   }
 
+  public async removeProcessedMatch(matchId: string): Promise<boolean> {
+    return this.processedMatchRepository.removeProcessedMatch(matchId);
+  }
+
   public async removeLastProcessedMatch(): Promise<string | null> {
     return this.processedMatchRepository.removeLastProcessedMatch();
   }
