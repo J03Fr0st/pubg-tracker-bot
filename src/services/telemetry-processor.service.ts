@@ -6,7 +6,7 @@ import {
   LogPlayerRevive,
   LogWeaponFireCount,
   TelemetryEvent,
-  DAMAGE_CAUSER_NAME
+  DAMAGE_CAUSER_NAME,
 } from '@j03fr0st/pubg-ts';
 
 import {
@@ -14,11 +14,10 @@ import {
   MatchAnalysis,
   WeaponStats,
   KillChain,
-  AssistInfo
+  AssistInfo,
 } from '../types/analytics-results.types';
 
 export class TelemetryProcessorService {
-
   /**
    * Processes raw telemetry data for a match and returns enhanced analytics for tracked players.
    *
@@ -50,18 +49,29 @@ export class TelemetryProcessorService {
     matchStartTime: Date,
     trackedPlayerNames: string[]
   ): Promise<MatchAnalysis> {
-
     const startTime = Date.now();
 
     // Filter events by type using existing interfaces
-    const killEvents = telemetryData.filter(e => e._T === 'LogPlayerKillV2') as LogPlayerKillV2[];
-    const knockdownEvents = telemetryData.filter(e => e._T === 'LogPlayerMakeGroggy') as LogPlayerMakeGroggy[];
-    const damageEvents = telemetryData.filter(e => e._T === 'LogPlayerTakeDamage') as LogPlayerTakeDamage[];
-    const attackEvents = telemetryData.filter(e => e._T === 'LogPlayerAttack') as LogPlayerAttack[];
-    const reviveEvents = telemetryData.filter(e => e._T === 'LogPlayerRevive') as LogPlayerRevive[];
-    const fireCountEvents = telemetryData.filter(e => e._T === 'LogWeaponFireCount') as LogWeaponFireCount[];
+    const killEvents = telemetryData.filter((e) => e._T === 'LogPlayerKillV2') as LogPlayerKillV2[];
+    const knockdownEvents = telemetryData.filter(
+      (e) => e._T === 'LogPlayerMakeGroggy'
+    ) as LogPlayerMakeGroggy[];
+    const damageEvents = telemetryData.filter(
+      (e) => e._T === 'LogPlayerTakeDamage'
+    ) as LogPlayerTakeDamage[];
+    const attackEvents = telemetryData.filter(
+      (e) => e._T === 'LogPlayerAttack'
+    ) as LogPlayerAttack[];
+    const reviveEvents = telemetryData.filter(
+      (e) => e._T === 'LogPlayerRevive'
+    ) as LogPlayerRevive[];
+    const fireCountEvents = telemetryData.filter(
+      (e) => e._T === 'LogWeaponFireCount'
+    ) as LogWeaponFireCount[];
 
-    console.log(`[TELEMETRY DEBUG] Total events: ${telemetryData.length}, Kills: ${killEvents.length}, Knockdowns: ${knockdownEvents.length}`);
+    console.log(
+      `[TELEMETRY DEBUG] Total events: ${telemetryData.length}, Kills: ${killEvents.length}, Knockdowns: ${knockdownEvents.length}`
+    );
 
     const playerAnalyses = new Map<string, PlayerAnalysis>();
 
@@ -85,7 +95,7 @@ export class TelemetryProcessorService {
       matchId,
       playerAnalyses,
       processingTimeMs: Date.now() - startTime,
-      totalEventsProcessed: telemetryData.length
+      totalEventsProcessed: telemetryData.length,
     };
   }
 
@@ -119,28 +129,31 @@ export class TelemetryProcessorService {
     allFireCounts: LogWeaponFireCount[],
     matchStartTime: Date
   ): PlayerAnalysis {
-
     // Filter events for this player (using existing types directly)
-    const playerKills = allKills.filter(k => k.killer?.name === playerName);
-    const playerKnockdowns = allKnockdowns.filter(k => k.attacker?.name === playerName);
-    const playerDamageDealt = allDamage.filter(d => d.attacker?.name === playerName);
-    const playerDamageTaken = allDamage.filter(d => d.victim?.name === playerName);
-    const playerAttacks = allAttacks.filter(a => a.attacker?.name === playerName);
-    const playerRevives = allRevives.filter(r => r.reviver?.name === playerName);
-    const playerFireCounts = allFireCounts.filter(f => f.character?.name === playerName);
+    const playerKills = allKills.filter((k) => k.killer?.name === playerName);
+    const playerKnockdowns = allKnockdowns.filter((k) => k.attacker?.name === playerName);
+    const playerDamageDealt = allDamage.filter((d) => d.attacker?.name === playerName);
+    const playerDamageTaken = allDamage.filter((d) => d.victim?.name === playerName);
+    const playerAttacks = allAttacks.filter((a) => a.attacker?.name === playerName);
+    const playerRevives = allRevives.filter((r) => r.reviver?.name === playerName);
+    const playerFireCounts = allFireCounts.filter((f) => f.character?.name === playerName);
     // Events where player is the victim
-    const playerDeaths = allKills.filter(k => k.victim?.name === playerName);
-    const playerKnockedDown = allKnockdowns.filter(k => k.victim?.name === playerName);
+    const playerDeaths = allKills.filter((k) => k.victim?.name === playerName);
+    const playerKnockedDown = allKnockdowns.filter((k) => k.victim?.name === playerName);
 
     // Debug: Log detailed victim analysis for real matches
     if (allKills.length > 0) {
       console.log(`[DEATH DEBUG] Tracking player: "${playerName}"`);
       console.log(`[DEATH DEBUG] Total kill events: ${allKills.length}`);
-      const allVictimNames = allKills.map(k => k.victim?.name).filter(Boolean);
+      const allVictimNames = allKills.map((k) => k.victim?.name).filter(Boolean);
       console.log(`[DEATH DEBUG] All victim names:`, allVictimNames);
-      const exactMatches = allVictimNames.filter(name => name === playerName);
+      const exactMatches = allVictimNames.filter((name) => name === playerName);
       console.log(`[DEATH DEBUG] Exact matches for "${playerName}": ${exactMatches.length}`);
-      const partialMatches = allVictimNames.filter(name => name?.toLowerCase().includes(playerName.toLowerCase()) || playerName.toLowerCase().includes(name?.toLowerCase() || ''));
+      const partialMatches = allVictimNames.filter(
+        (name) =>
+          name?.toLowerCase().includes(playerName.toLowerCase()) ||
+          playerName.toLowerCase().includes(name?.toLowerCase() || '')
+      );
       console.log(`[DEATH DEBUG] Partial matches:`, partialMatches);
     }
 
@@ -157,23 +170,22 @@ export class TelemetryProcessorService {
     const killChains = this.analyzeKillChains(playerKills);
 
     // Calculate assists
-    const calculatedAssists = this.calculateAssists(
-      playerName,
-      allKills,
-      allDamage,
-      allKnockdowns
-    );
+    const calculatedAssists = this.calculateAssists(playerName, allKills, allDamage, allKnockdowns);
 
     // Calculate summary stats
     const totalDamageDealt = playerDamageDealt.reduce((sum, d) => sum + d.damage, 0);
     const totalDamageTaken = playerDamageTaken.reduce((sum, d) => sum + d.damage, 0);
-    const kdRatio = playerDeaths.length > 0 ? playerKills.length / playerDeaths.length : playerKills.length;
+    const kdRatio =
+      playerDeaths.length > 0 ? playerKills.length / playerDeaths.length : playerKills.length;
 
-    const avgKillDistance = playerKills.length > 0 ?
-      playerKills.reduce((sum, k) => sum + k.distance, 0) / playerKills.length / 100 : 0;
+    const avgKillDistance =
+      playerKills.length > 0
+        ? playerKills.reduce((sum, k) => sum + k.distance, 0) / playerKills.length / 100
+        : 0;
 
-    const headshotKills = playerKills.filter(k => k.damageReason === 'HeadShot').length;
-    const headshotPercentage = playerKills.length > 0 ? (headshotKills / playerKills.length) * 100 : 0;
+    const headshotKills = playerKills.filter((k) => k.damageReason === 'HeadShot').length;
+    const headshotPercentage =
+      playerKills.length > 0 ? (headshotKills / playerKills.length) * 100 : 0;
 
     return {
       playerName,
@@ -194,7 +206,7 @@ export class TelemetryProcessorService {
       kdRatio,
       avgKillDistance,
       headshotPercentage,
-      killsPerMinute: 0 // Calculate based on match duration
+      killsPerMinute: 0, // Calculate based on match duration
     };
   }
 
@@ -218,13 +230,20 @@ export class TelemetryProcessorService {
     attacks: LogPlayerAttack[],
     fireCounts: LogWeaponFireCount[]
   ): WeaponStats[] {
-
     const weaponMap = new Map<string, Partial<WeaponStats>>();
 
     // Process kills
     for (const kill of kills) {
       const weaponName = this.getReadableWeaponName(kill.damageCauserName);
-      const stats = weaponMap.get(weaponName) || { weaponName, kills: 0, knockdowns: 0, damageDealt: 0, shotsFired: 0, hits: 0, longestKill: 0 };
+      const stats = weaponMap.get(weaponName) || {
+        weaponName,
+        kills: 0,
+        knockdowns: 0,
+        damageDealt: 0,
+        shotsFired: 0,
+        hits: 0,
+        longestKill: 0,
+      };
 
       stats.kills = (stats.kills || 0) + 1;
       stats.longestKill = Math.max(stats.longestKill || 0, kill.distance / 100);
@@ -235,7 +254,15 @@ export class TelemetryProcessorService {
     // Process knockdowns
     for (const knockdown of knockdowns) {
       const weaponName = this.getReadableWeaponName(knockdown.damageCauserName);
-      const stats = weaponMap.get(weaponName) || { weaponName, kills: 0, knockdowns: 0, damageDealt: 0, shotsFired: 0, hits: 0, longestKill: 0 };
+      const stats = weaponMap.get(weaponName) || {
+        weaponName,
+        kills: 0,
+        knockdowns: 0,
+        damageDealt: 0,
+        shotsFired: 0,
+        hits: 0,
+        longestKill: 0,
+      };
 
       stats.knockdowns = (stats.knockdowns || 0) + 1;
 
@@ -245,7 +272,15 @@ export class TelemetryProcessorService {
     // Process damage events
     for (const dmg of damage) {
       const weaponName = this.getReadableWeaponName(dmg.damageCauserName);
-      const stats = weaponMap.get(weaponName) || { weaponName, kills: 0, knockdowns: 0, damageDealt: 0, shotsFired: 0, hits: 0, longestKill: 0 };
+      const stats = weaponMap.get(weaponName) || {
+        weaponName,
+        kills: 0,
+        knockdowns: 0,
+        damageDealt: 0,
+        shotsFired: 0,
+        hits: 0,
+        longestKill: 0,
+      };
 
       stats.damageDealt = (stats.damageDealt || 0) + dmg.damage;
       stats.hits = (stats.hits || 0) + 1;
@@ -257,7 +292,15 @@ export class TelemetryProcessorService {
     for (const fireCount of fireCounts) {
       if (fireCount.weaponId && fireCount.fireCount) {
         const weaponName = this.getReadableWeaponName(fireCount.weaponId);
-        const stats = weaponMap.get(weaponName) || { weaponName, kills: 0, knockdowns: 0, damageDealt: 0, shotsFired: 0, hits: 0, longestKill: 0 };
+        const stats = weaponMap.get(weaponName) || {
+          weaponName,
+          kills: 0,
+          knockdowns: 0,
+          damageDealt: 0,
+          shotsFired: 0,
+          hits: 0,
+          longestKill: 0,
+        };
 
         stats.shotsFired = (stats.shotsFired || 0) + fireCount.fireCount;
 
@@ -288,7 +331,7 @@ export class TelemetryProcessorService {
         averageDistance: 0, // Calculate from damage events
         accuracy: shots > 0 ? (hits / shots) * 100 : 0,
         lethality: hits > 0 ? (kills / hits) * 100 : 0,
-        efficiency: shots > 0 ? (kills / shots) * 100 : 0
+        efficiency: shots > 0 ? (kills / shots) * 100 : 0,
       });
     }
 
@@ -309,8 +352,8 @@ export class TelemetryProcessorService {
 
     const CHAIN_TIME_WINDOW = 30 * 1000; // 30 seconds
     const chains: KillChain[] = [];
-    const sortedKills = [...kills].sort((a, b) =>
-      new Date(a._D!).getTime() - new Date(b._D!).getTime()
+    const sortedKills = [...kills].sort(
+      (a, b) => new Date(a._D!).getTime() - new Date(b._D!).getTime()
     );
 
     let currentChain: LogPlayerKillV2[] = [];
@@ -324,7 +367,8 @@ export class TelemetryProcessorService {
         currentChain = [kill];
         chainStartTime = killTime;
       } else {
-        const timeSinceLastKill = killTime.getTime() - new Date(currentChain[currentChain.length - 1]._D!).getTime();
+        const timeSinceLastKill =
+          killTime.getTime() - new Date(currentChain[currentChain.length - 1]._D!).getTime();
 
         if (timeSinceLastKill <= CHAIN_TIME_WINDOW) {
           currentChain.push(kill);
@@ -351,14 +395,16 @@ export class TelemetryProcessorService {
     const endTime = new Date(kills[kills.length - 1]._D!);
     const duration = endTime.getTime() - startTime.getTime();
     const averageTimeBetweenKills = duration / (kills.length - 1);
-    const weaponsUsed = [...new Set(kills.map(k => this.getReadableWeaponName(k.damageCauserName)))];
+    const weaponsUsed = [
+      ...new Set(kills.map((k) => this.getReadableWeaponName(k.damageCauserName))),
+    ];
 
     return {
       startTime,
       kills, // Store the actual LogPlayerKillV2 events!
       duration: duration / 1000, // Convert to seconds
       weaponsUsed,
-      averageTimeBetweenKills: averageTimeBetweenKills / 1000 // Convert to seconds
+      averageTimeBetweenKills: averageTimeBetweenKills / 1000, // Convert to seconds
     };
   }
 
@@ -395,19 +441,21 @@ export class TelemetryProcessorService {
       if (!victim) continue;
 
       // Find damage dealt by this player to the victim before the kill
-      const playerDamageToVictim = allDamage.filter(d =>
-        d.attacker?.name === playerName &&
-        d.victim?.name === victim &&
-        new Date(d._D!).getTime() < killTime &&
-        (killTime - new Date(d._D!).getTime()) <= ASSIST_TIME_WINDOW
+      const playerDamageToVictim = allDamage.filter(
+        (d) =>
+          d.attacker?.name === playerName &&
+          d.victim?.name === victim &&
+          new Date(d._D!).getTime() < killTime &&
+          killTime - new Date(d._D!).getTime() <= ASSIST_TIME_WINDOW
       );
 
       // Find knockdowns by this player on the victim
-      const playerKnockdownsOfVictim = allKnockdowns.filter(k =>
-        k.attacker?.name === playerName &&
-        k.victim?.name === victim &&
-        new Date(k._D!).getTime() < killTime &&
-        (killTime - new Date(k._D!).getTime()) <= ASSIST_TIME_WINDOW
+      const playerKnockdownsOfVictim = allKnockdowns.filter(
+        (k) =>
+          k.attacker?.name === playerName &&
+          k.victim?.name === victim &&
+          new Date(k._D!).getTime() < killTime &&
+          killTime - new Date(k._D!).getTime() <= ASSIST_TIME_WINDOW
       );
 
       const totalDamage = playerDamageToVictim.reduce((sum, d) => sum + d.damage, 0);
@@ -415,19 +463,23 @@ export class TelemetryProcessorService {
 
       if (totalDamage >= MIN_DAMAGE_THRESHOLD || hasKnockdown) {
         // Calculate total damage to victim from all players for percentage
-        const allDamageToVictim = allDamage.filter(d =>
-          d.victim?.name === victim &&
-          new Date(d._D!).getTime() < killTime
-        ).reduce((sum, d) => sum + d.damage, 0);
+        const allDamageToVictim = allDamage
+          .filter((d) => d.victim?.name === victim && new Date(d._D!).getTime() < killTime)
+          .reduce((sum, d) => sum + d.damage, 0);
 
-        const assistType = totalDamage >= MIN_DAMAGE_THRESHOLD && hasKnockdown ? 'both' :
-                          hasKnockdown ? 'knockdown' : 'damage';
+        const assistType =
+          totalDamage >= MIN_DAMAGE_THRESHOLD && hasKnockdown
+            ? 'both'
+            : hasKnockdown
+              ? 'knockdown'
+              : 'damage';
 
-        const weapon = playerDamageToVictim.length > 0 ?
-          this.getReadableWeaponName(playerDamageToVictim[0].damageCauserName) :
-          playerKnockdownsOfVictim.length > 0 ?
-          this.getReadableWeaponName(playerKnockdownsOfVictim[0].damageCauserName) :
-          'Unknown';
+        const weapon =
+          playerDamageToVictim.length > 0
+            ? this.getReadableWeaponName(playerDamageToVictim[0].damageCauserName)
+            : playerKnockdownsOfVictim.length > 0
+              ? this.getReadableWeaponName(playerKnockdownsOfVictim[0].damageCauserName)
+              : 'Unknown';
 
         assists.push({
           assistingPlayer: playerName,
@@ -435,7 +487,7 @@ export class TelemetryProcessorService {
           damageDealt: totalDamage,
           damagePercentage: allDamageToVictim > 0 ? (totalDamage / allDamageToVictim) * 100 : 0,
           assistType,
-          weapon
+          weapon,
         });
       }
     }

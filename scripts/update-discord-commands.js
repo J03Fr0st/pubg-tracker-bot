@@ -34,7 +34,7 @@ const commands = [
         .setDescription('The matchId of the match to remove')
         .setRequired(true)
     ),
-].map(command => command.toJSON());
+].map((command) => command.toJSON());
 
 async function updateCommands() {
   const rest = new REST().setToken(process.env.DISCORD_TOKEN);
@@ -43,13 +43,12 @@ async function updateCommands() {
     console.log('🔄 Started refreshing application (/) commands...');
 
     // Register global commands
-    const data = await rest.put(
-      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-      { body: commands }
-    );
+    const data = await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID), {
+      body: commands,
+    });
 
     console.log(`✅ Successfully reloaded ${data.length} global application (/) commands:`);
-    data.forEach(cmd => {
+    data.forEach((cmd) => {
       console.log(`   - /${cmd.name}: ${cmd.description}`);
     });
 
@@ -57,17 +56,23 @@ async function updateCommands() {
     if (process.env.DISCORD_GUILD_ID) {
       console.log('\n🔄 Also registering guild-specific commands...');
       const guildData = await rest.put(
-        Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID),
+        Routes.applicationGuildCommands(
+          process.env.DISCORD_CLIENT_ID,
+          process.env.DISCORD_GUILD_ID
+        ),
         { body: commands }
       );
 
-      console.log(`✅ Successfully reloaded ${guildData.length} guild-specific commands for guild ${process.env.DISCORD_GUILD_ID}`);
+      console.log(
+        `✅ Successfully reloaded ${guildData.length} guild-specific commands for guild ${process.env.DISCORD_GUILD_ID}`
+      );
     }
 
     console.log('\n🎉 Commands updated!');
     console.log('📝 Note: Global commands can take up to 1 hour to appear in Discord.');
-    console.log('💡 For instant updates, set DISCORD_GUILD_ID in your .env file for guild-specific commands.');
-
+    console.log(
+      '💡 For instant updates, set DISCORD_GUILD_ID in your .env file for guild-specific commands.'
+    );
   } catch (error) {
     console.error('❌ Error updating commands:', error);
     if (error.code === 50001) {

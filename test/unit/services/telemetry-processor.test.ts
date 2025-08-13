@@ -6,7 +6,7 @@ import {
   LogPlayerAttack,
   LogPlayerRevive,
   LogWeaponFireCount,
-  TelemetryEvent
+  TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 
 describe('TelemetryProcessorService', () => {
@@ -25,7 +25,7 @@ describe('TelemetryProcessorService', () => {
         victim: { name: 'EnemyPlayer1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000, // 150m in cm
-        damageReason: 'HeadShot'
+        damageReason: 'HeadShot',
       } as LogPlayerKillV2;
 
       const mockDamageEvent = {
@@ -34,7 +34,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'EnemyPlayer1' },
         damageCauserName: 'WeapAK47_C',
-        damage: 50
+        damage: 50,
       } as LogPlayerTakeDamage;
 
       const telemetryData: TelemetryEvent[] = [mockKillEvent, mockDamageEvent];
@@ -64,17 +64,14 @@ describe('TelemetryProcessorService', () => {
     });
 
     it('should handle empty telemetry data', async () => {
-      const result = await telemetryProcessor.processMatchTelemetry(
-        [],
-        'empty-match',
-        new Date(),
-        ['TestPlayer1']
-      );
+      const result = await telemetryProcessor.processMatchTelemetry([], 'empty-match', new Date(), [
+        'TestPlayer1',
+      ]);
 
       expect(result.matchId).toBe('empty-match');
       expect(result.playerAnalyses.size).toBe(1);
       expect(result.totalEventsProcessed).toBe(0);
-      
+
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis!.killEvents).toHaveLength(0);
       expect(playerAnalysis!.weaponStats).toHaveLength(0);
@@ -89,7 +86,7 @@ describe('TelemetryProcessorService', () => {
         victim: { name: 'TestPlayer1' },
         damageCauserName: 'WeapM416_C',
         distance: 10000,
-        damageReason: 'NonSpecific'
+        damageReason: 'NonSpecific',
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -113,7 +110,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 20000 // 200m
+        distance: 20000, // 200m
       } as LogPlayerKillV2;
 
       const knockdownEvent = {
@@ -122,7 +119,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy2' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000 // 150m
+        distance: 15000, // 150m
       } as LogPlayerMakeGroggy;
 
       const damageEvent = {
@@ -131,7 +128,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        damage: 75
+        damage: 75,
       } as LogPlayerTakeDamage;
 
       const fireCountEvent = {
@@ -139,7 +136,7 @@ describe('TelemetryProcessorService', () => {
         _T: 'LogWeaponFireCount',
         character: { name: 'TestPlayer1' },
         weaponId: 'WeapAK47_C',
-        fireCount: 10
+        fireCount: 10,
       } as LogWeaponFireCount;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -151,7 +148,7 @@ describe('TelemetryProcessorService', () => {
 
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis!.weaponStats).toHaveLength(1);
-      
+
       const ak47Stats = playerAnalysis!.weaponStats[0];
       expect(ak47Stats.weaponName).toBe('AKM'); // Should be readable name from DAMAGE_CAUSER_NAME
       expect(ak47Stats.kills).toBe(1);
@@ -173,7 +170,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapM416_C',
-        distance: 10000
+        distance: 10000,
       } as LogPlayerKillV2;
 
       const kill2 = {
@@ -182,7 +179,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy2' },
         damageCauserName: 'WeapM416_C',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerKillV2;
 
       const kill3 = {
@@ -191,7 +188,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy3' },
         damageCauserName: 'WeapAK47_C',
-        distance: 8000
+        distance: 8000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -203,7 +200,7 @@ describe('TelemetryProcessorService', () => {
 
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis!.killChains).toHaveLength(1);
-      
+
       const killChain = playerAnalysis!.killChains[0];
       expect(killChain.kills).toHaveLength(3);
       expect(killChain.duration).toBe(25); // 25 seconds
@@ -217,7 +214,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapM416_C',
-        distance: 10000
+        distance: 10000,
       } as LogPlayerKillV2;
 
       const kill2 = {
@@ -226,7 +223,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy2' },
         damageCauserName: 'WeapM416_C',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -249,7 +246,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapM416_C',
-        damage: 50
+        damage: 50,
       } as LogPlayerTakeDamage;
 
       const killEvent = {
@@ -258,7 +255,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Teammate1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -270,7 +267,7 @@ describe('TelemetryProcessorService', () => {
 
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis!.calculatedAssists).toHaveLength(1);
-      
+
       const assist = playerAnalysis!.calculatedAssists[0];
       expect(assist.assistingPlayer).toBe('TestPlayer1');
       expect(assist.killedPlayer).toBe('Enemy1');
@@ -286,7 +283,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapSCAR_C',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerMakeGroggy;
 
       const killEvent = {
@@ -295,7 +292,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Teammate1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -307,7 +304,7 @@ describe('TelemetryProcessorService', () => {
 
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis!.calculatedAssists).toHaveLength(1);
-      
+
       const assist = playerAnalysis!.calculatedAssists[0];
       expect(assist.assistType).toBe('knockdown');
       expect(assist.weapon).toBe('SCAR');
@@ -320,7 +317,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapM416_C',
-        damage: 50
+        damage: 50,
       } as LogPlayerTakeDamage;
 
       const killEvent = {
@@ -329,7 +326,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Teammate1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -350,7 +347,7 @@ describe('TelemetryProcessorService', () => {
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapM416_C',
-        damage: 15 // Below 20 damage threshold
+        damage: 15, // Below 20 damage threshold
       } as LogPlayerTakeDamage;
 
       const killEvent = {
@@ -359,7 +356,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Teammate1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -382,7 +379,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const deathEvent = {
@@ -391,7 +388,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Enemy2' },
         victim: { name: 'TestPlayer1' },
         damageCauserName: 'WeapM416_C',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -413,7 +410,7 @@ describe('TelemetryProcessorService', () => {
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
         damageReason: 'HeadShot',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const bodyKill = {
@@ -423,7 +420,7 @@ describe('TelemetryProcessorService', () => {
         victim: { name: 'Enemy2' },
         damageCauserName: 'WeapAK47_C',
         damageReason: 'NonSpecific',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -463,7 +460,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Player1' },
         victim: { name: 'Enemy1' },
         damageCauserName: 'WeapAK47_C',
-        distance: 15000
+        distance: 15000,
       } as LogPlayerKillV2;
 
       const killEvent2 = {
@@ -472,7 +469,7 @@ describe('TelemetryProcessorService', () => {
         killer: { name: 'Player2' },
         victim: { name: 'Enemy2' },
         damageCauserName: 'WeapM416_C',
-        distance: 12000
+        distance: 12000,
       } as LogPlayerKillV2;
 
       const result = await telemetryProcessor.processMatchTelemetry(
@@ -483,10 +480,10 @@ describe('TelemetryProcessorService', () => {
       );
 
       expect(result.playerAnalyses.size).toBe(2);
-      
+
       const player1Analysis = result.playerAnalyses.get('Player1');
       const player2Analysis = result.playerAnalyses.get('Player2');
-      
+
       expect(player1Analysis!.killEvents).toHaveLength(1);
       expect(player2Analysis!.killEvents).toHaveLength(1);
       expect(player1Analysis!.avgKillDistance).toBe(150);

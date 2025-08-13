@@ -427,10 +427,13 @@ export class DiscordBotService {
     try {
       // Fetch raw telemetry data
       const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl);
-      const trackedPlayerNames = players.map(p => p.name);
+      const trackedPlayerNames = players.map((p) => p.name);
 
       debug(`Processing telemetry for ${trackedPlayerNames.length} players`);
-      console.log(`[PLAYER DEBUG] Tracked player names:`, trackedPlayerNames.map(name => `"${name}"`));
+      console.log(
+        `[PLAYER DEBUG] Tracked player names:`,
+        trackedPlayerNames.map((name) => `"${name}"`)
+      );
       // Process using our new service
       const matchAnalysis = await this.telemetryProcessor.processMatchTelemetry(
         telemetryData, // Raw TelemetryEvent[] - no conversion needed!
@@ -440,16 +443,15 @@ export class DiscordBotService {
       );
 
       // Create enhanced embeds
-      const enhancedPlayerEmbeds = players.map(player => {
+      const enhancedPlayerEmbeds = players.map((player) => {
         const analysis = matchAnalysis.playerAnalyses.get(player.name);
-        return analysis ?
-          this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId) :
-          this.createBasicPlayerEmbed(player, matchColor, matchId);
+        return analysis
+          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId)
+          : this.createBasicPlayerEmbed(player, matchColor, matchId);
       });
 
       success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
       return [mainEmbed, ...enhancedPlayerEmbeds];
-
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
@@ -472,7 +474,9 @@ export class DiscordBotService {
     const kmWalked = (stats.walkDistance / 1000).toFixed(1);
 
     // Debug: Log survival time calculation
-    console.log(`[SURVIVAL DEBUG] Player: ${player.name}, timeSurvived: ${stats.timeSurvived}s, calculated: ${survivalMinutes}min`);
+    console.log(
+      `[SURVIVAL DEBUG] Player: ${player.name}, timeSurvived: ${stats.timeSurvived}s, calculated: ${survivalMinutes}min`
+    );
     const accuracy =
       stats.kills > 0 && stats.headshotKills > 0
         ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
@@ -625,11 +629,19 @@ export class DiscordBotService {
     return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
   }
 
-  private createBasicPlayerEmbeds(players: DiscordPlayerMatchStats[], matchColor: number, matchId: string): EmbedBuilder[] {
-    return players.map(player => this.createBasicPlayerEmbed(player, matchColor, matchId));
+  private createBasicPlayerEmbeds(
+    players: DiscordPlayerMatchStats[],
+    matchColor: number,
+    matchId: string
+  ): EmbedBuilder[] {
+    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId));
   }
 
-  private createBasicPlayerEmbed(player: DiscordPlayerMatchStats, matchColor: number, matchId: string): EmbedBuilder {
+  private createBasicPlayerEmbed(
+    player: DiscordPlayerMatchStats,
+    matchColor: number,
+    matchId: string
+  ): EmbedBuilder {
     const { stats } = player;
     if (!stats) {
       return new EmbedBuilder()
@@ -640,9 +652,10 @@ export class DiscordBotService {
 
     const survivalMinutes = Math.round(stats.timeSurvived / 60);
     const kmWalked = (stats.walkDistance / 1000).toFixed(1);
-    const accuracy = stats.kills > 0 && stats.headshotKills > 0
-      ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
-      : '0';
+    const accuracy =
+      stats.kills > 0 && stats.headshotKills > 0
+        ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
+        : '0';
 
     const basicStats = [
       `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
@@ -654,7 +667,9 @@ export class DiscordBotService {
       `👣 Distance: ${kmWalked}km`,
       stats.revives > 0 ? `🚑 Revives: ${stats.revives}` : '',
       `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     return new EmbedBuilder()
       .setTitle(`Player: ${player.name}`)
@@ -722,7 +737,7 @@ export class DiscordBotService {
 
       // Basic info
       `⏰ Survival: ${Math.round(stats.timeSurvived / 60)}min • ${(stats.walkDistance / 1000).toFixed(1)}km`,
-      `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`
+      `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`,
     ];
 
     return sections.filter(Boolean).join('\n\n');
@@ -742,11 +757,9 @@ export class DiscordBotService {
       '⚔️ **ENHANCED COMBAT**',
       `Kills: **${stats.kills}** (${stats.headshotKills} HS) • K/D: **${analysis.kdRatio.toFixed(2)}**`,
       `Damage: **${analysis.totalDamageDealt.toFixed(0)}** dealt / **${analysis.totalDamageTaken.toFixed(0)}** taken`,
-      `Avg Distance: **${analysis.avgKillDistance.toFixed(0)}m** • HS Rate: **${analysis.headshotPercentage.toFixed(1)}%**`
+      `Avg Distance: **${analysis.avgKillDistance.toFixed(0)}m** • HS Rate: **${analysis.headshotPercentage.toFixed(1)}%**`,
     ].join('\n');
   }
-
-
 
   /**
    * Formats kill chain statistics for Discord display.
@@ -763,17 +776,22 @@ export class DiscordBotService {
       current.kills.length > best.kills.length ? current : best
     );
 
-    const multiKills = chains.reduce((counts, chain) => {
-      const killCount = chain.kills.length;
-      if (killCount === 2) counts.doubles++;
-      else if (killCount === 3) counts.triples++;
-      else if (killCount >= 4) counts.quads++;
-      return counts;
-    }, { doubles: 0, triples: 0, quads: 0 });
+    const multiKills = chains.reduce(
+      (counts, chain) => {
+        const killCount = chain.kills.length;
+        if (killCount === 2) counts.doubles++;
+        else if (killCount === 3) counts.triples++;
+        else if (killCount >= 4) counts.quads++;
+        return counts;
+      },
+      { doubles: 0, triples: 0, quads: 0 }
+    );
 
     const elements = [];
     if (bestChain.kills.length >= 2) {
-      elements.push(`🔥 Best: **${bestChain.kills.length} kills** (${bestChain.duration.toFixed(1)}s)`);
+      elements.push(
+        `🔥 Best: **${bestChain.kills.length} kills** (${bestChain.duration.toFixed(1)}s)`
+      );
     }
     if (multiKills.doubles) elements.push(`⚡ Doubles: **${multiKills.doubles}**`);
     if (multiKills.triples) elements.push(`💫 Triples: **${multiKills.triples}**`);
@@ -793,10 +811,13 @@ export class DiscordBotService {
   private formatAssists(assists: AssistInfo[]): string {
     if (!assists.length) return '';
 
-    const assistTypes = assists.reduce((counts, assist) => {
-      counts[assist.assistType]++;
-      return counts;
-    }, { damage: 0, knockdown: 0, both: 0 } as Record<string, number>);
+    const assistTypes = assists.reduce(
+      (counts, assist) => {
+        counts[assist.assistType]++;
+        return counts;
+      },
+      { damage: 0, knockdown: 0, both: 0 } as Record<string, number>
+    );
 
     const elements = [`🤝 Total: **${assists.length}**`];
     if (assistTypes.damage) elements.push(`💥 Damage: **${assistTypes.damage}**`);
@@ -817,33 +838,32 @@ export class DiscordBotService {
    */
   private formatEnhancedTimeline(analysis: PlayerAnalysis): string {
     // Filter out events without valid timestamps
-    const validKills = analysis.killEvents.filter(k => k._D);
-    const validKnockdowns = analysis.knockdownEvents.filter(k => k._D);
-    const validRevives = analysis.reviveEvents.filter(r => r._D);
+    const validKills = analysis.killEvents.filter((k) => k._D);
+    const validKnockdowns = analysis.knockdownEvents.filter((k) => k._D);
+    const validRevives = analysis.reviveEvents.filter((r) => r._D);
     // Include significant damage events (>= 20 damage) for more interesting timeline
-    const significantDamage = analysis.damageEvents.filter(d => d._D && d.damage >= 20);
+    const significantDamage = analysis.damageEvents.filter((d) => d._D && d.damage >= 20);
     // Include player's own deaths and knockdowns
-    const validDeaths = analysis.deathEvents.filter(k => k._D);
-    const validKnockedDown = analysis.knockedDownEvents.filter(k => k._D);
+    const validDeaths = analysis.deathEvents.filter((k) => k._D);
+    const validKnockedDown = analysis.knockedDownEvents.filter((k) => k._D);
 
     // Combine raw telemetry events for timeline
     const timelineEvents = [
-      ...validKills.map(k => ({ type: 'kill', event: k, time: new Date(k._D!) })),
-      ...validKnockdowns.map(k => ({ type: 'knockdown', event: k, time: new Date(k._D!) })),
-      ...validRevives.map(r => ({ type: 'revive', event: r, time: new Date(r._D!) })),
-      ...significantDamage.map(d => ({ type: 'damage', event: d, time: new Date(d._D!) })),
-      ...validDeaths.map(k => ({ type: 'death', event: k, time: new Date(k._D!) })),
-      ...validKnockedDown.map(k => ({ type: 'knocked', event: k, time: new Date(k._D!) }))
-    ].sort((a, b) => a.time.getTime() - b.time.getTime()).slice(0, 8); // Limit to 8 events to avoid spam
+      ...validKills.map((k) => ({ type: 'kill', event: k, time: new Date(k._D!) })),
+      ...validKnockdowns.map((k) => ({ type: 'knockdown', event: k, time: new Date(k._D!) })),
+      ...validRevives.map((r) => ({ type: 'revive', event: r, time: new Date(r._D!) })),
+      ...significantDamage.map((d) => ({ type: 'damage', event: d, time: new Date(d._D!) })),
+      ...validDeaths.map((k) => ({ type: 'death', event: k, time: new Date(k._D!) })),
+      ...validKnockedDown.map((k) => ({ type: 'knocked', event: k, time: new Date(k._D!) })),
+    ]
+      .sort((a, b) => a.time.getTime() - b.time.getTime())
+      .slice(0, 8); // Limit to 8 events to avoid spam
 
     if (!timelineEvents.length) return '';
 
     const timeline = timelineEvents
       .map(({ type, event }) => {
-        const matchTime = this.formatMatchTime(
-          event._D!,
-          timelineEvents[0]?.time || new Date()
-        );
+        const matchTime = this.formatMatchTime(event._D!, timelineEvents[0]?.time || new Date());
         if (type === 'kill') {
           const kill = event as LogPlayerKillV2;
           const victimName = kill.victim?.name || 'Unknown Player';
@@ -857,9 +877,12 @@ export class DiscordBotService {
             ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
             : this.getReadableDamageCauserName(kill.damageCauserName);
 
-          const distance = primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-            ? Math.round(primaryDamageInfo.distance / 100)
-            : (kill.distance && !isNaN(kill.distance) ? Math.round(kill.distance / 100) : 0);
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : kill.distance && !isNaN(kill.distance)
+                ? Math.round(kill.distance / 100)
+                : 0;
 
           const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
           return `\`${matchTime}\` ⚔️ Killed [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
@@ -877,9 +900,12 @@ export class DiscordBotService {
             ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
             : this.getReadableDamageCauserName(knockdown.damageCauserName);
 
-          const distance = primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-            ? Math.round(primaryDamageInfo.distance / 100)
-            : (knockdown.distance && !isNaN(knockdown.distance) ? Math.round(knockdown.distance / 100) : 0);
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : knockdown.distance && !isNaN(knockdown.distance)
+                ? Math.round(knockdown.distance / 100)
+                : 0;
 
           const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
           return `\`${matchTime}\` 🔻 Knocked [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
@@ -910,9 +936,12 @@ export class DiscordBotService {
             ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
             : this.getReadableDamageCauserName(death.damageCauserName);
 
-          const distance = primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-            ? Math.round(primaryDamageInfo.distance / 100)
-            : (death.distance && !isNaN(death.distance) ? Math.round(death.distance / 100) : 0);
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : death.distance && !isNaN(death.distance)
+                ? Math.round(death.distance / 100)
+                : 0;
 
           const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
           return `\`${matchTime}\` ☠️ Killed by [${killerName}](https://pubg.op.gg/user/${killerName}) (${weaponInfo}, ${distance}m)`;
@@ -930,9 +959,12 @@ export class DiscordBotService {
             ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
             : this.getReadableDamageCauserName(knocked.damageCauserName);
 
-          const distance = primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-            ? Math.round(primaryDamageInfo.distance / 100)
-            : (knocked.distance && !isNaN(knocked.distance) ? Math.round(knocked.distance / 100) : 0);
+          const distance =
+            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
+              ? Math.round(primaryDamageInfo.distance / 100)
+              : knocked.distance && !isNaN(knocked.distance)
+                ? Math.round(knocked.distance / 100)
+                : 0;
 
           const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
           return `\`${matchTime}\` 🔻 Knocked by [${attackerName}](https://pubg.op.gg/user/${attackerName}) (${weaponInfo}, ${distance}m)`;

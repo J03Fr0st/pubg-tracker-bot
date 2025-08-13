@@ -1,4 +1,9 @@
-import { LogPlayerKillV2, LogPlayerMakeGroggy, LogPlayerTakeDamage, LogPlayerRevive } from '@j03fr0st/pubg-ts';
+import {
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  LogPlayerTakeDamage,
+  LogPlayerRevive,
+} from '@j03fr0st/pubg-ts';
 
 // ONLY create types for our calculated results - not raw events
 export interface WeaponStats {
@@ -10,9 +15,9 @@ export interface WeaponStats {
   hits: number;
   longestKill: number;
   averageDistance: number;
-  accuracy: number;        // hits / shotsFired
-  lethality: number;       // kills / hits
-  efficiency: number;      // kills / shotsFired
+  accuracy: number; // hits / shotsFired
+  lethality: number; // kills / hits
+  efficiency: number; // kills / shotsFired
 }
 
 export interface KillChain {
