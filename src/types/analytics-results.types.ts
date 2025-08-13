@@ -39,6 +39,7 @@ export interface AssistInfo {
 
 export interface PlayerAnalysis {
   playerName: string;
+  matchStartTime: Date; // Actual match start time for proper timeline calculation
   // Raw events (use existing types)
   killEvents: LogPlayerKillV2[];
   knockdownEvents: LogPlayerMakeGroggy[];

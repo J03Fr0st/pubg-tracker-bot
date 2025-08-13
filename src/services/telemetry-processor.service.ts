@@ -19,6 +19,35 @@ import {
 
 export class TelemetryProcessorService {
   /**
+   * Performs robust player name matching to handle potential inconsistencies in telemetry data.
+   *
+   * Handles cases like:
+   * - Exact matches
+   * - Case differences
+   * - Leading/trailing whitespace
+   * - Special character variations
+   *
+   * @param telemetryName - Name from telemetry event (may be null/undefined)
+   * @param trackedName - Name we're tracking
+   * @returns true if names match, false otherwise
+   */
+  private isPlayerNameMatch(telemetryName: string | undefined | null, trackedName: string): boolean {
+    if (!telemetryName || !trackedName) return false;
+
+    // Exact match first
+    if (telemetryName === trackedName) return true;
+
+    // Case-insensitive match
+    if (telemetryName.toLowerCase() === trackedName.toLowerCase()) return true;
+
+    // Trim whitespace and try again
+    const trimmedTelemetry = telemetryName.trim();
+    const trimmedTracked = trackedName.trim();
+    if (trimmedTelemetry.toLowerCase() === trimmedTracked.toLowerCase()) return true;
+
+    return false;
+  }
+  /**
    * Processes raw telemetry data for a match and returns enhanced analytics for tracked players.
    *
    * This method analyzes various telemetry events (kills, damage, knockdowns, etc.) to provide
@@ -69,9 +98,7 @@ export class TelemetryProcessorService {
       (e) => e._T === 'LogWeaponFireCount'
     ) as LogWeaponFireCount[];
 
-    console.log(
-      `[TELEMETRY DEBUG] Total events: ${telemetryData.length}, Kills: ${killEvents.length}, Knockdowns: ${knockdownEvents.length}`
-    );
+
 
     const playerAnalyses = new Map<string, PlayerAnalysis>();
 
@@ -138,24 +165,8 @@ export class TelemetryProcessorService {
     const playerRevives = allRevives.filter((r) => r.reviver?.name === playerName);
     const playerFireCounts = allFireCounts.filter((f) => f.character?.name === playerName);
     // Events where player is the victim
-    const playerDeaths = allKills.filter((k) => k.victim?.name === playerName);
-    const playerKnockedDown = allKnockdowns.filter((k) => k.victim?.name === playerName);
-
-    // Debug: Log detailed victim analysis for real matches
-    if (allKills.length > 0) {
-      console.log(`[DEATH DEBUG] Tracking player: "${playerName}"`);
-      console.log(`[DEATH DEBUG] Total kill events: ${allKills.length}`);
-      const allVictimNames = allKills.map((k) => k.victim?.name).filter(Boolean);
-      console.log(`[DEATH DEBUG] All victim names:`, allVictimNames);
-      const exactMatches = allVictimNames.filter((name) => name === playerName);
-      console.log(`[DEATH DEBUG] Exact matches for "${playerName}": ${exactMatches.length}`);
-      const partialMatches = allVictimNames.filter(
-        (name) =>
-          name?.toLowerCase().includes(playerName.toLowerCase()) ||
-          playerName.toLowerCase().includes(name?.toLowerCase() || '')
-      );
-      console.log(`[DEATH DEBUG] Partial matches:`, partialMatches);
-    }
+    const playerDeaths = allKills.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));
+    const playerKnockedDown = allKnockdowns.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));
 
     // Calculate weapon statistics
     const weaponStats = this.calculateWeaponStats(
@@ -178,10 +189,14 @@ export class TelemetryProcessorService {
     const kdRatio =
       playerDeaths.length > 0 ? playerKills.length / playerDeaths.length : playerKills.length;
 
-    const avgKillDistance =
-      playerKills.length > 0
-        ? playerKills.reduce((sum, k) => sum + k.distance, 0) / playerKills.length / 100
-        : 0;
+    // Calculate average kill distance, filtering out invalid distances
+    const validKillDistances = playerKills
+      .map(k => k.distance)
+      .filter(distance => distance != null && !isNaN(distance) && distance > 0);
+
+    const avgKillDistance = validKillDistances.length > 0
+      ? validKillDistances.reduce((sum, distance) => sum + distance, 0) / validKillDistances.length / 100
+      : 0;
 
     const headshotKills = playerKills.filter((k) => k.damageReason === 'HeadShot').length;
     const headshotPercentage =
@@ -189,6 +204,7 @@ export class TelemetryProcessorService {
 
     return {
       playerName,
+      matchStartTime, // Include the actual match start time
       // Store raw events (using existing types!)
       killEvents: playerKills,
       knockdownEvents: playerKnockdowns,

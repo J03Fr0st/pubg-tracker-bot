@@ -430,10 +430,6 @@ export class DiscordBotService {
       const trackedPlayerNames = players.map((p) => p.name);
 
       debug(`Processing telemetry for ${trackedPlayerNames.length} players`);
-      console.log(
-        `[PLAYER DEBUG] Tracked player names:`,
-        trackedPlayerNames.map((name) => `"${name}"`)
-      );
       // Process using our new service
       const matchAnalysis = await this.telemetryProcessor.processMatchTelemetry(
         telemetryData, // Raw TelemetryEvent[] - no conversion needed!
@@ -473,10 +469,6 @@ export class DiscordBotService {
     const survivalMinutes = Math.round(stats.timeSurvived / 60);
     const kmWalked = (stats.walkDistance / 1000).toFixed(1);
 
-    // Debug: Log survival time calculation
-    console.log(
-      `[SURVIVAL DEBUG] Player: ${player.name}, timeSurvived: ${stats.timeSurvived}s, calculated: ${survivalMinutes}min`
-    );
     const accuracy =
       stats.kills > 0 && stats.headshotKills > 0
         ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
@@ -754,10 +746,11 @@ export class DiscordBotService {
    */
   private formatCombatStats(stats: any, analysis: PlayerAnalysis): string {
     return [
-      '⚔️ **ENHANCED COMBAT**',
-      `Kills: **${stats.kills}** (${stats.headshotKills} HS) • K/D: **${analysis.kdRatio.toFixed(2)}**`,
-      `Damage: **${analysis.totalDamageDealt.toFixed(0)}** dealt / **${analysis.totalDamageTaken.toFixed(0)}** taken`,
-      `Avg Distance: **${analysis.avgKillDistance.toFixed(0)}m** • HS Rate: **${analysis.headshotPercentage.toFixed(1)}%**`,
+      '⚔️ **COMBAT STATS**',
+      `🎯 Kills: **${stats.kills}** (${stats.headshotKills} HS)`,
+      `💀 K/D Ratio: **${analysis.kdRatio.toFixed(2)}**`,
+      `💥 Damage Dealt: **${analysis.totalDamageDealt.toFixed(0)}**`,
+      `🩸 Damage Taken: **${analysis.totalDamageTaken.toFixed(0)}**`,
     ].join('\n');
   }
 
@@ -863,7 +856,7 @@ export class DiscordBotService {
 
     const timeline = timelineEvents
       .map(({ type, event }) => {
-        const matchTime = this.formatMatchTime(event._D!, timelineEvents[0]?.time || new Date());
+        const matchTime = this.formatMatchTime(event._D!, analysis.matchStartTime);
         if (type === 'kill') {
           const kill = event as LogPlayerKillV2;
           const victimName = kill.victim?.name || 'Unknown Player';
@@ -973,7 +966,7 @@ export class DiscordBotService {
       })
       .filter(Boolean);
 
-    return timeline.length > 0 ? `**ENHANCED TIMELINE**\n${timeline.join('\n')}` : '';
+    return timeline.length > 0 ? `**TIMELINE**\n${timeline.join('\n')}` : '';
   }
 
   /**
