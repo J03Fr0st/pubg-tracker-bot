@@ -1,6 +1,6 @@
 {
   "name": "pubg-stats-service",
-  "version": "1.2.0.23",
+  "version": "1.2.0.24",
   "description": "PUBG Statistics Service",
   "main": "dist/index.js",
   "scripts": {

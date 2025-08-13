@@ -31,7 +31,10 @@ export class TelemetryProcessorService {
    * @param trackedName - Name we're tracking
    * @returns true if names match, false otherwise
    */
-  private isPlayerNameMatch(telemetryName: string | undefined | null, trackedName: string): boolean {
+  private isPlayerNameMatch(
+    telemetryName: string | undefined | null,
+    trackedName: string
+  ): boolean {
     if (!telemetryName || !trackedName) return false;
 
     // Exact match first
@@ -97,8 +100,6 @@ export class TelemetryProcessorService {
     const fireCountEvents = telemetryData.filter(
       (e) => e._T === 'LogWeaponFireCount'
     ) as LogWeaponFireCount[];
-
-
 
     const playerAnalyses = new Map<string, PlayerAnalysis>();
 
@@ -166,7 +167,9 @@ export class TelemetryProcessorService {
     const playerFireCounts = allFireCounts.filter((f) => f.character?.name === playerName);
     // Events where player is the victim
     const playerDeaths = allKills.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));
-    const playerKnockedDown = allKnockdowns.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));
+    const playerKnockedDown = allKnockdowns.filter((k) =>
+      this.isPlayerNameMatch(k.victim?.name, playerName)
+    );
 
     // Calculate weapon statistics
     const weaponStats = this.calculateWeaponStats(
@@ -191,12 +194,15 @@ export class TelemetryProcessorService {
 
     // Calculate average kill distance, filtering out invalid distances
     const validKillDistances = playerKills
-      .map(k => k.distance)
-      .filter(distance => distance != null && !isNaN(distance) && distance > 0);
+      .map((k) => k.distance)
+      .filter((distance) => distance != null && !isNaN(distance) && distance > 0);
 
-    const avgKillDistance = validKillDistances.length > 0
-      ? validKillDistances.reduce((sum, distance) => sum + distance, 0) / validKillDistances.length / 100
-      : 0;
+    const avgKillDistance =
+      validKillDistances.length > 0
+        ? validKillDistances.reduce((sum, distance) => sum + distance, 0) /
+          validKillDistances.length /
+          100
+        : 0;
 
     const headshotKills = playerKills.filter((k) => k.damageReason === 'HeadShot').length;
     const headshotPercentage =
