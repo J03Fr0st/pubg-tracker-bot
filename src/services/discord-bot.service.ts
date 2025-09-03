@@ -16,7 +16,9 @@ import {
   LogPlayerKillV2,
   LogPlayerMakeGroggy,
   LogPlayerRevive,
-  LogPlayerTakeDamage,
+  Participant,
+  Roster,
+  Asset,
   assetManager,
   DAMAGE_CAUSER_NAME,
   MAP_NAMES,
@@ -69,6 +71,15 @@ export class DiscordBotService {
         option
           .setName('matchid')
           .setDescription('The matchId of the match to remove')
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName('processmatch')
+      .setDescription('Process and display a specific match by matchId')
+      .addStringOption((option) =>
+        option
+          .setName('matchid')
+          .setDescription('The matchId of the match to process')
           .setRequired(true)
       ),
   ];
@@ -148,6 +159,9 @@ export class DiscordBotService {
             break;
           case 'removematch':
             await this.handleRemoveMatch(interaction);
+            break;
+          case 'processmatch':
+            await this.handleProcessMatch(interaction);
             break;
         }
       } catch (err) {
@@ -369,6 +383,170 @@ export class DiscordBotService {
         .setTimestamp()
         .setFooter({ text: 'PUBG Tracker Bot' });
       await interaction.editReply({ embeds: [errorEmbed] });
+    }
+  }
+
+  private async handleProcessMatch(interaction: ChatInputCommandInteraction): Promise<void> {
+    await interaction.deferReply();
+    const userName = interaction.user.username;
+    const matchId = interaction.options.getString('matchid', true);
+    debug(`User ${userName} requested to process match ${matchId}`);
+
+    try {
+      // Fetch match details from PUBG API
+      const matchDetails = await this.pubgClient.matches.getMatch(matchId);
+      debug(`Successfully fetched match details for ${matchId}`);
+
+      // Get all monitored players to find any that participated in this match
+      const monitoredPlayers = await this.pubgStorageService.getAllPlayers();
+      const monitoredPlayerNames = monitoredPlayers.map(p => p.name);
+
+      // Extract participants from match details
+      const participants = matchDetails.included.filter(
+        (item): item is Participant =>
+          item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
+      );
+
+      // Find which monitored players are in this match
+      const matchingPlayers = participants.filter(p => 
+        monitoredPlayerNames.includes(p.attributes.stats?.name || '')
+      );
+
+      if (matchingPlayers.length === 0) {
+        const noPlayersEmbed = new EmbedBuilder()
+          .setColor(0xffa500)
+          .setTitle('⚠️ No Monitored Players Found')
+          .setDescription('None of your monitored players participated in this match.')
+          .addFields({ name: 'Match ID', value: matchId, inline: true })
+          .setTimestamp()
+          .setFooter({ text: 'PUBG Tracker Bot' });
+        await interaction.editReply({ embeds: [noPlayersEmbed] });
+        return;
+      }
+
+      debug(`Found ${matchingPlayers.length} monitored players in match ${matchId}`);
+
+      // Create match summary using the same logic as the monitor service
+      const summary = await this.createMatchSummaryFromMatchDetails(matchDetails, matchingPlayers);
+
+      if (summary) {
+        // Send the match summary as a reply
+        const embeds = await this.createMatchSummaryEmbeds(summary);
+        
+        if (embeds && embeds.length > 0) {
+          // Send embeds in batches to avoid hitting Discord limits
+          for (let i = 0; i < embeds.length; i += 10) {
+            const batch = embeds.slice(i, i + 10);
+            if (i === 0) {
+              await interaction.editReply({ embeds: batch });
+            } else {
+              await interaction.followUp({ embeds: batch });
+            }
+          }
+
+          success(`Successfully processed match ${matchId} for user ${userName}`);
+        } else {
+          throw new Error('Failed to create match summary embeds');
+        }
+      } else {
+        throw new Error('Failed to create match summary');
+      }
+
+    } catch (err) {
+      const errorObj = err as Error;
+      error(`Error processing match ${matchId} for user ${userName}: ${errorObj.message}`);
+      const errorEmbed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Error Processing Match')
+        .setDescription('Failed to process the specified match.')
+        .addFields(
+          { name: 'Match ID', value: matchId, inline: true },
+          { name: 'Error Details', value: errorObj.message.slice(0, 1000), inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: 'PUBG Tracker Bot' });
+      await interaction.editReply({ embeds: [errorEmbed] });
+    }
+  }
+
+  private async createMatchSummaryFromMatchDetails(
+    matchDetails: any,
+    matchingPlayers: Participant[]
+  ): Promise<DiscordMatchGroupSummary | null> {
+    try {
+      const playerStats: DiscordPlayerMatchStats[] = [];
+      let teamRank: number | undefined;
+
+      // Extract rosters from match details
+      const rosters = matchDetails.included.filter(
+        (item: any): item is Roster =>
+          item.type === 'roster' &&
+          'relationships' in item &&
+          !!item.relationships?.participants?.data
+      );
+
+      // Extract all participants for roster lookups
+      const allParticipants = matchDetails.included.filter(
+        (item: any): item is Participant =>
+          item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
+      );
+
+      for (const participant of matchingPlayers) {
+        if (teamRank === undefined) {
+          teamRank = participant.attributes.stats.winPlace;
+        } else if (teamRank !== participant.attributes.stats.winPlace) {
+          teamRank = undefined;
+        }
+
+        // Find all players in the same roster as the current player
+        const roster = rosters.find((r: Roster) =>
+          r.relationships?.participants?.data?.some((p: { id: string }) => p.id === participant.id)
+        );
+
+        if (roster) {
+          const rosterParticipantIds =
+            roster.relationships?.participants?.data?.map((p: { id: string }) => p.id) || [];
+          const rosterParticipants = allParticipants.filter(
+            (p: Participant) => rosterParticipantIds.includes(p.id) && p.attributes.stats
+          );
+
+          for (const rosterParticipant of rosterParticipants) {
+            if (!playerStats.some((p) => p.name === rosterParticipant.attributes.stats.name)) {
+              playerStats.push({
+                name: rosterParticipant.attributes.stats.name,
+                stats: rosterParticipant.attributes.stats,
+              });
+            }
+          }
+        } else {
+          // If no roster found, just add the current player
+          playerStats.push({
+            name: participant.attributes.stats.name,
+            stats: participant.attributes.stats,
+          });
+        }
+      }
+
+      // Get telemetry URL from assets
+      const telemetryAsset = matchDetails.included?.find(
+        (item: any): item is Asset => item.type === 'asset'
+      );
+
+      // Get the telemetry URL from the asset
+      const telemetryUrl = telemetryAsset?.attributes.URL || '';
+
+      return {
+        matchId: matchDetails.data.id,
+        mapName: matchDetails.data.attributes.mapName,
+        gameMode: matchDetails.data.attributes.gameMode,
+        playedAt: matchDetails.data.attributes.createdAt,
+        players: playerStats,
+        teamRank,
+        telemetryUrl,
+      };
+    } catch (err) {
+      error('Error creating match summary from match details:', err as Error);
+      return null;
     }
   }
 
