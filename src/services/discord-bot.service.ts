@@ -893,13 +893,10 @@ export class DiscordBotService {
       })),
     ]
       .sort((a, b) => {
-        // First sort by priority (kills first), then by time
-        if (a.priority !== b.priority) {
-          return a.priority - b.priority;
-        }
+        // Sort by time only - chronological order tells the real story
         return a.time.getTime() - b.time.getTime();
       })
-      .slice(0, 15); // Show up to 15 events (enough for high-kill games)
+      .slice(0, 100); // Show up to 25 events to include kills AND knockdowns
 
     if (!priorityEvents.length) return '';
 
