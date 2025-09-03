@@ -246,6 +246,23 @@ npm run lint
 - **Coverage**: Aim for comprehensive test coverage of core functionality
 - **Test Data**: Use realistic PUBG match data for accurate testing
 
+### Match Flow Testing
+
+Test the complete pipeline from match ID and player names to Discord posting:
+
+```bash
+# Dry run test (no Discord posting - recommended first)
+npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1,player2" --dryRun
+
+# Full test with Discord posting
+npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1,player2"
+
+# Test with different shard
+npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1" --shard "pc-na"
+```
+
+**📖 Comprehensive Documentation**: See [scripts/README-test-match-flow.md](scripts/README-test-match-flow.md) for detailed usage, examples, and troubleshooting.
+
 ## 📈 Analysis Output Examples
 
 ### Match Summary Response

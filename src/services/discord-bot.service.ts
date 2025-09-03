@@ -589,14 +589,45 @@ export class DiscordBotService {
       return assetName;
     }
 
-    // pubg-ts dictionaries should cover most cases
+    // Common weapon mappings for cases not covered by pubg-ts
+    const commonWeapons: Record<string, string> = {
+      'WeapMk12_C': 'Mk12',
+      'WeapMini14_C': 'Mini 14',
+      'WeapAK47_C': 'AKM',
+      'WeapM416_C': 'M416',
+      'WeapSCAR_C': 'SCAR-L',
+      'WeapM16A4_C': 'M16A4',
+      'WeapKar98k_C': 'Kar98k',
+      'WeapAWM_C': 'AWM',
+      'WeapM24_C': 'M24',
+      'WeapWin94_C': 'Winchester',
+      'WeapUMP_C': 'UMP45',
+      'WeapVector_C': 'Vector',
+      'WeapTommyGun_C': 'Tommy Gun',
+      'WeapP18C_C': 'P18C',
+      'WeapP92_C': 'P92',
+      'WeapP1911_C': 'P1911',
+      'WeapSawnoff_C': 'Sawed-off',
+      'WeapS12K_C': 'S12K',
+      'WeapS1897_C': 'S1897',
+      'WeapS686_C': 'S686',
+      'WeapDP27_C': 'DP-27',
+      'WeapM249_C': 'M249',
+      'WeapMG3_C': 'MG3'
+    };
+
+    if (commonWeapons[weaponCode]) {
+      return commonWeapons[weaponCode];
+    }
 
     // Final fallback: format the weapon code
-    return weaponCode
+    const formatted = weaponCode
       .replace(/^Weap/, '')
       .replace(/_C$/, '')
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .trim();
+
+    return formatted || 'Unknown Weapon';
   }
 
   private formatMapName(mapCode: string): string {
@@ -834,133 +865,152 @@ export class DiscordBotService {
     const validKills = analysis.killEvents.filter((k) => k._D);
     const validKnockdowns = analysis.knockdownEvents.filter((k) => k._D);
     const validRevives = analysis.reviveEvents.filter((r) => r._D);
-    // Include significant damage events (>= 20 damage) for more interesting timeline
-    const significantDamage = analysis.damageEvents.filter((d) => d._D && d.damage >= 20);
     // Include player's own deaths and knockdowns
     const validDeaths = analysis.deathEvents.filter((k) => k._D);
     const validKnockedDown = analysis.knockedDownEvents.filter((k) => k._D);
 
-    // Combine raw telemetry events for timeline
-    const timelineEvents = [
-      ...validKills.map((k) => ({ type: 'kill', event: k, time: new Date(k._D!) })),
-      ...validKnockdowns.map((k) => ({ type: 'knockdown', event: k, time: new Date(k._D!) })),
-      ...validRevives.map((r) => ({ type: 'revive', event: r, time: new Date(r._D!) })),
-      ...significantDamage.map((d) => ({ type: 'damage', event: d, time: new Date(d._D!) })),
-      ...validDeaths.map((k) => ({ type: 'death', event: k, time: new Date(k._D!) })),
-      ...validKnockedDown.map((k) => ({ type: 'knocked', event: k, time: new Date(k._D!) })),
+    // PRIORITIZE KILLS - they're the most important events
+    const priorityEvents = [
+      ...validKills.map((k) => ({ type: 'kill', event: k, time: new Date(k._D!), priority: 1 })),
+      ...validKnockdowns.map((k) => ({ type: 'knockdown', event: k, time: new Date(k._D!), priority: 2 })),
+      ...validDeaths.map((k) => ({ type: 'death', event: k, time: new Date(k._D!), priority: 2 })),
+      ...validKnockedDown.map((k) => ({ type: 'knocked', event: k, time: new Date(k._D!), priority: 3 })),
+      ...validRevives.map((r) => ({ type: 'revive', event: r, time: new Date(r._D!), priority: 4 })),
     ]
-      .sort((a, b) => a.time.getTime() - b.time.getTime())
-      .slice(0, 8); // Limit to 8 events to avoid spam
+      .sort((a, b) => {
+        // First sort by priority (kills first), then by time
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return a.time.getTime() - b.time.getTime();
+      })
+      .slice(0, 15); // Show up to 15 events (enough for high-kill games)
 
-    if (!timelineEvents.length) return '';
+    if (!priorityEvents.length) return '';
 
-    const timeline = timelineEvents
+    const timeline = priorityEvents
       .map(({ type, event }) => {
         const matchTime = this.formatMatchTime(event._D!, analysis.matchStartTime);
-        if (type === 'kill') {
+                if (type === 'kill') {
           const kill = event as LogPlayerKillV2;
           const victimName = kill.victim?.name || 'Unknown Player';
 
-          // Use killerDamageInfo for more accurate weapon and distance data
-          const primaryDamageInfo = kill.killerDamageInfo
-            ? DamageInfoUtils.getFirst(kill.killerDamageInfo)
-            : null;
 
-          const weapon = primaryDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
-            : this.getReadableDamageCauserName(kill.damageCauserName);
 
-          const distance =
-            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-              ? Math.round(primaryDamageInfo.distance / 100)
-              : kill.distance && !isNaN(kill.distance)
-                ? Math.round(kill.distance / 100)
-                : 0;
+          let weapon = 'Unknown Weapon';
+          let distance = 0;
 
-          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
-          return `\`${matchTime}\` ⚔️ Killed [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
+          // Use DamageInfoUtils to handle flexible type
+          const damageInfo = kill.killerDamageInfo ? DamageInfoUtils.getFirst(kill.killerDamageInfo) : null;
+
+          if (damageInfo && damageInfo.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(damageInfo.damageCauserName);
+          }
+          // Fallback to direct property
+          else if (kill.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(kill.damageCauserName);
+          }
+
+          // Get distance - prioritize damage info
+          if (damageInfo && damageInfo.distance && !Number.isNaN(damageInfo.distance)) {
+            distance = Math.round(damageInfo.distance / 100);
+          }
+          else if (kill.distance && !Number.isNaN(kill.distance)) {
+            distance = Math.round(kill.distance / 100);
+          }
+
+          const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
+          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)`;
         }
         if (type === 'knockdown') {
           const knockdown = event as LogPlayerMakeGroggy;
           const victimName = knockdown.victim?.name || 'Unknown Player';
 
-          // Use groggyDamage for more accurate weapon and distance data
-          const primaryDamageInfo = knockdown.groggyDamage
-            ? DamageInfoUtils.getFirst(knockdown.groggyDamage)
-            : null;
+          let weapon = 'Unknown Weapon';
+          let distance = 0;
 
-          const weapon = primaryDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
-            : this.getReadableDamageCauserName(knockdown.damageCauserName);
+                    // Use DamageInfoUtils for groggyDamage too
+          const groggyInfo = knockdown.groggyDamage ? DamageInfoUtils.getFirst(knockdown.groggyDamage) : null;
 
-          const distance =
-            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-              ? Math.round(primaryDamageInfo.distance / 100)
-              : knockdown.distance && !isNaN(knockdown.distance)
-                ? Math.round(knockdown.distance / 100)
-                : 0;
+          if (groggyInfo && groggyInfo.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(groggyInfo.damageCauserName);
+            if (groggyInfo.distance && !Number.isNaN(groggyInfo.distance)) {
+              distance = Math.round(groggyInfo.distance / 100);
+            }
+          }
+          // Fallback to direct properties
+          else if (knockdown.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(knockdown.damageCauserName);
+            if (knockdown.distance && !Number.isNaN(knockdown.distance)) {
+              distance = Math.round(knockdown.distance / 100);
+            }
+          }
 
-          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
-          return `\`${matchTime}\` 🔻 Knocked [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${distance}m)`;
+          const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
+          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)`;
         }
         if (type === 'revive') {
           const revive = event as LogPlayerRevive;
           const victimName = revive.victim?.name || 'Unknown Player';
-          return `\`${matchTime}\` 🚑 Revived [${victimName}](https://pubg.op.gg/user/${victimName})`;
+          const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
+          return `\`${matchTime}\` 🚑 Revived [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})`;
         }
-        if (type === 'damage') {
-          const damage = event as LogPlayerTakeDamage;
-          const weapon = this.getReadableDamageCauserName(damage.damageCauserName);
-          const victimName = damage.victim?.name || 'Unknown Player';
-          const dmgAmount = damage.damage && !isNaN(damage.damage) ? Math.round(damage.damage) : 0;
-          const weaponInfo = weapon === 'Unknown Weapon' ? 'environment' : weapon;
-          return `\`${matchTime}\` 💥 Hit [${victimName}](https://pubg.op.gg/user/${victimName}) (${weaponInfo}, ${dmgAmount} dmg)`;
-        }
+
         if (type === 'death') {
           const death = event as LogPlayerKillV2;
           const killerName = death.killer?.name || 'Unknown Player';
 
-          // Use killerDamageInfo for more accurate weapon and distance data
+          // Try multiple sources for weapon information
+          let weapon = 'Unknown Weapon';
+          let distance = 0;
+
           const primaryDamageInfo = death.killerDamageInfo
             ? DamageInfoUtils.getFirst(death.killerDamageInfo)
             : null;
 
-          const weapon = primaryDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
-            : this.getReadableDamageCauserName(death.damageCauserName);
+          if (primaryDamageInfo?.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName);
+            if (primaryDamageInfo.distance && !Number.isNaN(primaryDamageInfo.distance)) {
+              distance = Math.round(primaryDamageInfo.distance / 100);
+            }
+          }
+          else if (death.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(death.damageCauserName);
+            if (death.distance && !Number.isNaN(death.distance)) {
+              distance = Math.round(death.distance / 100);
+            }
+          }
 
-          const distance =
-            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-              ? Math.round(primaryDamageInfo.distance / 100)
-              : death.distance && !isNaN(death.distance)
-                ? Math.round(death.distance / 100)
-                : 0;
-
-          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
-          return `\`${matchTime}\` ☠️ Killed by [${killerName}](https://pubg.op.gg/user/${killerName}) (${weaponInfo}, ${distance}m)`;
+          const safeKillerName = this.sanitizePlayerNameForDiscord(killerName);
+          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)}) (${weapon}, ${distance}m)`;
         }
         if (type === 'knocked') {
           const knocked = event as LogPlayerMakeGroggy;
           const attackerName = knocked.attacker?.name || 'Unknown Player';
 
-          // Use groggyDamage for more accurate weapon and distance data
+          // Try multiple sources for weapon information
+          let weapon = 'Unknown Weapon';
+          let distance = 0;
+
           const primaryDamageInfo = knocked.groggyDamage
             ? DamageInfoUtils.getFirst(knocked.groggyDamage)
             : null;
 
-          const weapon = primaryDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
-            : this.getReadableDamageCauserName(knocked.damageCauserName);
+          if (primaryDamageInfo?.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName);
+            if (primaryDamageInfo.distance && !Number.isNaN(primaryDamageInfo.distance)) {
+              distance = Math.round(primaryDamageInfo.distance / 100);
+            }
+          }
+          else if (knocked.damageCauserName) {
+            weapon = this.getReadableDamageCauserName(knocked.damageCauserName);
+            if (knocked.distance && !Number.isNaN(knocked.distance)) {
+              distance = Math.round(knocked.distance / 100);
+            }
+          }
 
-          const distance =
-            primaryDamageInfo?.distance && !isNaN(primaryDamageInfo.distance)
-              ? Math.round(primaryDamageInfo.distance / 100)
-              : knocked.distance && !isNaN(knocked.distance)
-                ? Math.round(knocked.distance / 100)
-                : 0;
-
-          const weaponInfo = weapon === 'Unknown Weapon' ? 'melee/environment' : weapon;
-          return `\`${matchTime}\` 🔻 Knocked by [${attackerName}](https://pubg.op.gg/user/${attackerName}) (${weaponInfo}, ${distance}m)`;
+          const safeAttackerName = this.sanitizePlayerNameForDiscord(attackerName);
+          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)}) (${weapon}, ${distance}m)`;
         }
         return '';
       })
@@ -982,5 +1032,25 @@ export class DiscordBotService {
     const minutes = Math.floor(relativeSeconds / 60);
     const seconds = relativeSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Sanitizes player names for Discord markdown links.
+   *
+   * Removes or escapes characters that can break Discord's markdown link syntax,
+   * ensuring all player names display as clickable links.
+   *
+   * @param playerName - Raw player name from telemetry
+   * @returns Sanitized player name safe for Discord markdown links
+   */
+    private sanitizePlayerNameForDiscord(playerName: string): string {
+    if (!playerName) return 'Unknown Player';
+
+    // Only escape characters that actually break Discord links
+    // Keep underscores and numbers as they're common in player names
+    return playerName
+      .replace(/[[\]()]/g, '') // Remove brackets and parentheses that break links
+      .replace(/[*~`|]/g, '\\$&') // Escape other Discord markdown (but NOT underscores)
+      .trim();
   }
 }
