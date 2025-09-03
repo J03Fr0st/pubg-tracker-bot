@@ -59,7 +59,10 @@ function parseArguments(): TestOptions {
         options.matchId = value;
         break;
       case '--players':
-        options.players = value.split(',').map(p => p.trim()).filter(Boolean);
+        options.players = value
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean);
         break;
       case '--channelId':
         options.channelId = value;
@@ -141,7 +144,7 @@ class MatchFlowTester {
    * Create a mock match group for testing
    */
   private createMockMatchGroup(): MatchMonitorMatchGroup {
-    const players: MatchMonitorPlayer[] = this.options.players.map(playerName => ({
+    const players: MatchMonitorPlayer[] = this.options.players.map((playerName) => ({
       id: `mock-player-id-${playerName.toLowerCase()}`,
       name: playerName,
     }));
@@ -166,10 +169,17 @@ class MatchFlowTester {
 
       // Use the match monitor's private method to create match summary
       // We'll access it through reflection since it's private
-      const createMatchSummaryMethod = (this.matchMonitor as unknown as { createMatchSummary: (match: MatchMonitorMatchGroup) => Promise<DiscordMatchGroupSummary | null> }).createMatchSummary.bind(this.matchMonitor);
+      const createMatchSummaryMethod = (
+        this.matchMonitor as unknown as {
+          createMatchSummary: (
+            match: MatchMonitorMatchGroup
+          ) => Promise<DiscordMatchGroupSummary | null>;
+        }
+      ).createMatchSummary.bind(this.matchMonitor);
 
       info('Fetching match details from PUBG API...');
-      const matchSummary: DiscordMatchGroupSummary | null = await createMatchSummaryMethod(mockMatch);
+      const matchSummary: DiscordMatchGroupSummary | null =
+        await createMatchSummaryMethod(mockMatch);
 
       if (!matchSummary) {
         error('Failed to create match summary - match may not exist or players not found');
@@ -184,10 +194,12 @@ class MatchFlowTester {
         await this.testTelemetryProcessing(matchSummary);
       } else {
         info(`Sending match summary to Discord channel: ${this.options.channelId}`);
-        await this.discordBot.sendMatchSummary(this.options.channelId || appConfig.discord.channelId, matchSummary);
+        await this.discordBot.sendMatchSummary(
+          this.options.channelId || appConfig.discord.channelId,
+          matchSummary
+        );
         success('Match summary sent to Discord successfully!');
       }
-
     } catch (err) {
       error('Error during match processing:', err as Error);
       throw err;
@@ -207,7 +219,13 @@ class MatchFlowTester {
       info('Testing telemetry processing...');
 
       // Access the private pubgClient from discordBot
-      const pubgClient = (this.discordBot as unknown as { pubgClient: { telemetry: { getTelemetryData: (url: string) => Promise<TelemetryEvent[]> } } }).pubgClient;
+      const pubgClient = (
+        this.discordBot as unknown as {
+          pubgClient: {
+            telemetry: { getTelemetryData: (url: string) => Promise<TelemetryEvent[]> };
+          };
+        }
+      ).pubgClient;
       const telemetryData = await pubgClient.telemetry.getTelemetryData(matchSummary.telemetryUrl);
 
       info(`Fetched ${telemetryData.length} telemetry events`);
@@ -224,7 +242,6 @@ class MatchFlowTester {
 
       success('Telemetry processing completed!');
       this.logTelemetryAnalysis(matchAnalysis, trackedPlayerNames);
-
     } catch (err) {
       error('Error during telemetry processing:', err as Error);
     }
@@ -250,7 +267,9 @@ class MatchFlowTester {
         console.log(`     Assists: ${player.stats.assists}`);
         console.log(`     DBNOs: ${player.stats.DBNOs}`);
         console.log(`     Damage: ${player.stats.damageDealt}`);
-        console.log(`     Survival Time: ${Math.floor(player.stats.timeSurvived / 60)}m ${player.stats.timeSurvived % 60}s`);
+        console.log(
+          `     Survival Time: ${Math.floor(player.stats.timeSurvived / 60)}m ${player.stats.timeSurvived % 60}s`
+        );
         console.log(`     Win Place: ${player.stats.winPlace}`);
       } else {
         console.log('     Stats: Not available');
@@ -261,12 +280,15 @@ class MatchFlowTester {
   /**
    * Log telemetry analysis results
    */
-  private logTelemetryAnalysis(matchAnalysis: { totalEventsProcessed: number; playerAnalyses: Map<string, unknown> }, trackedPlayerNames: string[]): void {
+  private logTelemetryAnalysis(
+    matchAnalysis: { totalEventsProcessed: number; playerAnalyses: Map<string, unknown> },
+    trackedPlayerNames: string[]
+  ): void {
     console.log('\n🎯 Telemetry Analysis:');
     console.log(`   Total Events Processed: ${matchAnalysis.totalEventsProcessed}`);
     console.log(`   Players Analyzed: ${matchAnalysis.playerAnalyses.size}`);
 
-    trackedPlayerNames.forEach(playerName => {
+    trackedPlayerNames.forEach((playerName) => {
       const analysis = matchAnalysis.playerAnalyses.get(playerName);
       if (analysis) {
         const playerAnalysis = analysis as {
@@ -288,7 +310,9 @@ class MatchFlowTester {
         if (playerAnalysis.killChains && playerAnalysis.killChains.length > 0) {
           console.log(`     Kill Chains: ${playerAnalysis.killChains.length}`);
           playerAnalysis.killChains.forEach((chain, index: number) => {
-            console.log(`       Chain ${index + 1}: ${(chain as { kills: unknown[]; duration: number }).kills.length} kills in ${(chain as { kills: unknown[]; duration: number }).duration}s`);
+            console.log(
+              `       Chain ${index + 1}: ${(chain as { kills: unknown[]; duration: number }).kills.length} kills in ${(chain as { kills: unknown[]; duration: number }).duration}s`
+            );
           });
         }
 
@@ -341,20 +365,21 @@ async function runTest(): Promise<void> {
     await tester.cleanup();
 
     success('\n✅ Test completed successfully!');
-
   } catch (err) {
     error('\n❌ Test failed:', err as Error);
 
     // Show usage help on error
     console.log('\n📖 Usage:');
-    console.log('  npm run test:match-flow -- --matchId "your-match-id" --players "player1,player2"');
+    console.log(
+      '  npm run test:match-flow -- --matchId "your-match-id" --players "player1,player2"'
+    );
     console.log('');
     console.log('Options:');
     console.log('  --matchId     PUBG match ID (required)');
     console.log('  --players     Comma-separated player names (required)');
     console.log('  --channelId   Discord channel ID (optional)');
     console.log('  --shard       PUBG shard (optional, default: steam)');
-    console.log('  --dryRun      Process but don\'t send to Discord');
+    console.log("  --dryRun      Process but don't send to Discord");
 
     process.exit(1);
   }

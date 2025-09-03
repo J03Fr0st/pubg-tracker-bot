@@ -158,18 +158,30 @@ export class TelemetryProcessorService {
     matchStartTime: Date
   ): PlayerAnalysis {
     // Debug: Log all unique killer names in telemetry
-    const allKillerNames = [...new Set(allKills.map(k => k.killer?.name).filter(Boolean))];
+    const allKillerNames = [...new Set(allKills.map((k) => k.killer?.name).filter(Boolean))];
     console.log('[DEBUG] Tracked player:', playerName);
     console.log('[DEBUG] All killer names in telemetry:', allKillerNames);
 
     // Filter events for this player (using existing types directly)
     const playerKills = allKills.filter((k) => this.isPlayerNameMatch(k.killer?.name, playerName));
-    const playerKnockdowns = allKnockdowns.filter((k) => this.isPlayerNameMatch(k.attacker?.name, playerName));
-    const playerDamageDealt = allDamage.filter((d) => this.isPlayerNameMatch(d.attacker?.name, playerName));
-    const playerDamageTaken = allDamage.filter((d) => this.isPlayerNameMatch(d.victim?.name, playerName));
-    const playerAttacks = allAttacks.filter((a) => this.isPlayerNameMatch(a.attacker?.name, playerName));
-    const playerRevives = allRevives.filter((r) => this.isPlayerNameMatch(r.reviver?.name, playerName));
-    const playerFireCounts = allFireCounts.filter((f) => this.isPlayerNameMatch(f.character?.name, playerName));
+    const playerKnockdowns = allKnockdowns.filter((k) =>
+      this.isPlayerNameMatch(k.attacker?.name, playerName)
+    );
+    const playerDamageDealt = allDamage.filter((d) =>
+      this.isPlayerNameMatch(d.attacker?.name, playerName)
+    );
+    const playerDamageTaken = allDamage.filter((d) =>
+      this.isPlayerNameMatch(d.victim?.name, playerName)
+    );
+    const playerAttacks = allAttacks.filter((a) =>
+      this.isPlayerNameMatch(a.attacker?.name, playerName)
+    );
+    const playerRevives = allRevives.filter((r) =>
+      this.isPlayerNameMatch(r.reviver?.name, playerName)
+    );
+    const playerFireCounts = allFireCounts.filter((f) =>
+      this.isPlayerNameMatch(f.character?.name, playerName)
+    );
 
     // Debug: Log filtered results
     console.log('[DEBUG] Found kills for player:', playerName, playerKills.length);
@@ -177,12 +189,15 @@ export class TelemetryProcessorService {
     console.log('[DEBUG] Found damage events for player:', playerName, playerDamageDealt.length);
 
     if (playerKills.length > 0) {
-      console.log('[DEBUG] First few kills:', playerKills.slice(0, 3).map(k => ({
-        victim: k.victim?.name,
-        killer: k.killer?.name,
-        timestamp: k._D,
-        weapon: k.damageCauserName
-      })));
+      console.log(
+        '[DEBUG] First few kills:',
+        playerKills.slice(0, 3).map((k) => ({
+          victim: k.victim?.name,
+          killer: k.killer?.name,
+          timestamp: k._D,
+          weapon: k.damageCauserName,
+        }))
+      );
     }
     // Events where player is the victim
     const playerDeaths = allKills.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));

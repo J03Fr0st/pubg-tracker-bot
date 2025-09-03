@@ -591,29 +591,29 @@ export class DiscordBotService {
 
     // Common weapon mappings for cases not covered by pubg-ts
     const commonWeapons: Record<string, string> = {
-      'WeapMk12_C': 'Mk12',
-      'WeapMini14_C': 'Mini 14',
-      'WeapAK47_C': 'AKM',
-      'WeapM416_C': 'M416',
-      'WeapSCAR_C': 'SCAR-L',
-      'WeapM16A4_C': 'M16A4',
-      'WeapKar98k_C': 'Kar98k',
-      'WeapAWM_C': 'AWM',
-      'WeapM24_C': 'M24',
-      'WeapWin94_C': 'Winchester',
-      'WeapUMP_C': 'UMP45',
-      'WeapVector_C': 'Vector',
-      'WeapTommyGun_C': 'Tommy Gun',
-      'WeapP18C_C': 'P18C',
-      'WeapP92_C': 'P92',
-      'WeapP1911_C': 'P1911',
-      'WeapSawnoff_C': 'Sawed-off',
-      'WeapS12K_C': 'S12K',
-      'WeapS1897_C': 'S1897',
-      'WeapS686_C': 'S686',
-      'WeapDP27_C': 'DP-27',
-      'WeapM249_C': 'M249',
-      'WeapMG3_C': 'MG3'
+      WeapMk12_C: 'Mk12',
+      WeapMini14_C: 'Mini 14',
+      WeapAK47_C: 'AKM',
+      WeapM416_C: 'M416',
+      WeapSCAR_C: 'SCAR-L',
+      WeapM16A4_C: 'M16A4',
+      WeapKar98k_C: 'Kar98k',
+      WeapAWM_C: 'AWM',
+      WeapM24_C: 'M24',
+      WeapWin94_C: 'Winchester',
+      WeapUMP_C: 'UMP45',
+      WeapVector_C: 'Vector',
+      WeapTommyGun_C: 'Tommy Gun',
+      WeapP18C_C: 'P18C',
+      WeapP92_C: 'P92',
+      WeapP1911_C: 'P1911',
+      WeapSawnoff_C: 'Sawed-off',
+      WeapS12K_C: 'S12K',
+      WeapS1897_C: 'S1897',
+      WeapS686_C: 'S686',
+      WeapDP27_C: 'DP-27',
+      WeapM249_C: 'M249',
+      WeapMG3_C: 'MG3',
     };
 
     if (commonWeapons[weaponCode]) {
@@ -872,10 +872,25 @@ export class DiscordBotService {
     // PRIORITIZE KILLS - they're the most important events
     const priorityEvents = [
       ...validKills.map((k) => ({ type: 'kill', event: k, time: new Date(k._D!), priority: 1 })),
-      ...validKnockdowns.map((k) => ({ type: 'knockdown', event: k, time: new Date(k._D!), priority: 2 })),
+      ...validKnockdowns.map((k) => ({
+        type: 'knockdown',
+        event: k,
+        time: new Date(k._D!),
+        priority: 2,
+      })),
       ...validDeaths.map((k) => ({ type: 'death', event: k, time: new Date(k._D!), priority: 2 })),
-      ...validKnockedDown.map((k) => ({ type: 'knocked', event: k, time: new Date(k._D!), priority: 3 })),
-      ...validRevives.map((r) => ({ type: 'revive', event: r, time: new Date(r._D!), priority: 4 })),
+      ...validKnockedDown.map((k) => ({
+        type: 'knocked',
+        event: k,
+        time: new Date(k._D!),
+        priority: 3,
+      })),
+      ...validRevives.map((r) => ({
+        type: 'revive',
+        event: r,
+        time: new Date(r._D!),
+        priority: 4,
+      })),
     ]
       .sort((a, b) => {
         // First sort by priority (kills first), then by time
@@ -891,17 +906,17 @@ export class DiscordBotService {
     const timeline = priorityEvents
       .map(({ type, event }) => {
         const matchTime = this.formatMatchTime(event._D!, analysis.matchStartTime);
-                if (type === 'kill') {
+        if (type === 'kill') {
           const kill = event as LogPlayerKillV2;
           const victimName = kill.victim?.name || 'Unknown Player';
-
-
 
           let weapon = 'Unknown Weapon';
           let distance = 0;
 
           // Use DamageInfoUtils to handle flexible type
-          const damageInfo = kill.killerDamageInfo ? DamageInfoUtils.getFirst(kill.killerDamageInfo) : null;
+          const damageInfo = kill.killerDamageInfo
+            ? DamageInfoUtils.getFirst(kill.killerDamageInfo)
+            : null;
 
           if (damageInfo && damageInfo.damageCauserName) {
             weapon = this.getReadableDamageCauserName(damageInfo.damageCauserName);
@@ -914,8 +929,7 @@ export class DiscordBotService {
           // Get distance - prioritize damage info
           if (damageInfo && damageInfo.distance && !Number.isNaN(damageInfo.distance)) {
             distance = Math.round(damageInfo.distance / 100);
-          }
-          else if (kill.distance && !Number.isNaN(kill.distance)) {
+          } else if (kill.distance && !Number.isNaN(kill.distance)) {
             distance = Math.round(kill.distance / 100);
           }
 
@@ -929,8 +943,10 @@ export class DiscordBotService {
           let weapon = 'Unknown Weapon';
           let distance = 0;
 
-                    // Use DamageInfoUtils for groggyDamage too
-          const groggyInfo = knockdown.groggyDamage ? DamageInfoUtils.getFirst(knockdown.groggyDamage) : null;
+          // Use DamageInfoUtils for groggyDamage too
+          const groggyInfo = knockdown.groggyDamage
+            ? DamageInfoUtils.getFirst(knockdown.groggyDamage)
+            : null;
 
           if (groggyInfo && groggyInfo.damageCauserName) {
             weapon = this.getReadableDamageCauserName(groggyInfo.damageCauserName);
@@ -973,8 +989,7 @@ export class DiscordBotService {
             if (primaryDamageInfo.distance && !Number.isNaN(primaryDamageInfo.distance)) {
               distance = Math.round(primaryDamageInfo.distance / 100);
             }
-          }
-          else if (death.damageCauserName) {
+          } else if (death.damageCauserName) {
             weapon = this.getReadableDamageCauserName(death.damageCauserName);
             if (death.distance && !Number.isNaN(death.distance)) {
               distance = Math.round(death.distance / 100);
@@ -1001,8 +1016,7 @@ export class DiscordBotService {
             if (primaryDamageInfo.distance && !Number.isNaN(primaryDamageInfo.distance)) {
               distance = Math.round(primaryDamageInfo.distance / 100);
             }
-          }
-          else if (knocked.damageCauserName) {
+          } else if (knocked.damageCauserName) {
             weapon = this.getReadableDamageCauserName(knocked.damageCauserName);
             if (knocked.distance && !Number.isNaN(knocked.distance)) {
               distance = Math.round(knocked.distance / 100);
@@ -1043,7 +1057,7 @@ export class DiscordBotService {
    * @param playerName - Raw player name from telemetry
    * @returns Sanitized player name safe for Discord markdown links
    */
-    private sanitizePlayerNameForDiscord(playerName: string): string {
+  private sanitizePlayerNameForDiscord(playerName: string): string {
     if (!playerName) return 'Unknown Player';
 
     // Only escape characters that actually break Discord links
