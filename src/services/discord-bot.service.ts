@@ -1,40 +1,40 @@
 import {
+  type Asset,
+  assetManager,
+  DAMAGE_CAUSER_NAME,
+  GAME_MODES,
+  type LogPlayerKillV2,
+  type LogPlayerMakeGroggy,
+  type LogPlayerRevive,
+  MAP_NAMES,
+  type Participant,
+  type Player,
+  PubgClient,
+  type Roster,
+  type Shard,
+} from '@j03fr0st/pubg-ts';
+import {
+  type ChatInputCommandInteraction,
   Client,
+  EmbedBuilder,
   Events,
   GatewayIntentBits,
-  TextChannel,
-  EmbedBuilder,
   REST,
   Routes,
   SlashCommandBuilder,
-  ChatInputCommandInteraction,
+  type TextChannel,
 } from 'discord.js';
-import {
-  PubgClient,
-  Player,
-  Shard,
-  LogPlayerKillV2,
-  LogPlayerMakeGroggy,
-  LogPlayerRevive,
-  Participant,
-  Roster,
-  Asset,
-  assetManager,
-  DAMAGE_CAUSER_NAME,
-  MAP_NAMES,
-  GAME_MODES,
-} from '@j03fr0st/pubg-ts';
-import {
-  DiscordPlayerMatchStats,
+import type { AssistInfo, KillChain, PlayerAnalysis } from '../types/analytics-results.types';
+import type {
   DiscordMatchGroupSummary,
+  DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
-import { PubgStorageService } from './pubg-storage.service';
-import { TelemetryProcessorService } from './telemetry-processor.service';
-import { PlayerAnalysis, KillChain, AssistInfo } from '../types/analytics-results.types';
+import { DamageInfoUtils } from '../utils/damage-info.util';
+import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
-import { success, error, debug } from '../utils/logger';
-import { DamageInfoUtils } from '../utils/damage-info.util';
+import { PubgStorageService } from './pubg-storage.service';
+import { TelemetryProcessorService } from './telemetry-processor.service';
 
 export class DiscordBotService {
   private readonly client: Client;
@@ -399,7 +399,7 @@ export class DiscordBotService {
 
       // Get all monitored players to find any that participated in this match
       const monitoredPlayers = await this.pubgStorageService.getAllPlayers();
-      const monitoredPlayerNames = monitoredPlayers.map(p => p.name);
+      const monitoredPlayerNames = monitoredPlayers.map((p) => p.name);
 
       // Extract participants from match details
       const participants = matchDetails.included.filter(
@@ -408,7 +408,7 @@ export class DiscordBotService {
       );
 
       // Find which monitored players are in this match
-      const matchingPlayers = participants.filter(p => 
+      const matchingPlayers = participants.filter((p) =>
         monitoredPlayerNames.includes(p.attributes.stats?.name || '')
       );
 
@@ -432,7 +432,7 @@ export class DiscordBotService {
       if (summary) {
         // Send the match summary as a reply
         const embeds = await this.createMatchSummaryEmbeds(summary);
-        
+
         if (embeds && embeds.length > 0) {
           // Send embeds in batches to avoid hitting Discord limits
           for (let i = 0; i < embeds.length; i += 10) {
@@ -451,7 +451,6 @@ export class DiscordBotService {
       } else {
         throw new Error('Failed to create match summary');
       }
-
     } catch (err) {
       const errorObj = err as Error;
       error(`Error processing match ${matchId} for user ${userName}: ${errorObj.message}`);
@@ -631,122 +630,6 @@ export class DiscordBotService {
       // Fallback to basic embeds
       return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
     }
-  }
-
-  private formatPlayerStats(
-    matchStartTime: Date,
-    matchId: string,
-    player: DiscordPlayerMatchStats,
-    killEvents: LogPlayerKillV2[],
-    groggyEvents: LogPlayerMakeGroggy[]
-  ): string {
-    const { stats } = player;
-    if (!stats) {
-      return 'No stats available';
-    }
-    const survivalMinutes = Math.round(stats.timeSurvived / 60);
-    const kmWalked = (stats.walkDistance / 1000).toFixed(1);
-
-    const accuracy =
-      stats.kills > 0 && stats.headshotKills > 0
-        ? ((stats.headshotKills / stats.kills) * 100).toFixed(1)
-        : '0';
-
-    const killDetails = this.getKillDetails(player.name, killEvents, groggyEvents, matchStartTime);
-
-    const statsDetails = [
-      `⚔️ Kills: ${stats.kills} (${stats.headshotKills} headshots)`,
-      `🔻 Knocks: ${stats.DBNOs}`,
-      `💥 Damage: ${Math.round(stats.damageDealt)} (${stats.assists} assists)`,
-      `🎯 Headshot %: ${accuracy}%`,
-      `⏰ Survival: ${survivalMinutes}min`,
-      `📏 Longest Kill: ${Math.round(stats.longestKill)}m`,
-      `👣 Distance: ${kmWalked}km`,
-      stats.revives > 0 ? `🚑 Revives: ${stats.revives}` : '',
-      `🎯 [2D Replay](https://pubg.sh/${player.name}/steam/${matchId})`,
-    ];
-
-    if (killDetails) {
-      statsDetails.push('*** KILLS & DBNOs ***', killDetails);
-    }
-
-    return statsDetails.filter(Boolean).join('\n');
-  }
-
-  private getKillDetails(
-    playerName: string,
-    killEvents: LogPlayerKillV2[],
-    groggyEvents: LogPlayerMakeGroggy[],
-    matchStartTime: Date
-  ): string | null {
-    // Filter events to only include those where the player is involved
-    const relevantKills = killEvents.filter(
-      (event) => event.killer?.name === playerName || event.victim?.name === playerName
-    );
-    const relevantGroggies = groggyEvents.filter(
-      (event) => event.attacker?.name === playerName || event.victim?.name === playerName
-    );
-
-    // Sort events by time
-    const allEvents = [...relevantKills, ...relevantGroggies].sort(
-      (a, b) => new Date(a._D ?? 0).getTime() - new Date(b._D ?? 0).getTime()
-    );
-
-    if (allEvents.length === 0) {
-      return null;
-    }
-
-    const eventDetails = allEvents
-      .map((event) => {
-        const eventTime = event._D ? new Date(event._D) : matchStartTime;
-        const relativeSeconds = Math.round((eventTime.getTime() - matchStartTime.getTime()) / 1000);
-        const minutes = Math.floor(relativeSeconds / 60);
-        const seconds = relativeSeconds % 60;
-        const relativeTime = `\`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}\``;
-
-        if (event._T === 'LogPlayerKillV2') {
-          // LogPlayerKillV2 event
-          const isKiller = event.killer?.name === playerName;
-          const killerName = event.killer?.name || 'Unknown Player';
-          const victimName = event.victim?.name || 'Unknown Player';
-
-          const primaryDamageInfo = event.killerDamageInfo
-            ? DamageInfoUtils.getFirst(event.killerDamageInfo)
-            : null;
-          const weapon = primaryDamageInfo?.damageCauserName
-            ? this.getReadableDamageCauserName(primaryDamageInfo.damageCauserName)
-            : 'Unknown Weapon';
-          const distance = primaryDamageInfo?.distance
-            ? `${Math.round(primaryDamageInfo.distance / 100)}m`
-            : 'Unknown';
-
-          const icon = isKiller ? '⚔️' : '☠️';
-          const actionType = isKiller ? 'Killed' : 'Killed by';
-          const targetName = isKiller ? victimName : killerName;
-          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
-        }
-        if (event._T === 'LogPlayerMakeGroggy') {
-          // LogPlayerMakeGroggy event
-          const isAttacker = event.attacker?.name === playerName;
-          const attackerName = event.attacker?.name || 'Unknown Player';
-          const victimName = event.victim?.name || 'Unknown Player';
-          const weapon = event.damageCauserName
-            ? this.getReadableDamageCauserName(event.damageCauserName)
-            : 'Unknown Weapon';
-          const distance = event.distance ? `${Math.round(event.distance / 100)}m` : 'Unknown';
-
-          const icon = isAttacker ? '🔻' : '⬇️';
-          const actionType = isAttacker ? 'Knocked' : 'Knocked by';
-          const targetName = isAttacker ? victimName : attackerName;
-          return `${relativeTime} ${icon} ${actionType} - [${targetName}](https://pubg.op.gg/user/${targetName}) (${weapon}, ${distance})`;
-        }
-
-        return ''; // Fallback for unknown event types
-      })
-      .filter(Boolean)
-      .join('\n');
-
-    return eventDetails || null;
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {

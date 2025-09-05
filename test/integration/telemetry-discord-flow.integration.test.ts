@@ -1,7 +1,7 @@
+import type { LogPlayerKillV2, LogPlayerMakeGroggy, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
 import { TelemetryProcessorService } from '../../src/services/telemetry-processor.service';
-import { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
-import { LogPlayerKillV2, LogPlayerTakeDamage, LogPlayerMakeGroggy } from '@j03fr0st/pubg-ts';
+import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
 
 // Mock the Discord.js client and components
 jest.mock('discord.js', () => ({

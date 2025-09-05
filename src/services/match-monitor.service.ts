@@ -1,20 +1,27 @@
-import { PubgClient, Participant, Roster, Asset, Player, Shard } from '@j03fr0st/pubg-ts';
-import { PubgStorageService } from './pubg-storage.service';
-import { DiscordBotService } from './discord-bot.service';
 import {
+  type Asset,
+  type Participant,
+  type Player,
+  PubgClient,
+  type Roster,
+  type Shard,
+} from '@j03fr0st/pubg-ts';
+import { appConfig } from '../config/config';
+import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
-import { MatchMonitorPlayer, MatchMonitorMatchGroup } from '../types/match-monitor.types';
-import { appConfig } from '../config/config';
-import { monitor, warn, error, info, success, debug } from '../utils/logger';
+import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
+import { debug, error, info, monitor, success, warn } from '../utils/logger';
+import type { DiscordBotService } from './discord-bot.service';
+import type { PubgStorageService } from './pubg-storage.service';
 
 export class MatchMonitorService {
   private readonly checkInterval: number;
   private readonly channelId: string;
   private readonly maxMatchesToProcess: number;
-  private isRunning: boolean = false;
-  private shouldStop: boolean = false;
+  private isRunning = false;
+  private shouldStop = false;
   private readonly pubgClient: PubgClient;
 
   constructor(

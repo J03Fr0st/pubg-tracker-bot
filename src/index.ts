@@ -1,6 +1,5 @@
+import type { Shard } from '@j03fr0st/pubg-ts';
 import { connect } from 'mongoose';
-
-import { Shard } from '@j03fr0st/pubg-ts';
 
 import { appConfig, validateConfig } from './config/config';
 import { DiscordBotService } from './services/discord-bot.service';

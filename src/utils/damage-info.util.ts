@@ -1,4 +1,4 @@
-import { DamageInfo, FlexibleDamageInfo } from '@j03fr0st/pubg-ts';
+import type { DamageInfo, FlexibleDamageInfo } from '@j03fr0st/pubg-ts';
 
 type DamageInfoInput = FlexibleDamageInfo | undefined;
 
@@ -15,10 +15,10 @@ export class DamageInfoUtils {
   }
 
   public static getFirst(damageInfo: DamageInfoInput): DamageInfo | null {
-    if (!this.hasData(damageInfo)) {
+    if (!DamageInfoUtils.hasData(damageInfo)) {
       return null;
     }
-    const damageArray = this.toArray(damageInfo);
+    const damageArray = DamageInfoUtils.toArray(damageInfo);
     return damageArray[0] ?? null;
   }
 }

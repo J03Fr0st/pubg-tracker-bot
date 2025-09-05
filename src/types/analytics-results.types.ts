@@ -1,8 +1,8 @@
-import {
+import type {
   LogPlayerKillV2,
   LogPlayerMakeGroggy,
-  LogPlayerTakeDamage,
   LogPlayerRevive,
+  LogPlayerTakeDamage,
 } from '@j03fr0st/pubg-ts';
 
 // ONLY create types for our calculated results - not raw events

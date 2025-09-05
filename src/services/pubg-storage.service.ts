@@ -1,5 +1,5 @@
-import { Player as PlayerData } from '@j03fr0st/pubg-ts';
-import { IPlayer } from '../data/models/player.model';
+import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
+import type { IPlayer } from '../data/models/player.model';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 

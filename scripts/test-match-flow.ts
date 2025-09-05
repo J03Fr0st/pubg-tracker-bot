@@ -19,21 +19,21 @@
  *   --dryRun     Don't actually send to Discord, just process and log
  */
 
-import { connect } from 'mongoose';
-import { config } from 'dotenv';
 import type { Shard, TelemetryEvent } from '@j03fr0st/pubg-ts';
+import { config } from 'dotenv';
+import { connect } from 'mongoose';
 
 // Load environment variables
 config();
 
+import { appConfig, validateConfig } from '../src/config/config';
 import { DiscordBotService } from '../src/services/discord-bot.service';
 import { MatchMonitorService } from '../src/services/match-monitor.service';
 import { PubgStorageService } from '../src/services/pubg-storage.service';
 import { TelemetryProcessorService } from '../src/services/telemetry-processor.service';
 import type { DiscordMatchGroupSummary } from '../src/types/discord-match-summary.types';
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../src/types/match-monitor.types';
-import { appConfig, validateConfig } from '../src/config/config';
-import { startup, success, error, info, warn } from '../src/utils/logger';
+import { error, info, startup, success, warn } from '../src/utils/logger';
 
 interface TestOptions {
   matchId: string;

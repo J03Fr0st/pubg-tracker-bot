@@ -1,13 +1,11 @@
-import { TelemetryProcessorService } from '../../../src/services/telemetry-processor.service';
 import {
-  LogPlayerKillV2,
-  LogPlayerMakeGroggy,
-  LogPlayerTakeDamage,
-  LogPlayerAttack,
-  LogPlayerRevive,
-  LogWeaponFireCount,
-  TelemetryEvent,
+  type LogPlayerKillV2,
+  type LogPlayerMakeGroggy,
+  type LogPlayerTakeDamage,
+  type LogWeaponFireCount,
+  type TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
+import { TelemetryProcessorService } from '../../../src/services/telemetry-processor.service';
 
 describe('TelemetryProcessorService', () => {
   let telemetryProcessor: TelemetryProcessorService;

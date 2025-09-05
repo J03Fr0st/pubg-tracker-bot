@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { warn, success } from '../utils/logger';
+import { success, warn } from '../utils/logger';
 
 // Load environment variables from .env file
 config();
@@ -61,7 +61,7 @@ function getNumericEnv(name: string, defaultValue: number): number {
     return defaultValue;
   }
 
-  const numericValue = parseInt(value, 10);
+  const numericValue = Number.parseInt(value, 10);
   if (isNaN(numericValue)) {
     warn(`Environment variable ${name} is not a valid number, using default: ${defaultValue}`);
     return defaultValue;

@@ -1,5 +1,5 @@
 import { DiscordBotService } from '../../src/services/discord-bot.service';
-import { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
+import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
 
 // Mock axios
 jest.mock('axios', () => ({

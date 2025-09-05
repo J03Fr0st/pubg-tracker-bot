@@ -1,20 +1,19 @@
 import {
-  LogPlayerKillV2,
-  LogPlayerMakeGroggy,
-  LogPlayerTakeDamage,
-  LogPlayerAttack,
-  LogPlayerRevive,
-  LogWeaponFireCount,
-  TelemetryEvent,
   DAMAGE_CAUSER_NAME,
+  type LogPlayerKillV2,
+  type LogPlayerMakeGroggy,
+  type LogPlayerRevive,
+  type LogPlayerTakeDamage,
+  type LogWeaponFireCount,
+  type TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 
-import {
-  PlayerAnalysis,
-  MatchAnalysis,
-  WeaponStats,
-  KillChain,
+import type {
   AssistInfo,
+  KillChain,
+  MatchAnalysis,
+  PlayerAnalysis,
+  WeaponStats,
 } from '../types/analytics-results.types';
 
 export class TelemetryProcessorService {
@@ -91,9 +90,7 @@ export class TelemetryProcessorService {
     const damageEvents = telemetryData.filter(
       (e) => e._T === 'LogPlayerTakeDamage'
     ) as LogPlayerTakeDamage[];
-    const attackEvents = telemetryData.filter(
-      (e) => e._T === 'LogPlayerAttack'
-    ) as LogPlayerAttack[];
+    // Removed attackEvents collection as it was unused
     const reviveEvents = telemetryData.filter(
       (e) => e._T === 'LogPlayerRevive'
     ) as LogPlayerRevive[];
@@ -110,7 +107,6 @@ export class TelemetryProcessorService {
         killEvents,
         knockdownEvents,
         damageEvents,
-        attackEvents,
         reviveEvents,
         fireCountEvents,
         matchStartTime
@@ -152,7 +148,6 @@ export class TelemetryProcessorService {
     allKills: LogPlayerKillV2[],
     allKnockdowns: LogPlayerMakeGroggy[],
     allDamage: LogPlayerTakeDamage[],
-    allAttacks: LogPlayerAttack[],
     allRevives: LogPlayerRevive[],
     allFireCounts: LogWeaponFireCount[],
     matchStartTime: Date
@@ -173,9 +168,7 @@ export class TelemetryProcessorService {
     const playerDamageTaken = allDamage.filter((d) =>
       this.isPlayerNameMatch(d.victim?.name, playerName)
     );
-    const playerAttacks = allAttacks.filter((a) =>
-      this.isPlayerNameMatch(a.attacker?.name, playerName)
-    );
+    // Removed unused attacks filtering
     const playerRevives = allRevives.filter((r) =>
       this.isPlayerNameMatch(r.reviver?.name, playerName)
     );
@@ -210,7 +203,6 @@ export class TelemetryProcessorService {
       playerKills,
       playerKnockdowns,
       playerDamageDealt,
-      playerAttacks,
       playerFireCounts
     );
 
@@ -283,7 +275,6 @@ export class TelemetryProcessorService {
     kills: LogPlayerKillV2[],
     knockdowns: LogPlayerMakeGroggy[],
     damage: LogPlayerTakeDamage[],
-    attacks: LogPlayerAttack[],
     fireCounts: LogWeaponFireCount[]
   ): WeaponStats[] {
     const weaponMap = new Map<string, Partial<WeaponStats>>();

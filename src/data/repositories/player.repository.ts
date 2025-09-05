@@ -1,5 +1,5 @@
-import { Player as PlayerData } from '@j03fr0st/pubg-ts';
-import { Player, IPlayer } from '../models/player.model';
+import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
+import { type IPlayer, Player } from '../models/player.model';
 
 export class PlayerRepository {
   /**

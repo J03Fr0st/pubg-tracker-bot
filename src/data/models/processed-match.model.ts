@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { type Document, model, Schema } from 'mongoose';
 
 /**
  * Interface representing a processed match document in MongoDB.
