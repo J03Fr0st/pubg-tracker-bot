@@ -7,6 +7,9 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
+# Copy prisma schema before npm ci so postinstall (prisma generate) can find it
+COPY prisma ./prisma
+
 # Install dependencies
 RUN npm ci
 
