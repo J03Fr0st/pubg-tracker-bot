@@ -1,7 +1,7 @@
 import type { Shard } from '@j03fr0st/pubg-ts';
-import { connect } from 'mongoose';
 
 import { appConfig, validateConfig } from './config/config';
+import prisma from './data/prisma.client';
 import { DiscordBotService } from './services/discord-bot.service';
 import { MatchMonitorService } from './services/match-monitor.service';
 import { PubgStorageService } from './services/pubg-storage.service';
@@ -16,10 +16,10 @@ async function main(): Promise<void> {
     validateConfig();
     startup('Starting PUBG Tracker Bot...');
 
-    // Connect to MongoDB
-    database('Connecting to MongoDB...');
-    await connect(appConfig.database.uri);
-    database('Connected to MongoDB successfully');
+    // Connect to PostgreSQL
+    database('Connecting to PostgreSQL...');
+    await prisma.$connect();
+    database('Connected to PostgreSQL successfully');
 
     // Initialize services
     startup('Initializing services...');
@@ -85,6 +85,7 @@ async function handleShutdown(matchMonitor: MatchMonitorService): Promise<void> 
     // Allow some time for cleanup
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
+    await prisma.$disconnect();
     shutdown('Shutdown complete');
     process.exit(0);
   } catch (err) {

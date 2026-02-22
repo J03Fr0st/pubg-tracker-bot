@@ -24,7 +24,7 @@ import {
   SlashCommandBuilder,
   type TextChannel,
 } from 'discord.js';
-import type { AssistInfo, KillChain, PlayerAnalysis } from '../types/analytics-results.types';
+import type { AssistInfo, KillChain, MatchAnalysis, PlayerAnalysis } from '../types/analytics-results.types';
 import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
@@ -602,6 +602,31 @@ export class DiscordBotService {
     }
 
     try {
+      // Check DB cache first
+      try {
+        const cached = await this.pubgStorageService.getCachedTelemetryAnalyses(matchId);
+        if (cached) {
+          debug(`Using cached telemetry analysis for match ${matchId}`);
+          const matchAnalysis: MatchAnalysis = {
+            matchId,
+            playerAnalyses: new Map(
+              Object.entries(cached).map(([name, analysis]) => [name, analysis as PlayerAnalysis])
+            ),
+            processingTimeMs: 0,
+            totalEventsProcessed: 0,
+          };
+          const enhancedPlayerEmbeds = players.map((player) => {
+            const analysis = matchAnalysis.playerAnalyses.get(player.name);
+            return analysis
+              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId)
+              : this.createBasicPlayerEmbed(player, matchColor, matchId);
+          });
+          return [mainEmbed, ...enhancedPlayerEmbeds];
+        }
+      } catch (cacheErr) {
+        debug(`Cache lookup failed, falling back to live fetch: ${cacheErr}`);
+      }
+
       // Fetch raw telemetry data
       const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl);
       const trackedPlayerNames = players.map((p) => p.name);
@@ -614,6 +639,15 @@ export class DiscordBotService {
         matchDate,
         trackedPlayerNames
       );
+
+      // Save to DB cache (non-blocking)
+      const analysesObj: Record<string, unknown> = {};
+      for (const [name, analysis] of matchAnalysis.playerAnalyses) {
+        analysesObj[name] = analysis;
+      }
+      this.pubgStorageService
+        .saveTelemetry(matchId, telemetryData, analysesObj)
+        .catch((err) => debug(`Failed to cache telemetry for ${matchId}: ${err}`));
 
       // Create enhanced embeds
       const enhancedPlayerEmbeds = players.map((player) => {

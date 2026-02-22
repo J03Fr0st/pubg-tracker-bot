@@ -157,3 +157,5 @@ Thumbs.db
 # Crush
 .crush/
 .worktrees/
+
+/src/generated/prisma

@@ -1,64 +1,40 @@
-import { ProcessedMatch } from '../models/processed-match.model';
+import prisma from '../prisma.client';
 
 export class ProcessedMatchRepository {
-  /**
-   * Retrieves all processed match IDs
-   */
   public async getProcessedMatches(): Promise<string[]> {
-    const matches = await ProcessedMatch.find().select('matchId').lean();
+    const matches = await prisma.processedMatch.findMany({ select: { matchId: true } });
     return matches.map((m) => m.matchId);
   }
 
-  /**
-   * Adds a new processed match ID
-   */
   public async addProcessedMatch(matchId: string): Promise<void> {
-    await ProcessedMatch.create({ matchId });
+    await prisma.processedMatch.create({ data: { matchId } });
   }
 
-  /**
-   * Removes a processed match by its matchId
-   * @param matchId - The match identifier to remove
-   * @returns True if a document was deleted, false otherwise
-   */
   public async removeProcessedMatch(matchId: string): Promise<boolean> {
-    const result = await ProcessedMatch.deleteOne({ matchId });
-    return (result as { deletedCount?: number }).deletedCount === 1;
+    try {
+      await prisma.processedMatch.delete({ where: { matchId } });
+      return true;
+    } catch (err: any) {
+      if (err?.code === 'P2025') return false;
+      throw err;
+    }
   }
 
-  /**
-   * Removes the last processed match (most recently added)
-   * @returns The match ID that was removed, or null if no matches exist
-   */
   public async removeLastProcessedMatch(): Promise<string | null> {
-    const lastMatch = await ProcessedMatch.findOne()
-      .sort({ processedAt: -1 }) // Sort by processed time, newest first
-      .select('matchId');
-
-    if (!lastMatch) {
-      return null;
-    }
-
-    await ProcessedMatch.findByIdAndDelete(lastMatch._id);
-    return lastMatch.matchId;
+    const last = await prisma.processedMatch.findFirst({
+      orderBy: { processedAt: 'desc' },
+      select: { matchId: true },
+    });
+    if (!last) return null;
+    await prisma.processedMatch.delete({ where: { matchId: last.matchId } });
+    return last.matchId;
   }
 
-  /**
-   * Gets the last processed match details
-   * @returns The last processed match info or null if no matches exist
-   */
   public async getLastProcessedMatch(): Promise<{ matchId: string; processedAt: Date } | null> {
-    const lastMatch = await ProcessedMatch.findOne()
-      .sort({ processedAt: -1 })
-      .select('matchId processedAt');
-
-    if (!lastMatch) {
-      return null;
-    }
-
-    return {
-      matchId: lastMatch.matchId,
-      processedAt: lastMatch.processedAt,
-    };
+    const last = await prisma.processedMatch.findFirst({
+      orderBy: { processedAt: 'desc' },
+      select: { matchId: true, processedAt: true },
+    });
+    return last ?? null;
   }
 }

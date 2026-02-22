@@ -1,14 +1,18 @@
 import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
-import { type IPlayer, Player } from '../models/player.model';
+import prisma from '../prisma.client';
 
 export class PlayerRepository {
-  /**
-   * Saves or updates a player in the database
-   */
-  public async savePlayer(playerData: PlayerData): Promise<IPlayer> {
-    const player = await Player.findOneAndUpdate(
-      { pubgId: playerData.id },
-      {
+  public async savePlayer(playerData: PlayerData) {
+    return prisma.player.upsert({
+      where: { pubgId: playerData.id },
+      update: {
+        name: playerData.attributes.name,
+        shardId: playerData.attributes.shardId,
+        updatedAt: new Date(playerData.attributes.updatedAt),
+        patchVersion: playerData.attributes.patchVersion,
+        titleId: playerData.attributes.titleId,
+      },
+      create: {
         pubgId: playerData.id,
         name: playerData.attributes.name,
         shardId: playerData.attributes.shardId,
@@ -16,26 +20,22 @@ export class PlayerRepository {
         updatedAt: new Date(playerData.attributes.updatedAt),
         patchVersion: playerData.attributes.patchVersion,
         titleId: playerData.attributes.titleId,
-        matches: playerData.relationships.matches.data.map((match) => match.id),
       },
-      { upsert: true, new: true }
-    );
-    return player;
+    });
   }
 
   public async removePlayer(playerName: string): Promise<void> {
-    await Player.deleteOne({ name: playerName });
+    await prisma.player.delete({ where: { name: playerName } });
   }
 
-  public async updatePlayerLastMatch(playerName: string, matchId: string): Promise<void> {
-    await Player.updateOne({ name: playerName }, { $set: { lastMatchId: matchId } });
+  public async updatePlayerLastMatch(playerName: string, _matchId: string): Promise<void> {
+    await prisma.player.update({
+      where: { name: playerName },
+      data: { lastMatchAt: new Date() },
+    });
   }
 
-  public async findPlayerByPubgId(pubgId: string): Promise<IPlayer | null> {
-    return Player.findOne({ pubgId });
-  }
-
-  public async getAllPlayers(): Promise<IPlayer[]> {
-    return Player.find();
+  public async getAllPlayers() {
+    return prisma.player.findMany();
   }
 }
