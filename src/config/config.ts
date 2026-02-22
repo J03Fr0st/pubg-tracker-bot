@@ -24,7 +24,7 @@ export interface AppConfig {
 
   // Database configuration
   database: {
-    uri: string;
+    url: string;
   };
 
   // Monitoring configuration
@@ -85,7 +85,7 @@ export const appConfig: AppConfig = {
     maxRequestsPerMinute: getNumericEnv('PUBG_MAX_REQUESTS_PER_MINUTE', 10),
   },
   database: {
-    uri: requireEnv('MONGODB_URI'),
+    url: requireEnv('DATABASE_URL'),
   },
   monitoring: {
     checkIntervalMs: getNumericEnv('CHECK_INTERVAL_MS', 90000),
@@ -121,8 +121,8 @@ export function validateConfig(): void {
   }
 
   // Validate database configuration
-  if (!appConfig.database.uri) {
-    throw new Error('MongoDB URI is required');
+  if (!appConfig.database.url) {
+    throw new Error('DATABASE_URL is required');
   }
 
   // Validate monitoring configuration
