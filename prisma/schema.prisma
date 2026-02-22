@@ -58,6 +58,7 @@ model Roster {
   match        Match         @relation(fields: [matchId], references: [matchId], onDelete: Cascade)
   participants Participant[]
 
+  @@index([matchId])
   @@map("rosters")
 }
 
@@ -92,6 +93,8 @@ model Participant {
   match  Match  @relation(fields: [matchId], references: [matchId], onDelete: Cascade)
   roster Roster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
 
+  @@index([matchId])
+  @@index([rosterId])
   @@map("participants")
 }
 
