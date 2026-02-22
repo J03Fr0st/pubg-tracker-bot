@@ -4,6 +4,8 @@ FROM node:20-slim AS builder
 # Create app directory
 WORKDIR /usr/src/app
 
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 # Copy package files
 COPY package*.json ./
 
@@ -26,7 +28,7 @@ FROM node:20-slim
 WORKDIR /usr/src/app
 
 # Create a non-root user
-RUN apt-get update && apt-get install -y --no-install-recommends dumb-init && \
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init openssl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd -r nodejs && \
