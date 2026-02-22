@@ -51,9 +51,12 @@ COPY --from=builder /usr/src/app/dist ./dist
 # Copy prisma schema and migrations for migrate deploy
 COPY --from=builder /usr/src/app/prisma ./prisma
 
-# Copy generated prisma client and CLI from builder
-COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
+# Copy generated prisma client from builder (output path matches schema.prisma: ../src/generated/prisma)
+COPY --from=builder /usr/src/app/src/generated ./src/generated
+
+# Copy prisma CLI from builder for migrate deploy
 COPY --from=builder /usr/src/app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /usr/src/app/node_modules/@prisma ./node_modules/@prisma
 
 # Set user
 USER nodejs
