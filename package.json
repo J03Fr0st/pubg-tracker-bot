@@ -31,10 +31,13 @@
   },
   "dependencies": {
     "@j03fr0st/pubg-ts": "^1.0.7-beta",
+    "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
+    "@types/pg": "^8.16.0",
     "axios": "^1.8.2",
     "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "pg": "^8.18.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.6",
