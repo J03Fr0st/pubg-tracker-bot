@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Player {
+  id           String    @id @default(uuid())
+  pubgId       String    @unique
+  name         String    @unique
+  shardId      String
+  patchVersion String
+  titleId      String
+  lastMatchAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("players")
+}
+
+model ProcessedMatch {
+  id          String   @id @default(uuid())
+  matchId     String   @unique
+  processedAt DateTime @default(now())
+
+  @@map("processed_matches")
+}
+
+model Match {
+  id            String   @id @default(uuid())
+  matchId       String   @unique
+  gameMode      String
+  mapName       String
+  duration      Int
+  isCustomMatch Boolean
+  seasonState   String
+  shardId       String
+  telemetryUrl  String
+  playedAt      DateTime
+  createdAt     DateTime @default(now())
+
+  participants Participant[]
+  rosters      Roster[]
+  telemetry    MatchTelemetry?
+
+  @@map("matches")
+}
+
+model Roster {
+  id      String @id @default(uuid())
+  matchId String
+  rank    Int
+  won     Boolean
+
+  match        Match         @relation(fields: [matchId], references: [matchId], onDelete: Cascade)
+  participants Participant[]
+
+  @@map("rosters")
+}
+
+model Participant {
+  id               String  @id @default(uuid())
+  matchId          String
+  rosterId         String
+  pubgId           String
+  name             String
+  kills            Int
+  DBNOs            Int
+  damageDealt      Float
+  headshotKills    Int
+  assists          Int
+  revives          Int
+  timeSurvived     Float
+  walkDistance     Float
+  longestKill      Float
+  winPlace         Int
+  killPlace        Int
+  killStreaks       Int
+  boosts           Int
+  heals            Int
+  rideDistance     Float
+  swimDistance     Float
+  roadKills        Int
+  teamKills        Int
+  vehicleDestroys  Int
+  weaponsAcquired  Int
+  deathType        String
+
+  match  Match  @relation(fields: [matchId], references: [matchId], onDelete: Cascade)
+  roster Roster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+
+  @@map("participants")
+}
+
+model MatchTelemetry {
+  id             String   @id @default(uuid())
+  matchId        String   @unique
+  rawEvents      Json
+  playerAnalyses Json
+  processedAt    DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [matchId], onDelete: Cascade)
+
+  @@map("match_telemetry")
+}

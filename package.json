@@ -26,7 +26,8 @@
     "version:major": "node scripts/increment-version.js major",
     "docker:build": "npm run build && docker build -t pubg-tracker-bot .",
     "docker:run": "docker run -p 3000:3000 pubg-tracker-bot",
-    "prepare": "command -v husky >/dev/null 2>&1 && husky || true"
+    "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@j03fr0st/pubg-ts": "^1.0.7-beta",

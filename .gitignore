@@ -156,3 +156,5 @@ Thumbs.db
 
 # Crush
 .crush/
+
+/src/generated/prisma
