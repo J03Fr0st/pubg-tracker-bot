@@ -9,8 +9,12 @@ RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists
 # Copy package files
 COPY package*.json ./
 
-# Copy prisma schema before npm ci so postinstall (prisma generate) can find it
+# Copy prisma schema and config before npm ci so postinstall (prisma generate) can find them
 COPY prisma ./prisma
+COPY prisma.config.ts ./
+
+# Dummy DATABASE_URL for prisma generate (real URL provided at runtime)
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 
 # Install dependencies
 RUN npm ci
@@ -50,8 +54,9 @@ RUN npm ci --only=production --ignore-scripts
 # Copy built files from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
-# Copy prisma schema and migrations for migrate deploy
+# Copy prisma schema, config, and migrations for migrate deploy
 COPY --from=builder /usr/src/app/prisma ./prisma
+COPY --from=builder /usr/src/app/prisma.config.ts ./
 
 # Copy generated prisma client from builder (output path matches schema.prisma: ../src/generated/prisma)
 COPY --from=builder /usr/src/app/src/generated ./src/generated
