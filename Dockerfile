@@ -45,6 +45,13 @@ RUN npm ci --only=production --ignore-scripts
 # Copy built files from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
+# Copy prisma schema and migrations for migrate deploy
+COPY --from=builder /usr/src/app/prisma ./prisma
+
+# Copy generated prisma client and CLI from builder
+COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /usr/src/app/node_modules/prisma ./node_modules/prisma
+
 # Set user
 USER nodejs
 
@@ -55,5 +62,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Use dumb-init as entrypoint to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
-# Start the bot
-CMD ["npm", "start"]
+# Run migrations then start the bot
+CMD npx prisma migrate deploy && node dist/index.js
