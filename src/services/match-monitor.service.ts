@@ -196,6 +196,13 @@ export class MatchMonitorService {
         const matchDetails = await this.pubgClient.matches.getMatch(matchId);
         const createdAt = new Date(matchDetails.data.attributes.createdAt);
 
+        // Persist match data to DB
+        try {
+          await this.storage.saveMatch(matchDetails);
+        } catch (saveErr) {
+          warn(`Failed to save match ${matchId} to DB: ${saveErr}`);
+        }
+
         newMatches.push({
           matchId,
           players: uniqueMatchIds.get(matchId)!,
