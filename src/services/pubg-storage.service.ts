@@ -2,10 +2,14 @@ import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
 import type { Player } from '../generated/prisma/client';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+import { MatchRepository } from '../data/repositories/match.repository';
+import { TelemetryRepository } from '../data/repositories/telemetry.repository';
 
 export class PubgStorageService {
   private playerRepository = new PlayerRepository();
   private processedMatchRepository = new ProcessedMatchRepository();
+  private matchRepository = new MatchRepository();
+  private telemetryRepository = new TelemetryRepository();
 
   //#region Player
   public async addPlayer(playerData: PlayerData): Promise<Player> {
@@ -46,5 +50,35 @@ export class PubgStorageService {
   public async getLastProcessedMatch(): Promise<{ matchId: string; processedAt: Date } | null> {
     return this.processedMatchRepository.getLastProcessedMatch();
   }
+  //#endregion
+
+  //#region Match
+
+  public async saveMatch(matchDetails: any): Promise<void> {
+    await this.matchRepository.saveMatch(matchDetails);
+  }
+
+  public async getMatch(matchId: string) {
+    return this.matchRepository.findMatch(matchId);
+  }
+
+  //#endregion
+
+  //#region Telemetry
+
+  public async saveTelemetry(
+    matchId: string,
+    rawEvents: unknown[],
+    playerAnalyses: Record<string, unknown>
+  ): Promise<void> {
+    await this.telemetryRepository.saveTelemetry(matchId, rawEvents, playerAnalyses);
+  }
+
+  public async getCachedTelemetryAnalyses(
+    matchId: string
+  ): Promise<Record<string, unknown> | null> {
+    return this.telemetryRepository.getCachedAnalyses(matchId);
+  }
+
   //#endregion
 }
