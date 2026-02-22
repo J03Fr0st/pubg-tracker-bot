@@ -11,7 +11,10 @@ services:
       - PUBG_API_KEY=${PUBG_API_KEY}
       - PUBG_API_URL=${PUBG_API_URL:-https://api.pubg.com/shards/}
       - DEFAULT_SHARD=${DEFAULT_SHARD:-steam}
-      - MONGODB_URI=${MONGODB_URI}
+      - DATABASE_URL=postgresql://pubg:pubg@postgres:5432/pubg_tracker
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "sh", "-c", "ps aux | grep node | grep -v grep || exit 1"]
@@ -25,3 +28,21 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: pubg
+      POSTGRES_PASSWORD: pubg
+      POSTGRES_DB: pubg_tracker
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pubg -d pubg_tracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
