@@ -1,5 +1,5 @@
 import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
-import type { IPlayer } from '../data/models/player.model';
+import type { Player } from '../generated/prisma/client';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 
@@ -8,7 +8,7 @@ export class PubgStorageService {
   private processedMatchRepository = new ProcessedMatchRepository();
 
   //#region Player
-  public async addPlayer(playerData: PlayerData): Promise<IPlayer> {
+  public async addPlayer(playerData: PlayerData): Promise<Player> {
     return this.playerRepository.savePlayer(playerData);
   }
 
@@ -16,7 +16,7 @@ export class PubgStorageService {
     await this.playerRepository.removePlayer(playerName);
   }
 
-  public async getAllPlayers(): Promise<IPlayer[]> {
+  public async getAllPlayers(): Promise<Player[]> {
     return this.playerRepository.getAllPlayers();
   }
 
