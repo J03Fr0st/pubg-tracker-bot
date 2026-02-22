@@ -1,16 +1,6 @@
 import { DiscordBotService } from '../../src/services/discord-bot.service';
 import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
 
-// Mock axios
-jest.mock('axios', () => ({
-  get: jest.fn().mockResolvedValue({
-    data: [
-      { _T: 'LogPlayerKillV2', killer: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
-      { _T: 'LogPlayerMakeGroggy', attacker: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
-    ],
-  }),
-}));
-
 // Mock the @j03fr0st/pubg-ts library
 jest.mock('@j03fr0st/pubg-ts', () => ({
   PubgClient: jest.fn(() => ({

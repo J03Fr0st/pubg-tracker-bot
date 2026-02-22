@@ -41,11 +41,9 @@ export class Logger {
     success: '✅',
     warn: '⚠️',
     error: '❌',
-    api: '🌐',
     database: '💾',
     discord: '🤖',
     monitor: '👀',
-    config: '⚙️',
     startup: '🚀',
     shutdown: '🛑',
   };
@@ -136,10 +134,6 @@ export class Logger {
   }
 
   // Specialized logging methods for different contexts
-  public api(message: string, context?: string | object): void {
-    this.log(LogLevel.INFO, message, this.icons.api, this.colors.cyan, context);
-  }
-
   public database(message: string, context?: string | object): void {
     this.log(LogLevel.INFO, message, this.icons.database, this.colors.magenta, context);
   }
@@ -150,10 +144,6 @@ export class Logger {
 
   public monitor(message: string, context?: string | object): void {
     this.log(LogLevel.INFO, message, this.icons.monitor, this.colors.green, context);
-  }
-
-  public config(message: string, context?: string | object): void {
-    this.log(LogLevel.INFO, message, this.icons.config, this.colors.yellow, context);
   }
 
   public startup(message: string, context?: string | object): void {
@@ -270,15 +260,12 @@ export const error = (message: string, error?: Error | string | object) =>
   logger.error(message, error);
 
 // Export specialized logging methods
-export const api = (message: string, context?: string | object) => logger.api(message, context);
 export const database = (message: string, context?: string | object) =>
   logger.database(message, context);
 export const discord = (message: string, context?: string | object) =>
   logger.discord(message, context);
 export const monitor = (message: string, context?: string | object) =>
   logger.monitor(message, context);
-export const logConfig = (message: string, context?: string | object) =>
-  logger.config(message, context);
 export const startup = (message: string, context?: string | object) =>
   logger.startup(message, context);
 export const shutdown = (message: string, context?: string | object) =>
