@@ -32,7 +32,7 @@ FROM node:20-slim
 WORKDIR /usr/src/app
 
 # Create a non-root user
-RUN apt-get update && apt-get install -y --no-install-recommends dumb-init openssl && \
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init openssl procps && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd -r nodejs && \
