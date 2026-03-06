@@ -598,7 +598,7 @@ export class DiscordBotService {
 
     if (!summary.telemetryUrl) {
       debug('No telemetry URL available, using basic player embeds');
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId, summary.eloRatings)];
     }
 
     try {
@@ -618,8 +618,8 @@ export class DiscordBotService {
           const enhancedPlayerEmbeds = players.map((player) => {
             const analysis = matchAnalysis.playerAnalyses.get(player.name);
             return analysis
-              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId)
-              : this.createBasicPlayerEmbed(player, matchColor, matchId);
+              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, summary.eloRatings)
+              : this.createBasicPlayerEmbed(player, matchColor, matchId, summary.eloRatings);
           });
           return [mainEmbed, ...enhancedPlayerEmbeds];
         }
@@ -653,8 +653,8 @@ export class DiscordBotService {
       const enhancedPlayerEmbeds = players.map((player) => {
         const analysis = matchAnalysis.playerAnalyses.get(player.name);
         return analysis
-          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId)
-          : this.createBasicPlayerEmbed(player, matchColor, matchId);
+          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, summary.eloRatings)
+          : this.createBasicPlayerEmbed(player, matchColor, matchId, summary.eloRatings);
       });
 
       success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
@@ -662,7 +662,7 @@ export class DiscordBotService {
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId, summary.eloRatings)];
     }
   }
 
@@ -747,23 +747,40 @@ export class DiscordBotService {
     return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
   }
 
+  private formatPlayerTitle(
+    player: DiscordPlayerMatchStats,
+    eloRatings?: Map<string, { rating: number; change: number }>
+  ): string {
+    const baseName = `Player: ${player.name}`;
+    if (!eloRatings || !player.pubgId) return baseName;
+
+    const elo = eloRatings.get(player.pubgId);
+    if (!elo) return baseName;
+
+    const arrow = elo.change >= 0 ? '▲' : '▼';
+    const sign = elo.change >= 0 ? '+' : '';
+    return `${baseName} [${Math.round(elo.rating)} ${arrow}${sign}${Math.round(elo.change)}]`;
+  }
+
   private createBasicPlayerEmbeds(
     players: DiscordPlayerMatchStats[],
     matchColor: number,
-    matchId: string
+    matchId: string,
+    eloRatings?: Map<string, { rating: number; change: number }>
   ): EmbedBuilder[] {
-    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId));
+    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId, eloRatings));
   }
 
   private createBasicPlayerEmbed(
     player: DiscordPlayerMatchStats,
     matchColor: number,
-    matchId: string
+    matchId: string,
+    eloRatings?: Map<string, { rating: number; change: number }>
   ): EmbedBuilder {
     const { stats } = player;
     if (!stats) {
       return new EmbedBuilder()
-        .setTitle(`Player: ${player.name}`)
+        .setTitle(this.formatPlayerTitle(player, eloRatings))
         .setDescription('No stats available')
         .setColor(matchColor);
     }
@@ -790,7 +807,7 @@ export class DiscordBotService {
       .join('\n');
 
     return new EmbedBuilder()
-      .setTitle(`Player: ${player.name}`)
+      .setTitle(this.formatPlayerTitle(player, eloRatings))
       .setDescription(basicStats)
       .setColor(matchColor);
   }
@@ -811,12 +828,13 @@ export class DiscordBotService {
     player: DiscordPlayerMatchStats,
     analysis: PlayerAnalysis,
     matchColor: number,
-    matchId: string
+    matchId: string,
+    eloRatings?: Map<string, { rating: number; change: number }>
   ): EmbedBuilder {
     const statsDescription = this.formatEnhancedStats(player, analysis, matchId);
 
     return new EmbedBuilder()
-      .setTitle(`Player: ${player.name}`)
+      .setTitle(this.formatPlayerTitle(player, eloRatings))
       .setDescription(statsDescription)
       .setColor(matchColor);
   }

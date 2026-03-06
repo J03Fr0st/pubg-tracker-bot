@@ -1,5 +1,6 @@
 export interface DiscordPlayerMatchStats {
   name: string;
+  pubgId?: string;
   stats?: {
     DBNOs: number;
     assists: number;
