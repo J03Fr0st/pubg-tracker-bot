@@ -68,9 +68,9 @@ COPY --from=builder /usr/src/app/node_modules/@prisma ./node_modules/@prisma
 # Set user
 USER nodejs
 
-# Health check - simply check if the process is running
+# Health check - verify node process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD ps aux | grep "node" | grep -v grep || exit 1
+    CMD node -e "process.exit(0)" || exit 1
 
 # Use dumb-init as entrypoint to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
