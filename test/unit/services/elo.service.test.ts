@@ -1,4 +1,5 @@
-import { EloService } from '../../../src/services/elo.service';
+import { EloService, type RosterData } from '../../../src/services/elo.service';
+import { EloRepository } from '../../../src/data/repositories/elo.repository';
 
 jest.mock('../../../src/data/repositories/elo.repository');
 
@@ -87,6 +88,76 @@ describe('EloService', () => {
       const result = service.calculateRatingChange(1500, 10, 5, 20, 1500);
       const decimalPlaces = result.newRating.toString().split('.')[1]?.length ?? 0;
       expect(decimalPlaces).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('processMatchRatings', () => {
+    let mockRepo: jest.Mocked<EloRepository>;
+
+    beforeEach(() => {
+      mockRepo = new EloRepository() as jest.Mocked<EloRepository>;
+      mockRepo.findRatingsByAccountIds = jest.fn().mockResolvedValue([]);
+      mockRepo.upsertRatings = jest.fn().mockResolvedValue(undefined);
+      service = new EloService(mockRepo);
+    });
+
+    it('computes ratings for all participants and upserts', async () => {
+      mockRepo.findRatingsByAccountIds.mockResolvedValue([
+        { id: '1', platform: 'steam', accountId: 'acc-1', modeKey: 'squad-fpp', rating: 1500, gamesPlayed: 10, lastSeenAt: new Date() },
+      ]);
+
+      const rosters: RosterData[] = [
+        { rank: 1, participantAccountIds: ['acc-1'] },
+        { rank: 2, participantAccountIds: ['acc-2'] },
+      ];
+
+      const results = await service.processMatchRatings(rosters, 'steam', 'squad-fpp');
+
+      expect(results.size).toBe(2);
+      // 1st place should gain rating
+      expect(results.get('acc-1')!.change).toBeGreaterThan(0);
+      // 2nd of 2 (last) should lose rating
+      expect(results.get('acc-2')!.change).toBeLessThan(0);
+      expect(mockRepo.upsertRatings).toHaveBeenCalledTimes(1);
+      expect(mockRepo.upsertRatings).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ accountId: 'acc-1', gamesPlayed: 11 }),
+          expect.objectContaining({ accountId: 'acc-2', gamesPlayed: 1 }),
+        ])
+      );
+    });
+
+    it('defaults unknown players to 1500 rating', async () => {
+      mockRepo.findRatingsByAccountIds.mockResolvedValue([]);
+
+      const rosters: RosterData[] = [
+        { rank: 1, participantAccountIds: ['new-player'] },
+        { rank: 2, participantAccountIds: ['other-new'] },
+      ];
+
+      const results = await service.processMatchRatings(rosters, 'steam', 'squad-fpp');
+
+      // Both start at 1500, K=40 for new players
+      // Winner: 1500 + 40*(1.0-0.5) = 1520
+      expect(results.get('new-player')!.rating).toBeCloseTo(1520, 0);
+      // Loser: 1500 + 40*(0.0-0.5) = 1480
+      expect(results.get('other-new')!.rating).toBeCloseTo(1480, 0);
+    });
+
+    it('handles squad rosters (multiple players per roster)', async () => {
+      mockRepo.findRatingsByAccountIds.mockResolvedValue([]);
+
+      const rosters: RosterData[] = [
+        { rank: 1, participantAccountIds: ['p1', 'p2'] },
+        { rank: 2, participantAccountIds: ['p3', 'p4'] },
+      ];
+
+      const results = await service.processMatchRatings(rosters, 'steam', 'squad-fpp');
+
+      expect(results.size).toBe(4);
+      // Both p1 and p2 should get same change (same roster rank)
+      expect(results.get('p1')!.change).toBe(results.get('p2')!.change);
+      expect(results.get('p3')!.change).toBe(results.get('p4')!.change);
     });
   });
 });
