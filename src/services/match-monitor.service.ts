@@ -14,6 +14,7 @@ import type {
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
+import { EloService, type RosterData } from './elo.service';
 import type { PubgStorageService } from './pubg-storage.service';
 
 export class MatchMonitorService {
@@ -23,6 +24,7 @@ export class MatchMonitorService {
   private isRunning = false;
   private shouldStop = false;
   private readonly pubgClient: PubgClient;
+  private readonly eloService: EloService;
 
   constructor(
     private readonly storage: PubgStorageService,
@@ -38,6 +40,8 @@ export class MatchMonitorService {
       apiKey,
       shard: shard,
     });
+
+    this.eloService = new EloService();
 
     monitor(
       `Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`
@@ -231,6 +235,15 @@ export class MatchMonitorService {
 
         const summary = await this.createMatchSummary(match);
         if (summary) {
+          try {
+            const eloRatings = await this.processMatchElo(match.matchId, summary.gameMode);
+            if (eloRatings) {
+              summary.eloRatings = eloRatings;
+            }
+          } catch (eloErr) {
+            warn(`Failed to process Elo ratings for match ${match.matchId}: ${eloErr}`);
+          }
+
           await this.discordBot.sendMatchSummary(this.channelId, summary);
           await this.storage.addProcessedMatch(match.matchId);
           processedCount++;
@@ -259,6 +272,36 @@ export class MatchMonitorService {
     } else {
       debug(`Match cycle completed: no new matches (${cycleTime}ms)`);
     }
+  }
+
+  private async processMatchElo(
+    matchId: string,
+    gameMode: string
+  ): Promise<Map<string, { rating: number; change: number }> | null> {
+    const matchData = await this.storage.getMatch(matchId);
+    if (!matchData || !matchData.rosters || !matchData.participants) {
+      warn(`No stored match data found for Elo processing: ${matchId}`);
+      return null;
+    }
+
+    const modeKey = gameMode;
+    const platform = matchData.shardId;
+
+    const rosters: RosterData[] = matchData.rosters.map((roster) => ({
+      rank: roster.rank,
+      participantAccountIds: matchData.participants
+        .filter((p) => p.rosterId === roster.id)
+        .map((p) => p.pubgId)
+        .filter((id) => id !== ''),
+    }));
+
+    const validRosters = rosters.filter((r) => r.participantAccountIds.length > 0);
+    if (validRosters.length === 0) {
+      warn(`No valid rosters found for Elo processing: ${matchId}`);
+      return null;
+    }
+
+    return this.eloService.processMatchRatings(validRosters, platform, modeKey);
   }
 
   private async createMatchSummary(
