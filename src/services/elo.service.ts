@@ -122,6 +122,42 @@ export class EloService {
     return results;
   }
 
+  public async bootstrapRatingsFromDB(
+    matches: Array<{
+      matchId: string;
+      gameMode: string;
+      shardId: string;
+      rosters: Array<{
+        id: string;
+        rank: number;
+      }>;
+      participants: Array<{
+        pubgId: string;
+        rosterId: string;
+      }>;
+    }>
+  ): Promise<number> {
+    let processed = 0;
+
+    for (const match of matches) {
+      const rosters: RosterData[] = match.rosters.map((roster) => ({
+        rank: roster.rank,
+        participantAccountIds: match.participants
+          .filter((p) => p.rosterId === roster.id)
+          .map((p) => p.pubgId)
+          .filter((id) => id !== ''),
+      }));
+
+      const validRosters = rosters.filter((r) => r.participantAccountIds.length > 0);
+      if (validRosters.length === 0) continue;
+
+      await this.processMatchRatings(validRosters, match.shardId, match.gameMode);
+      processed++;
+    }
+
+    return processed;
+  }
+
   public async getPlayerRating(
     accountId: string,
     platform: string,

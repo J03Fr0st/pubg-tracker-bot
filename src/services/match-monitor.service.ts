@@ -52,6 +52,20 @@ export class MatchMonitorService {
    * Starts the match monitoring process
    * @returns A promise that resolves when monitoring stops
    */
+  public async bootstrapEloRatings(): Promise<void> {
+    monitor('Bootstrapping Elo ratings from existing matches...');
+
+    const matches = await this.storage.getAllMatchesWithRosters();
+    if (!matches || matches.length === 0) {
+      monitor('No existing matches found for Elo bootstrap');
+      return;
+    }
+
+    monitor(`Found ${matches.length} matches for Elo bootstrap`);
+    const processed = await this.eloService.bootstrapRatingsFromDB(matches);
+    success(`Elo bootstrap complete: processed ${processed} matches`);
+  }
+
   public async startMonitoring(): Promise<void> {
     if (this.isRunning) {
       warn('Match monitoring is already running');

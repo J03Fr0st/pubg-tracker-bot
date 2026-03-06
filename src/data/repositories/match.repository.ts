@@ -93,4 +93,11 @@ export class MatchRepository {
       include: { participants: true, rosters: true },
     });
   }
+
+  public async getAllMatchesWithRosters() {
+    return prisma.match.findMany({
+      include: { participants: true, rosters: true },
+      orderBy: { playedAt: 'asc' },
+    });
+  }
 }

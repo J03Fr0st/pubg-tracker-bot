@@ -64,6 +64,10 @@ export class PubgStorageService {
     return this.matchRepository.findMatch(matchId);
   }
 
+  public async getAllMatchesWithRosters() {
+    return this.matchRepository.getAllMatchesWithRosters();
+  }
+
   //#endregion
 
   //#region Elo
