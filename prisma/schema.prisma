@@ -111,3 +111,17 @@ model MatchTelemetry {
 
   @@map("match_telemetry")
 }
+
+model PlayerRating {
+  id          String   @id @default(uuid())
+  platform    String
+  accountId   String
+  modeKey     String
+  rating      Float    @default(1500)
+  gamesPlayed Int      @default(0)
+  lastSeenAt  DateTime @default(now())
+
+  @@unique([platform, accountId, modeKey])
+  @@index([platform, accountId])
+  @@map("player_ratings")
+}
