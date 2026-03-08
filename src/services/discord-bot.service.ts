@@ -33,13 +33,21 @@ import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
+import { PlayerStatsService } from './player-stats.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { TelemetryProcessorService } from './telemetry-processor.service';
+
+interface ParticipantMatchStats {
+  kills: number;
+  damageDealt: number;
+  winPlace: number;
+}
 
 export class DiscordBotService {
   private readonly client: Client;
   private readonly pubgStorageService: PubgStorageService;
   private readonly pubgClient: PubgClient;
+  private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
   private readonly commands = [
     new SlashCommandBuilder()
@@ -97,6 +105,7 @@ export class DiscordBotService {
       apiKey,
       shard: shard as any, // Cast to handle type compatibility
     });
+    this.playerStatsService = new PlayerStatsService(this.pubgClient, shard);
     this.telemetryProcessor = new TelemetryProcessorService();
     this.setupEventHandlers();
   }
@@ -598,7 +607,7 @@ export class DiscordBotService {
 
     if (!summary.telemetryUrl) {
       debug('No telemetry URL available, using basic player embeds');
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId, summary.eloRatings)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
     }
 
     try {
@@ -615,11 +624,56 @@ export class DiscordBotService {
             processingTimeMs: 0,
             totalEventsProcessed: 0,
           };
+
+          // Build participant stats map from DB
+          const matchData = await this.pubgStorageService.getMatch(matchId);
+          const participantStatsMap = new Map<string, ParticipantMatchStats>();
+          if (matchData?.participants) {
+            for (const p of matchData.participants) {
+              participantStatsMap.set(p.pubgId, {
+                kills: p.kills,
+                damageDealt: p.damageDealt,
+                winPlace: p.winPlace,
+              });
+            }
+          }
+
+          // Collect unique accountIds from kill/death events for season stats
+          const relevantAccountIds = new Set<string>();
+          for (const player of players) {
+            const analysis = matchAnalysis.playerAnalyses.get(player.name);
+            if (!analysis) continue;
+            for (const k of analysis.killEvents) {
+              if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
+            }
+            for (const k of analysis.deathEvents) {
+              if (k.killer?.accountId) relevantAccountIds.add(k.killer.accountId);
+            }
+            for (const k of analysis.knockdownEvents) {
+              if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
+            }
+            for (const k of analysis.knockedDownEvents) {
+              if (k.attacker?.accountId) relevantAccountIds.add(k.attacker.accountId);
+            }
+          }
+
+          let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
+          if (relevantAccountIds.size > 0) {
+            try {
+              seasonStats = await this.playerStatsService.getSeasonStats(
+                Array.from(relevantAccountIds),
+                summary.gameMode
+              );
+            } catch (err) {
+              debug(`Failed to fetch season stats: ${err}`);
+            }
+          }
+
           const enhancedPlayerEmbeds = players.map((player) => {
             const analysis = matchAnalysis.playerAnalyses.get(player.name);
             return analysis
-              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, summary.eloRatings)
-              : this.createBasicPlayerEmbed(player, matchColor, matchId, summary.eloRatings);
+              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, participantStatsMap, seasonStats)
+              : this.createBasicPlayerEmbed(player, matchColor, matchId);
           });
           return [mainEmbed, ...enhancedPlayerEmbeds];
         }
@@ -649,12 +703,56 @@ export class DiscordBotService {
         .saveTelemetry(matchId, telemetryData, analysesObj)
         .catch((err) => debug(`Failed to cache telemetry for ${matchId}: ${err}`));
 
+      // Build participant stats map from DB
+      const matchData = await this.pubgStorageService.getMatch(matchId);
+      const participantStatsMap = new Map<string, ParticipantMatchStats>();
+      if (matchData?.participants) {
+        for (const p of matchData.participants) {
+          participantStatsMap.set(p.pubgId, {
+            kills: p.kills,
+            damageDealt: p.damageDealt,
+            winPlace: p.winPlace,
+          });
+        }
+      }
+
+      // Collect unique accountIds from kill/death events for season stats
+      const relevantAccountIds = new Set<string>();
+      for (const player of players) {
+        const analysis = matchAnalysis.playerAnalyses.get(player.name);
+        if (!analysis) continue;
+        for (const k of analysis.killEvents) {
+          if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
+        }
+        for (const k of analysis.deathEvents) {
+          if (k.killer?.accountId) relevantAccountIds.add(k.killer.accountId);
+        }
+        for (const k of analysis.knockdownEvents) {
+          if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
+        }
+        for (const k of analysis.knockedDownEvents) {
+          if (k.attacker?.accountId) relevantAccountIds.add(k.attacker.accountId);
+        }
+      }
+
+      let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
+      if (relevantAccountIds.size > 0) {
+        try {
+          seasonStats = await this.playerStatsService.getSeasonStats(
+            Array.from(relevantAccountIds),
+            summary.gameMode
+          );
+        } catch (err) {
+          debug(`Failed to fetch season stats: ${err}`);
+        }
+      }
+
       // Create enhanced embeds
       const enhancedPlayerEmbeds = players.map((player) => {
         const analysis = matchAnalysis.playerAnalyses.get(player.name);
         return analysis
-          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, summary.eloRatings)
-          : this.createBasicPlayerEmbed(player, matchColor, matchId, summary.eloRatings);
+          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, participantStatsMap, seasonStats)
+          : this.createBasicPlayerEmbed(player, matchColor, matchId);
       });
 
       success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
@@ -662,7 +760,7 @@ export class DiscordBotService {
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId, summary.eloRatings)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
     }
   }
 
@@ -747,40 +845,27 @@ export class DiscordBotService {
     return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
   }
 
-  private formatPlayerTitle(
-    player: DiscordPlayerMatchStats,
-    eloRatings?: Map<string, { rating: number; change: number }>
-  ): string {
-    const baseName = `Player: ${player.name}`;
-    if (!eloRatings || !player.pubgId) return baseName;
-
-    const elo = eloRatings.get(player.pubgId);
-    if (!elo) return baseName;
-
-    const arrow = elo.change >= 0 ? '▲' : '▼';
-    const sign = elo.change >= 0 ? '+' : '';
-    return `${baseName} [${Math.round(elo.rating)} ${arrow}${sign}${Math.round(elo.change)}]`;
+  private formatPlayerTitle(player: DiscordPlayerMatchStats): string {
+    return `Player: ${player.name}`;
   }
 
   private createBasicPlayerEmbeds(
     players: DiscordPlayerMatchStats[],
     matchColor: number,
-    matchId: string,
-    eloRatings?: Map<string, { rating: number; change: number }>
+    matchId: string
   ): EmbedBuilder[] {
-    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId, eloRatings));
+    return players.map((player) => this.createBasicPlayerEmbed(player, matchColor, matchId));
   }
 
   private createBasicPlayerEmbed(
     player: DiscordPlayerMatchStats,
     matchColor: number,
-    matchId: string,
-    eloRatings?: Map<string, { rating: number; change: number }>
+    matchId: string
   ): EmbedBuilder {
     const { stats } = player;
     if (!stats) {
       return new EmbedBuilder()
-        .setTitle(this.formatPlayerTitle(player, eloRatings))
+        .setTitle(this.formatPlayerTitle(player))
         .setDescription('No stats available')
         .setColor(matchColor);
     }
@@ -807,7 +892,7 @@ export class DiscordBotService {
       .join('\n');
 
     return new EmbedBuilder()
-      .setTitle(this.formatPlayerTitle(player, eloRatings))
+      .setTitle(this.formatPlayerTitle(player))
       .setDescription(basicStats)
       .setColor(matchColor);
   }
@@ -829,12 +914,13 @@ export class DiscordBotService {
     analysis: PlayerAnalysis,
     matchColor: number,
     matchId: string,
-    eloRatings?: Map<string, { rating: number; change: number }>
+    participantStats: Map<string, ParticipantMatchStats>,
+    seasonStats?: Map<string, { kd: number; adr: number }>
   ): EmbedBuilder {
-    const statsDescription = this.formatEnhancedStats(player, analysis, matchId, eloRatings);
+    const statsDescription = this.formatEnhancedStats(player, analysis, matchId, participantStats, seasonStats);
 
     return new EmbedBuilder()
-      .setTitle(this.formatPlayerTitle(player, eloRatings))
+      .setTitle(this.formatPlayerTitle(player))
       .setDescription(statsDescription)
       .setColor(matchColor);
   }
@@ -854,7 +940,8 @@ export class DiscordBotService {
     player: DiscordPlayerMatchStats,
     analysis: PlayerAnalysis,
     matchId: string,
-    eloRatings?: Map<string, { rating: number; change: number }>
+    participantStats: Map<string, ParticipantMatchStats>,
+    seasonStats?: Map<string, { kd: number; adr: number }>
   ): string {
     const { stats } = player;
     if (!stats) return 'No stats available';
@@ -870,7 +957,7 @@ export class DiscordBotService {
       this.formatAssists(analysis.calculatedAssists),
 
       // Enhanced timeline using raw telemetry events
-      this.formatEnhancedTimeline(analysis, eloRatings),
+      this.formatEnhancedTimeline(analysis, participantStats, seasonStats),
 
       // Basic info
       `⏰ Survival: ${Math.round(stats.timeSurvived / 60)}min • ${(stats.walkDistance / 1000).toFixed(1)}km`,
@@ -976,7 +1063,8 @@ export class DiscordBotService {
    */
   private formatEnhancedTimeline(
     analysis: PlayerAnalysis,
-    eloRatings?: Map<string, { rating: number; change: number }>
+    participantStats: Map<string, ParticipantMatchStats>,
+    seasonStats?: Map<string, { kd: number; adr: number }>
   ): string {
     // Filter out events without valid timestamps
     const validKills = analysis.killEvents.filter((k) => k._D);
@@ -1017,11 +1105,16 @@ export class DiscordBotService {
 
     if (!priorityEvents.length) return '';
 
-    const formatEloBadge = (accountId?: string): string => {
-      if (!eloRatings || !accountId) return '';
-      const elo = eloRatings.get(accountId);
-      if (!elo) return '';
-      return ` \`${Math.round(elo.rating)}\``;
+    const formatInlineStats = (accountId?: string): string => {
+      if (!accountId) return '';
+      const match = participantStats.get(accountId);
+      if (!match) return '';
+      let str = ` — ${match.kills}K / ${Math.round(match.damageDealt)}dmg / #${match.winPlace}`;
+      const season = seasonStats?.get(accountId);
+      if (season) {
+        str += ` | ${season.kd} K/D, ${season.adr} ADR`;
+      }
+      return str;
     };
 
     const timeline = priorityEvents
@@ -1055,8 +1148,8 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
-          const eloBadge = formatEloBadge(kill.victim?.accountId);
-          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${eloBadge} (${weapon}, ${distance}m)`;
+          const statsStr = formatInlineStats(kill.victim?.accountId);
+          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'knockdown') {
           const knockdown = event as LogPlayerMakeGroggy;
@@ -1085,8 +1178,8 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
-          const eloBadge = formatEloBadge(knockdown.victim?.accountId);
-          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${eloBadge} (${weapon}, ${distance}m)`;
+          const statsStr = formatInlineStats(knockdown.victim?.accountId);
+          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'revive') {
           const revive = event as LogPlayerRevive;
@@ -1120,8 +1213,8 @@ export class DiscordBotService {
           }
 
           const safeKillerName = this.sanitizePlayerNameForDiscord(killerName);
-          const eloBadge = formatEloBadge(death.killer?.accountId);
-          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)})${eloBadge} (${weapon}, ${distance}m)`;
+          const statsStr = formatInlineStats(death.killer?.accountId);
+          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)}) (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'knocked') {
           const knocked = event as LogPlayerMakeGroggy;
@@ -1148,8 +1241,8 @@ export class DiscordBotService {
           }
 
           const safeAttackerName = this.sanitizePlayerNameForDiscord(attackerName);
-          const eloBadge = formatEloBadge(knocked.attacker?.accountId);
-          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)})${eloBadge} (${weapon}, ${distance}m)`;
+          const statsStr = formatInlineStats(knocked.attacker?.accountId);
+          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)}) (${weapon}, ${distance}m)${statsStr}`;
         }
         return '';
       })
