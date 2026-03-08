@@ -1130,6 +1130,11 @@ export class DiscordBotService {
 
     if (!priorityEvents.length) return '';
 
+    const formatTeamTag = (teamId?: number): string => {
+      if (teamId == null) return '';
+      return ` [T${teamId}]`;
+    };
+
     const formatInlineStats = (accountId?: string): string => {
       if (!accountId) return '';
       const match = participantStats.get(accountId);
@@ -1173,8 +1178,9 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
+          const teamTag = formatTeamTag(kill.victim?.teamId);
           const statsStr = formatInlineStats(kill.victim?.accountId);
-          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)${statsStr}`;
+          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${teamTag} (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'knockdown') {
           const knockdown = event as LogPlayerMakeGroggy;
@@ -1203,8 +1209,9 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
+          const teamTag = formatTeamTag(knockdown.victim?.teamId);
           const statsStr = formatInlineStats(knockdown.victim?.accountId);
-          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)${statsStr}`;
+          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${teamTag} (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'revive') {
           const revive = event as LogPlayerRevive;
@@ -1238,8 +1245,9 @@ export class DiscordBotService {
           }
 
           const safeKillerName = this.sanitizePlayerNameForDiscord(killerName);
+          const teamTag = formatTeamTag(death.killer?.teamId);
           const statsStr = formatInlineStats(death.killer?.accountId);
-          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)}) (${weapon}, ${distance}m)${statsStr}`;
+          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)})${teamTag} (${weapon}, ${distance}m)${statsStr}`;
         }
         if (type === 'knocked') {
           const knocked = event as LogPlayerMakeGroggy;
@@ -1266,8 +1274,9 @@ export class DiscordBotService {
           }
 
           const safeAttackerName = this.sanitizePlayerNameForDiscord(attackerName);
+          const teamTag = formatTeamTag(knocked.attacker?.teamId);
           const statsStr = formatInlineStats(knocked.attacker?.accountId);
-          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)}) (${weapon}, ${distance}m)${statsStr}`;
+          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)})${teamTag} (${weapon}, ${distance}m)${statsStr}`;
         }
         return '';
       })
