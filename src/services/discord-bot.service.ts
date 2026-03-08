@@ -831,7 +831,7 @@ export class DiscordBotService {
     matchId: string,
     eloRatings?: Map<string, { rating: number; change: number }>
   ): EmbedBuilder {
-    const statsDescription = this.formatEnhancedStats(player, analysis, matchId);
+    const statsDescription = this.formatEnhancedStats(player, analysis, matchId, eloRatings);
 
     return new EmbedBuilder()
       .setTitle(this.formatPlayerTitle(player, eloRatings))
@@ -853,7 +853,8 @@ export class DiscordBotService {
   private formatEnhancedStats(
     player: DiscordPlayerMatchStats,
     analysis: PlayerAnalysis,
-    matchId: string
+    matchId: string,
+    eloRatings?: Map<string, { rating: number; change: number }>
   ): string {
     const { stats } = player;
     if (!stats) return 'No stats available';
@@ -869,7 +870,7 @@ export class DiscordBotService {
       this.formatAssists(analysis.calculatedAssists),
 
       // Enhanced timeline using raw telemetry events
-      this.formatEnhancedTimeline(analysis),
+      this.formatEnhancedTimeline(analysis, eloRatings),
 
       // Basic info
       `⏰ Survival: ${Math.round(stats.timeSurvived / 60)}min • ${(stats.walkDistance / 1000).toFixed(1)}km`,
@@ -973,7 +974,10 @@ export class DiscordBotService {
    * @param analysis - Player telemetry analysis containing raw event data
    * @returns Formatted timeline string showing up to 10 most recent events
    */
-  private formatEnhancedTimeline(analysis: PlayerAnalysis): string {
+  private formatEnhancedTimeline(
+    analysis: PlayerAnalysis,
+    eloRatings?: Map<string, { rating: number; change: number }>
+  ): string {
     // Filter out events without valid timestamps
     const validKills = analysis.killEvents.filter((k) => k._D);
     const validKnockdowns = analysis.knockdownEvents.filter((k) => k._D);
@@ -1013,6 +1017,13 @@ export class DiscordBotService {
 
     if (!priorityEvents.length) return '';
 
+    const formatEloBadge = (accountId?: string): string => {
+      if (!eloRatings || !accountId) return '';
+      const elo = eloRatings.get(accountId);
+      if (!elo) return '';
+      return ` \`${Math.round(elo.rating)}\``;
+    };
+
     const timeline = priorityEvents
       .map(({ type, event }) => {
         const matchTime = this.formatMatchTime(event._D!, analysis.matchStartTime);
@@ -1044,7 +1055,8 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
-          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)`;
+          const eloBadge = formatEloBadge(kill.victim?.accountId);
+          return `\`${matchTime}\` ⚔️ Killed [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${eloBadge} (${weapon}, ${distance}m)`;
         }
         if (type === 'knockdown') {
           const knockdown = event as LogPlayerMakeGroggy;
@@ -1073,7 +1085,8 @@ export class DiscordBotService {
           }
 
           const safeVictimName = this.sanitizePlayerNameForDiscord(victimName);
-          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)}) (${weapon}, ${distance}m)`;
+          const eloBadge = formatEloBadge(knockdown.victim?.accountId);
+          return `\`${matchTime}\` 🔻 Knocked [${safeVictimName}](https://pubg.op.gg/user/${encodeURIComponent(victimName)})${eloBadge} (${weapon}, ${distance}m)`;
         }
         if (type === 'revive') {
           const revive = event as LogPlayerRevive;
@@ -1107,7 +1120,8 @@ export class DiscordBotService {
           }
 
           const safeKillerName = this.sanitizePlayerNameForDiscord(killerName);
-          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)}) (${weapon}, ${distance}m)`;
+          const eloBadge = formatEloBadge(death.killer?.accountId);
+          return `\`${matchTime}\` ☠️ Killed by [${safeKillerName}](https://pubg.op.gg/user/${encodeURIComponent(killerName)})${eloBadge} (${weapon}, ${distance}m)`;
         }
         if (type === 'knocked') {
           const knocked = event as LogPlayerMakeGroggy;
@@ -1134,7 +1148,8 @@ export class DiscordBotService {
           }
 
           const safeAttackerName = this.sanitizePlayerNameForDiscord(attackerName);
-          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)}) (${weapon}, ${distance}m)`;
+          const eloBadge = formatEloBadge(knocked.attacker?.accountId);
+          return `\`${matchTime}\` 🔻 Knocked by [${safeAttackerName}](https://pubg.op.gg/user/${encodeURIComponent(attackerName)})${eloBadge} (${weapon}, ${distance}m)`;
         }
         return '';
       })

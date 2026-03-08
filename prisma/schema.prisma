@@ -112,16 +112,19 @@ model MatchTelemetry {
   @@map("match_telemetry")
 }
 
-model PlayerRating {
-  id          String   @id @default(uuid())
-  platform    String
-  accountId   String
-  modeKey     String
-  rating      Float    @default(1500)
-  gamesPlayed Int      @default(0)
-  lastSeenAt  DateTime @default(now())
+model PlayerSeasonCache {
+  id        String   @id @default(uuid())
+  platform  String
+  accountId String
+  seasonId  String
+  gameMode  String
+  kd        Float
+  adr       Float
+  wins      Int      @default(0)
+  games     Int      @default(0)
+  cachedAt  DateTime @default(now())
 
-  @@unique([platform, accountId, modeKey])
+  @@unique([platform, accountId, seasonId, gameMode])
   @@index([platform, accountId])
-  @@map("player_ratings")
+  @@map("player_season_cache")
 }
