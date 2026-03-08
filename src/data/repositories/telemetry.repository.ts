@@ -21,9 +21,7 @@ export class TelemetryRepository {
     });
   }
 
-  public async getCachedAnalyses(
-    matchId: string
-  ): Promise<Record<string, unknown> | null> {
+  public async getCachedAnalyses(matchId: string): Promise<Record<string, unknown> | null> {
     const row = await prisma.matchTelemetry.findUnique({
       where: { matchId },
       select: { playerAnalyses: true },

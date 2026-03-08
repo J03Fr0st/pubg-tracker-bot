@@ -18,11 +18,7 @@ export class PlayerStatsService {
   private readonly platform: string;
   private currentSeasonId: string | null = null;
 
-  constructor(
-    pubgClient: PubgClient,
-    platform: string,
-    repository?: SeasonCacheRepository
-  ) {
+  constructor(pubgClient: PubgClient, platform: string, repository?: SeasonCacheRepository) {
     this.pubgClient = pubgClient;
     this.platform = platform;
     this.repository = repository ?? new SeasonCacheRepository();
@@ -110,9 +106,9 @@ export class PlayerStatsService {
 
     // Cache results
     if (upserts.length > 0) {
-      this.repository.upsertStats(upserts).catch((err) =>
-        warn(`Failed to cache season stats: ${err}`)
-      );
+      this.repository
+        .upsertStats(upserts)
+        .catch((err) => warn(`Failed to cache season stats: ${err}`));
     }
 
     return results;

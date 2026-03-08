@@ -66,19 +66,21 @@ describe('PlayerStatsService', () => {
       mockRepo.findByAccountIds.mockResolvedValue([staleCache]);
 
       mockPubgClient.players.getPlayerSeasonStats.mockResolvedValue({
-        data: [{
-          attributes: {
-            gameModeStats: {
-              'squad-fpp': {
-                kills: 100,
-                losses: 40,
-                roundsPlayed: 50,
-                damageDealt: 15000,
-                wins: 10,
+        data: [
+          {
+            attributes: {
+              gameModeStats: {
+                'squad-fpp': {
+                  kills: 100,
+                  losses: 40,
+                  roundsPlayed: 50,
+                  damageDealt: 15000,
+                  wins: 10,
+                },
               },
             },
           },
-        }],
+        ],
       });
 
       const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');
@@ -92,19 +94,21 @@ describe('PlayerStatsService', () => {
       mockRepo.findByAccountIds.mockResolvedValue([]);
 
       mockPubgClient.players.getPlayerSeasonStats.mockResolvedValue({
-        data: [{
-          attributes: {
-            gameModeStats: {
-              'squad-fpp': {
-                kills: 50,
-                losses: 20,
-                roundsPlayed: 25,
-                damageDealt: 5000,
-                wins: 5,
+        data: [
+          {
+            attributes: {
+              gameModeStats: {
+                'squad-fpp': {
+                  kills: 50,
+                  losses: 20,
+                  roundsPlayed: 25,
+                  damageDealt: 5000,
+                  wins: 5,
+                },
               },
             },
           },
-        }],
+        ],
       });
 
       const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');

@@ -24,7 +24,12 @@ import {
   SlashCommandBuilder,
   type TextChannel,
 } from 'discord.js';
-import type { AssistInfo, KillChain, MatchAnalysis, PlayerAnalysis } from '../types/analytics-results.types';
+import type {
+  AssistInfo,
+  KillChain,
+  MatchAnalysis,
+  PlayerAnalysis,
+} from '../types/analytics-results.types';
 import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
@@ -672,7 +677,14 @@ export class DiscordBotService {
           const enhancedPlayerEmbeds = players.map((player) => {
             const analysis = matchAnalysis.playerAnalyses.get(player.name);
             return analysis
-              ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, participantStatsMap, seasonStats)
+              ? this.createEnhancedPlayerEmbed(
+                  player,
+                  analysis,
+                  matchColor,
+                  matchId,
+                  participantStatsMap,
+                  seasonStats
+                )
               : this.createBasicPlayerEmbed(player, matchColor, matchId);
           });
           return [mainEmbed, ...enhancedPlayerEmbeds];
@@ -751,7 +763,14 @@ export class DiscordBotService {
       const enhancedPlayerEmbeds = players.map((player) => {
         const analysis = matchAnalysis.playerAnalyses.get(player.name);
         return analysis
-          ? this.createEnhancedPlayerEmbed(player, analysis, matchColor, matchId, participantStatsMap, seasonStats)
+          ? this.createEnhancedPlayerEmbed(
+              player,
+              analysis,
+              matchColor,
+              matchId,
+              participantStatsMap,
+              seasonStats
+            )
           : this.createBasicPlayerEmbed(player, matchColor, matchId);
       });
 
@@ -917,7 +936,13 @@ export class DiscordBotService {
     participantStats: Map<string, ParticipantMatchStats>,
     seasonStats?: Map<string, { kd: number; adr: number }>
   ): EmbedBuilder {
-    const statsDescription = this.formatEnhancedStats(player, analysis, matchId, participantStats, seasonStats);
+    const statsDescription = this.formatEnhancedStats(
+      player,
+      analysis,
+      matchId,
+      participantStats,
+      seasonStats
+    );
 
     return new EmbedBuilder()
       .setTitle(this.formatPlayerTitle(player))

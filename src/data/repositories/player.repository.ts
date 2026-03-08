@@ -8,7 +8,9 @@ export class PlayerRepository {
       update: {
         name: playerData.attributes.name,
         shardId: playerData.attributes.shardId,
-        updatedAt: playerData.attributes.updatedAt ? new Date(playerData.attributes.updatedAt) : new Date(),
+        updatedAt: playerData.attributes.updatedAt
+          ? new Date(playerData.attributes.updatedAt)
+          : new Date(),
         patchVersion: playerData.attributes.patchVersion,
         titleId: playerData.attributes.titleId,
       },
@@ -16,8 +18,12 @@ export class PlayerRepository {
         pubgId: playerData.id,
         name: playerData.attributes.name,
         shardId: playerData.attributes.shardId,
-        createdAt: playerData.attributes.createdAt ? new Date(playerData.attributes.createdAt) : new Date(),
-        updatedAt: playerData.attributes.updatedAt ? new Date(playerData.attributes.updatedAt) : new Date(),
+        createdAt: playerData.attributes.createdAt
+          ? new Date(playerData.attributes.createdAt)
+          : new Date(),
+        updatedAt: playerData.attributes.updatedAt
+          ? new Date(playerData.attributes.updatedAt)
+          : new Date(),
         patchVersion: playerData.attributes.patchVersion,
         titleId: playerData.attributes.titleId,
       },

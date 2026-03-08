@@ -35,7 +35,10 @@ describe('PlayerRepository', () => {
       relationships: { matches: { data: [{ id: 'm1' }, { id: 'm2' }] } },
     } as any;
 
-    (mockPrisma.player.upsert as jest.Mock).mockResolvedValue({ pubgId: 'pubg-123', name: 'TestPlayer' });
+    (mockPrisma.player.upsert as jest.Mock).mockResolvedValue({
+      pubgId: 'pubg-123',
+      name: 'TestPlayer',
+    });
 
     const result = await repo.savePlayer(playerData);
 

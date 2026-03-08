@@ -7,11 +7,13 @@ jest.mock('../../../src/data/prisma.client', () => ({
       findMany: jest.fn(),
       upsert: jest.fn(),
     },
-    $transaction: jest.fn((fn: any) => fn({
-      playerSeasonCache: {
-        upsert: jest.fn(),
-      },
-    })),
+    $transaction: jest.fn((fn: any) =>
+      fn({
+        playerSeasonCache: {
+          upsert: jest.fn(),
+        },
+      })
+    ),
   },
 }));
 
