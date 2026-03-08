@@ -3,7 +3,6 @@ import type { Player } from '../generated/prisma/client';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import { MatchRepository } from '../data/repositories/match.repository';
-import { EloRepository } from '../data/repositories/elo.repository';
 import { TelemetryRepository } from '../data/repositories/telemetry.repository';
 
 export class PubgStorageService {
@@ -11,7 +10,6 @@ export class PubgStorageService {
   private processedMatchRepository = new ProcessedMatchRepository();
   private matchRepository = new MatchRepository();
   private telemetryRepository = new TelemetryRepository();
-  private eloRepository = new EloRepository();
 
   //#region Player
   public async addPlayer(playerData: PlayerData): Promise<Player> {
@@ -66,14 +64,6 @@ export class PubgStorageService {
 
   public async getAllMatchesWithRosters() {
     return this.matchRepository.getAllMatchesWithRosters();
-  }
-
-  //#endregion
-
-  //#region Elo
-
-  public async getPlayerRatings(accountIds: string[], platform: string, modeKey: string) {
-    return this.eloRepository.findRatingsByAccountIds(accountIds, platform, modeKey);
   }
 
   //#endregion

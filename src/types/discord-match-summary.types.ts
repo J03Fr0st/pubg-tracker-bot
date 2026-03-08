@@ -35,5 +35,4 @@ export interface DiscordMatchGroupSummary {
   players: DiscordPlayerMatchStats[];
   teamRank?: number;
   telemetryUrl?: string;
-  eloRatings?: Map<string, { rating: number; change: number }>;
 }

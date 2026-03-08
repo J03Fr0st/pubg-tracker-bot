@@ -39,9 +39,6 @@ async function main(): Promise<void> {
       appConfig.pubg.shard as Shard
     );
 
-    // Bootstrap Elo ratings from existing matches
-    await matchMonitor.bootstrapEloRatings();
-
     // Handle graceful shutdown
     setupGracefulShutdown(matchMonitor);
 
