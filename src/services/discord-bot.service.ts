@@ -48,6 +48,9 @@ interface ParticipantMatchStats {
   winPlace: number;
 }
 
+const DISCORD_MISSING_ACCESS = 50001;
+const DISCORD_MISSING_PERMISSIONS = 50013;
+
 export class DiscordBotService {
   private readonly client: Client;
   private readonly pubgStorageService: PubgStorageService;
@@ -135,10 +138,7 @@ export class DiscordBotService {
     channelId: string,
     summary: DiscordMatchGroupSummary
   ): Promise<void> {
-    const channel = (await this.client.channels.fetch(channelId)) as TextChannel;
-    if (!channel) {
-      throw new Error(`Could not find channel with ID ${channelId}`);
-    }
+    const channel = await this.fetchTextChannel(channelId);
 
     // Create basic match summary embeds
     const basicEmbeds = await this.createMatchSummaryEmbeds(summary);
@@ -149,8 +149,44 @@ export class DiscordBotService {
 
     // Send basic match summary only
     for (const embed of basicEmbeds) {
-      await channel.send({ embeds: [embed] });
+      try {
+        await channel.send({ embeds: [embed] });
+      } catch (err) {
+        this.throwDiscordChannelAccessError(channelId, err);
+      }
     }
+  }
+
+  private async fetchTextChannel(channelId: string): Promise<TextChannel> {
+    try {
+      const channel = (await this.client.channels.fetch(channelId)) as TextChannel | null;
+      if (!channel) {
+        throw new Error(`Could not find channel with ID ${channelId}`);
+      }
+
+      return channel;
+    } catch (err) {
+      this.throwDiscordChannelAccessError(channelId, err);
+    }
+  }
+
+  private throwDiscordChannelAccessError(channelId: string, err: unknown): never {
+    if (this.isDiscordAccessError(err)) {
+      throw new Error(
+        `Discord bot cannot access channel ${channelId}. Check DISCORD_CHANNEL_ID and grant the bot View Channel and Send Messages permissions.`
+      );
+    }
+
+    throw err;
+  }
+
+  private isDiscordAccessError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') {
+      return false;
+    }
+
+    const code = (err as { code?: unknown }).code;
+    return code === DISCORD_MISSING_ACCESS || code === DISCORD_MISSING_PERMISSIONS;
   }
 
   private setupEventHandlers(): void {

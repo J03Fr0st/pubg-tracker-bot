@@ -105,6 +105,32 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     // Verify that only the basic match summary was sent
     expect(mockSend.mock.calls.length).toBeGreaterThan(0);
   });
+
+  it('should explain when Discord cannot access the configured channel', async () => {
+    const mockMatchSummary: DiscordMatchGroupSummary = {
+      matchId: 'missing-access-test-match',
+      mapName: 'Desert_Main',
+      gameMode: 'squad',
+      playedAt: '2024-01-01T15:30:00.000Z',
+      teamRank: 25,
+      telemetryUrl: undefined,
+      players: [{ name: 'TestPlayer', stats: undefined }],
+    };
+
+    const discordMissingAccessError = Object.assign(new Error('Missing Access'), {
+      code: 50001,
+    });
+    const mockChannel = {
+      send: jest.fn().mockRejectedValue(discordMissingAccessError),
+    };
+    (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
+
+    await expect(
+      discordBotService.sendMatchSummary('inaccessible-channel-id', mockMatchSummary)
+    ).rejects.toThrow(
+      'Discord bot cannot access channel inaccessible-channel-id. Check DISCORD_CHANNEL_ID and grant the bot View Channel and Send Messages permissions.'
+    );
+  });
 });
 
 // Helper function to prevent the jest process from hanging
