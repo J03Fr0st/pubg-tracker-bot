@@ -14,15 +14,17 @@ import {
   type Shard,
 } from '@j03fr0st/pubg-ts';
 import {
+  type Channel,
   type ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  PermissionFlagsBits,
   REST,
   Routes,
   SlashCommandBuilder,
-  type TextChannel,
+  type TextBasedChannel,
 } from 'discord.js';
 import type {
   AssistInfo,
@@ -47,6 +49,10 @@ interface ParticipantMatchStats {
   damageDealt: number;
   winPlace: number;
 }
+
+type SendableTextChannel = TextBasedChannel & {
+  send(options: { embeds: EmbedBuilder[] }): Promise<unknown>;
+};
 
 const DISCORD_MISSING_ACCESS = 50001;
 const DISCORD_MISSING_PERMISSIONS = 50013;
@@ -152,29 +158,48 @@ export class DiscordBotService {
       try {
         await channel.send({ embeds: [embed] });
       } catch (err) {
-        this.throwDiscordChannelAccessError(channelId, err);
+        this.throwDiscordChannelAccessError(channelId, err, channel);
       }
     }
   }
 
-  private async fetchTextChannel(channelId: string): Promise<TextChannel> {
+  private async fetchTextChannel(channelId: string): Promise<SendableTextChannel> {
     try {
-      const channel = (await this.client.channels.fetch(channelId)) as TextChannel | null;
+      const channel = await this.client.channels.fetch(channelId);
       if (!channel) {
         throw new Error(`Could not find channel with ID ${channelId}`);
       }
 
-      return channel;
+      if (!channel.isTextBased()) {
+        throw new Error(
+          `Configured Discord channel ${channelId} is not a text-based channel. Resolved type=${channel.type}.`
+        );
+      }
+
+      if (typeof (channel as { send?: unknown }).send !== 'function') {
+        throw new Error(
+          `Configured Discord channel ${channelId} is text-based but does not support sending messages. Resolved type=${channel.type}.`
+        );
+      }
+
+      return channel as SendableTextChannel;
     } catch (err) {
       this.throwDiscordChannelAccessError(channelId, err);
     }
   }
 
-  private throwDiscordChannelAccessError(channelId: string, err: unknown): never {
+  private throwDiscordChannelAccessError(
+    channelId: string,
+    err: unknown,
+    channel?: Channel | TextBasedChannel | SendableTextChannel
+  ): never {
     if (this.isDiscordAccessError(err)) {
-      throw new Error(
-        `Discord bot cannot access channel ${channelId}. Check DISCORD_CHANNEL_ID and grant the bot View Channel and Send Messages permissions.`
-      );
+      throw new Error(`Discord bot cannot access channel ${channelId}. ${[
+        this.formatDiscordError(err),
+        this.formatDiscordChannelDiagnostics(channel),
+      ]
+        .filter(Boolean)
+        .join(' ')}`);
     }
 
     throw err;
@@ -187,6 +212,73 @@ export class DiscordBotService {
 
     const code = (err as { code?: unknown }).code;
     return code === DISCORD_MISSING_ACCESS || code === DISCORD_MISSING_PERMISSIONS;
+  }
+
+  private formatDiscordError(err: unknown): string {
+    const discordError = err as { code?: unknown; message?: unknown };
+    const code = discordError.code ? `${discordError.code}` : 'unknown';
+    const message =
+      typeof discordError.message === 'string' && discordError.message
+        ? discordError.message
+        : 'Unknown Discord error';
+
+    return `Discord error ${code} ${message}.`;
+  }
+
+  private formatDiscordChannelDiagnostics(channel?: Channel | TextBasedChannel): string {
+    const botUser = this.client.user;
+    const channelLike = channel as
+      | (TextBasedChannel & {
+          id?: string;
+          name?: string;
+          guild?: { id?: string; name?: string };
+          permissionsFor?: (user: unknown) => { has: (permission: bigint) => boolean } | null;
+          type?: unknown;
+        })
+      | undefined;
+
+    const bot = botUser
+      ? `Bot=${botUser.tag ?? 'unknown'} (${botUser.id}).`
+      : 'Bot=not logged in.';
+    const channelInfo = channelLike
+      ? `Channel=#${channelLike.name ?? 'unknown'} (${channelLike.id ?? 'unknown'}, type=${channelLike.type ?? 'unknown'}).`
+      : 'Channel=unresolved.';
+    const guildInfo = channelLike?.guild
+      ? `Guild=${channelLike.guild.name ?? 'unknown'} (${channelLike.guild.id ?? 'unknown'}).`
+      : 'Guild=unknown.';
+
+    return `${bot} ${channelInfo} ${guildInfo} ${this.formatBotChannelPermissions(channelLike)}`;
+  }
+
+  private formatBotChannelPermissions(
+    channel?: TextBasedChannel & {
+      permissionsFor?: (user: unknown) => { has: (permission: bigint) => boolean } | null;
+    }
+  ): string {
+    if (!channel?.permissionsFor || !this.client.user) {
+      return 'Permissions: unknown.';
+    }
+
+    try {
+      const permissions = channel.permissionsFor(this.client.user);
+      if (!permissions) {
+        return 'Permissions: unknown.';
+      }
+
+      const checks = [
+        ['ViewChannel', PermissionFlagsBits.ViewChannel],
+        ['SendMessages', PermissionFlagsBits.SendMessages],
+        ['SendMessagesInThreads', PermissionFlagsBits.SendMessagesInThreads],
+        ['EmbedLinks', PermissionFlagsBits.EmbedLinks],
+        ['ReadMessageHistory', PermissionFlagsBits.ReadMessageHistory],
+      ] as const;
+
+      return `Permissions: ${checks
+        .map(([name, permission]) => `${name}=${permissions.has(permission) ? 'yes' : 'no'}`)
+        .join(', ')}.`;
+    } catch (err) {
+      return `Permissions: unavailable (${(err as Error).message}).`;
+    }
   }
 
   private setupEventHandlers(): void {

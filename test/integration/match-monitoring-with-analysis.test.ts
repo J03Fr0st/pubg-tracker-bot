@@ -38,6 +38,13 @@ jest.mock('discord.js', () => ({
     GuildMessages: 2,
     MessageContent: 4,
   },
+  PermissionFlagsBits: {
+    ViewChannel: BigInt(1),
+    SendMessages: BigInt(2),
+    SendMessagesInThreads: BigInt(4),
+    EmbedLinks: BigInt(8),
+    ReadMessageHistory: BigInt(16),
+  },
   EmbedBuilder: jest.fn(() => ({
     setTitle: jest.fn().mockReturnThis(),
     setDescription: jest.fn().mockReturnThis(),
@@ -90,7 +97,7 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     };
 
     const mockSend = jest.fn().mockResolvedValue(undefined);
-    const mockChannel = { send: mockSend };
+    const mockChannel = { isTextBased: jest.fn().mockReturnValue(true), send: mockSend };
     (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
 
     // Should not throw an error, and should send only the basic match summary
@@ -121,14 +128,28 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
       code: 50001,
     });
     const mockChannel = {
+      id: 'inaccessible-channel-id',
+      name: 'pubg',
+      type: 0,
+      guild: { id: 'guild-123', name: 'PUBG Guild' },
+      isTextBased: jest.fn().mockReturnValue(true),
+      permissionsFor: jest.fn().mockReturnValue({
+        has: jest.fn(
+          (permission: bigint) => permission === BigInt(1) || permission === BigInt(8)
+        ),
+      }),
       send: jest.fn().mockRejectedValue(discordMissingAccessError),
+    };
+    (discordBotService as any).client.user = {
+      id: 'bot-123',
+      tag: 'Tracker#0001',
     };
     (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
 
     await expect(
       discordBotService.sendMatchSummary('inaccessible-channel-id', mockMatchSummary)
     ).rejects.toThrow(
-      'Discord bot cannot access channel inaccessible-channel-id. Check DISCORD_CHANNEL_ID and grant the bot View Channel and Send Messages permissions.'
+      'Discord bot cannot access channel inaccessible-channel-id. Discord error 50001 Missing Access. Bot=Tracker#0001 (bot-123). Channel=#pubg (inaccessible-channel-id, type=0). Guild=PUBG Guild (guild-123). Permissions: ViewChannel=yes, SendMessages=no, SendMessagesInThreads=no, EmbedLinks=yes, ReadMessageHistory=no.'
     );
   });
 });
