@@ -15,6 +15,7 @@ import {
 } from '@j03fr0st/pubg-ts';
 import {
   type Channel,
+  ChannelType,
   type ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
@@ -53,6 +54,14 @@ interface ParticipantMatchStats {
 type SendableTextChannel = TextBasedChannel & {
   send(options: { embeds: EmbedBuilder[] }): Promise<unknown>;
 };
+
+interface ChannelPermissionSnapshot {
+  has(permission: bigint): boolean;
+}
+
+interface ChannelWithPermissionResolver {
+  permissionsFor(user: unknown): ChannelPermissionSnapshot | null;
+}
 
 const DISCORD_MISSING_ACCESS = 50001;
 const DISCORD_MISSING_PERMISSIONS = 50013;
@@ -180,6 +189,12 @@ export class DiscordBotService {
         );
       }
 
+      if (channel.type !== ChannelType.GuildText) {
+        throw new Error(
+          `Configured Discord channel ${channelId} must be a normal guild text channel. Resolved type=${channel.type}.`
+        );
+      }
+
       if (typeof (channel as { send?: unknown }).send !== 'function') {
         throw new Error(
           `Configured Discord channel ${channelId} is text-based but does not support sending messages. Resolved type=${channel.type}.`
@@ -210,7 +225,7 @@ export class DiscordBotService {
   }
 
   private getMissingRequiredChannelPermissions(channel: SendableTextChannel): string[] {
-    const permissions = this.getBotChannelPermissions(channel as { permissionsFor?: unknown });
+    const permissions = this.getBotChannelPermissions(channel);
     if (!permissions) {
       return [];
     }
@@ -288,19 +303,23 @@ export class DiscordBotService {
     return `${bot} ${channelInfo} ${guildInfo} ${this.formatBotChannelPermissions(channelLike)}`;
   }
 
-  private getBotChannelPermissions(channel?: {
-    permissionsFor?: unknown;
-  }): { has: (permission: bigint) => boolean } | null {
-    if (typeof channel?.permissionsFor !== 'function' || !this.client.user) {
+  private getBotChannelPermissions(channel?: unknown): ChannelPermissionSnapshot | null {
+    if (!this.hasPermissionResolver(channel) || !this.client.user) {
       return null;
     }
 
-    return (channel.permissionsFor as (user: unknown) => { has: (permission: bigint) => boolean } | null)(
-      this.client.user
+    return channel.permissionsFor(this.client.user);
+  }
+
+  private hasPermissionResolver(channel: unknown): channel is ChannelWithPermissionResolver {
+    return (
+      !!channel &&
+      typeof channel === 'object' &&
+      typeof (channel as { permissionsFor?: unknown }).permissionsFor === 'function'
     );
   }
 
-  private formatBotChannelPermissions(channel?: { permissionsFor?: unknown }): string {
+  private formatBotChannelPermissions(channel?: unknown): string {
     try {
       const permissions = this.getBotChannelPermissions(channel);
       if (!permissions) {

@@ -38,6 +38,10 @@ jest.mock('discord.js', () => ({
     GuildMessages: 2,
     MessageContent: 4,
   },
+  ChannelType: {
+    GuildText: 0,
+    PublicThread: 11,
+  },
   PermissionFlagsBits: {
     ViewChannel: BigInt(1),
     SendMessages: BigInt(2),
@@ -83,33 +87,25 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     jest.clearAllMocks();
   });
 
-  it('should handle telemetry analysis errors gracefully', async () => {
-    console.log('\n🛡️ Testing Error Handling for Telemetry Analysis\n');
-
+  it('should send a basic match summary when no telemetry is available', async () => {
     const mockMatchSummary: DiscordMatchGroupSummary = {
       matchId: 'error-test-match',
       mapName: 'Desert_Main',
       gameMode: 'squad',
       playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
-      telemetryUrl: 'https://invalid-telemetry-url.com/data.json',
+      telemetryUrl: undefined,
       players: [{ name: 'TestPlayer', stats: undefined }],
     };
 
     const mockSend = jest.fn().mockResolvedValue(undefined);
-    const mockChannel = { isTextBased: jest.fn().mockReturnValue(true), send: mockSend };
+    const mockChannel = { type: 0, isTextBased: jest.fn().mockReturnValue(true), send: mockSend };
     (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
 
-    // Should not throw an error, and should send only the basic match summary
     await expect(
       discordBotService.sendMatchSummary('test-channel-id', mockMatchSummary)
     ).resolves.not.toThrow();
 
-    console.log('✅ Error handled gracefully');
-    console.log('   ✓ Basic match summary still sent');
-    console.log('   ✓ No system crash or hanging');
-
-    // Verify that only the basic match summary was sent
     expect(mockSend.mock.calls.length).toBeGreaterThan(0);
   });
 
@@ -188,6 +184,33 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
       'Discord bot is missing required channel permissions for hidden-channel-id: ViewChannel. Bot=Tracker#0001 (bot-123). Channel=#pubg (hidden-channel-id, type=0). Guild=PUBG Guild (guild-123). Permissions: ViewChannel=no, SendMessages=yes, SendMessagesInThreads=yes, EmbedLinks=yes, ReadMessageHistory=yes.'
     );
     expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('should reject thread channels because monitoring requires a normal text channel', async () => {
+    const mockMatchSummary: DiscordMatchGroupSummary = {
+      matchId: 'thread-channel-test-match',
+      mapName: 'Desert_Main',
+      gameMode: 'squad',
+      playedAt: '2024-01-01T15:30:00.000Z',
+      teamRank: 25,
+      telemetryUrl: undefined,
+      players: [{ name: 'TestPlayer', stats: undefined }],
+    };
+
+    const mockChannel = {
+      id: 'thread-channel-id',
+      name: 'pubg-thread',
+      type: 11,
+      isTextBased: jest.fn().mockReturnValue(true),
+      send: jest.fn(),
+    };
+    (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
+
+    await expect(
+      discordBotService.sendMatchSummary('thread-channel-id', mockMatchSummary)
+    ).rejects.toThrow(
+      'Configured Discord channel thread-channel-id must be a normal guild text channel. Resolved type=11.'
+    );
   });
 });
 
