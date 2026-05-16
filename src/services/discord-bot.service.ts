@@ -163,6 +163,10 @@ export class DiscordBotService {
     }
   }
 
+  public async validateChannelAccess(channelId: string): Promise<void> {
+    await this.fetchTextChannel(channelId);
+  }
+
   private async fetchTextChannel(channelId: string): Promise<SendableTextChannel> {
     try {
       const channel = await this.client.channels.fetch(channelId);
@@ -182,10 +186,44 @@ export class DiscordBotService {
         );
       }
 
-      return channel as SendableTextChannel;
+      const sendableChannel = channel as SendableTextChannel;
+      this.throwIfMissingRequiredChannelPermissions(channelId, sendableChannel);
+
+      return sendableChannel;
     } catch (err) {
       this.throwDiscordChannelAccessError(channelId, err);
     }
+  }
+
+  private throwIfMissingRequiredChannelPermissions(
+    channelId: string,
+    channel: SendableTextChannel
+  ): void {
+    const missingPermissions = this.getMissingRequiredChannelPermissions(channel);
+    if (missingPermissions.length === 0) {
+      return;
+    }
+
+    throw new Error(
+      `Discord bot is missing required channel permissions for ${channelId}: ${missingPermissions.join(', ')}. ${this.formatDiscordChannelDiagnostics(channel)}`
+    );
+  }
+
+  private getMissingRequiredChannelPermissions(channel: SendableTextChannel): string[] {
+    const permissions = this.getBotChannelPermissions(channel as { permissionsFor?: unknown });
+    if (!permissions) {
+      return [];
+    }
+
+    const requiredPermissions = [
+      ['ViewChannel', PermissionFlagsBits.ViewChannel],
+      ['SendMessages', PermissionFlagsBits.SendMessages],
+      ['EmbedLinks', PermissionFlagsBits.EmbedLinks],
+    ] as const;
+
+    return requiredPermissions
+      .filter(([, permission]) => !permissions.has(permission))
+      .map(([name]) => name);
   }
 
   private throwDiscordChannelAccessError(
@@ -228,13 +266,13 @@ export class DiscordBotService {
   private formatDiscordChannelDiagnostics(channel?: Channel | TextBasedChannel): string {
     const botUser = this.client.user;
     const channelLike = channel as
-      | (TextBasedChannel & {
+      | {
           id?: string;
           name?: string;
           guild?: { id?: string; name?: string };
-          permissionsFor?: (user: unknown) => { has: (permission: bigint) => boolean } | null;
+          permissionsFor?: unknown;
           type?: unknown;
-        })
+        }
       | undefined;
 
     const bot = botUser
@@ -250,17 +288,21 @@ export class DiscordBotService {
     return `${bot} ${channelInfo} ${guildInfo} ${this.formatBotChannelPermissions(channelLike)}`;
   }
 
-  private formatBotChannelPermissions(
-    channel?: TextBasedChannel & {
-      permissionsFor?: (user: unknown) => { has: (permission: bigint) => boolean } | null;
-    }
-  ): string {
-    if (!channel?.permissionsFor || !this.client.user) {
-      return 'Permissions: unknown.';
+  private getBotChannelPermissions(channel?: {
+    permissionsFor?: unknown;
+  }): { has: (permission: bigint) => boolean } | null {
+    if (typeof channel?.permissionsFor !== 'function' || !this.client.user) {
+      return null;
     }
 
+    return (channel.permissionsFor as (user: unknown) => { has: (permission: bigint) => boolean } | null)(
+      this.client.user
+    );
+  }
+
+  private formatBotChannelPermissions(channel?: { permissionsFor?: unknown }): string {
     try {
-      const permissions = channel.permissionsFor(this.client.user);
+      const permissions = this.getBotChannelPermissions(channel);
       if (!permissions) {
         return 'Permissions: unknown.';
       }

@@ -55,6 +55,13 @@ export class MatchMonitorService {
       return;
     }
 
+    try {
+      await this.discordBot.validateChannelAccess(this.channelId);
+    } catch (err) {
+      error('Discord channel access validation failed. Match monitoring will not start:', err as Error);
+      return;
+    }
+
     monitor('Match monitoring started');
     this.isRunning = true;
     this.shouldStop = false;

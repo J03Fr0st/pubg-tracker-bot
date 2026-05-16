@@ -149,8 +149,45 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
     await expect(
       discordBotService.sendMatchSummary('inaccessible-channel-id', mockMatchSummary)
     ).rejects.toThrow(
-      'Discord bot cannot access channel inaccessible-channel-id. Discord error 50001 Missing Access. Bot=Tracker#0001 (bot-123). Channel=#pubg (inaccessible-channel-id, type=0). Guild=PUBG Guild (guild-123). Permissions: ViewChannel=yes, SendMessages=no, SendMessagesInThreads=no, EmbedLinks=yes, ReadMessageHistory=no.'
+      'Discord bot is missing required channel permissions for inaccessible-channel-id: SendMessages. Bot=Tracker#0001 (bot-123). Channel=#pubg (inaccessible-channel-id, type=0). Guild=PUBG Guild (guild-123). Permissions: ViewChannel=yes, SendMessages=no, SendMessagesInThreads=no, EmbedLinks=yes, ReadMessageHistory=no.'
     );
+  });
+
+  it('should reject before sending when the bot cannot view the configured channel', async () => {
+    const mockMatchSummary: DiscordMatchGroupSummary = {
+      matchId: 'missing-view-channel-test-match',
+      mapName: 'Desert_Main',
+      gameMode: 'squad',
+      playedAt: '2024-01-01T15:30:00.000Z',
+      teamRank: 25,
+      telemetryUrl: undefined,
+      players: [{ name: 'TestPlayer', stats: undefined }],
+    };
+
+    const mockSend = jest.fn();
+    const mockChannel = {
+      id: 'hidden-channel-id',
+      name: 'pubg',
+      type: 0,
+      guild: { id: 'guild-123', name: 'PUBG Guild' },
+      isTextBased: jest.fn().mockReturnValue(true),
+      permissionsFor: jest.fn().mockReturnValue({
+        has: jest.fn((permission: bigint) => permission !== BigInt(1)),
+      }),
+      send: mockSend,
+    };
+    (discordBotService as any).client.user = {
+      id: 'bot-123',
+      tag: 'Tracker#0001',
+    };
+    (discordBotService as any).client.channels.fetch = jest.fn().mockResolvedValue(mockChannel);
+
+    await expect(
+      discordBotService.sendMatchSummary('hidden-channel-id', mockMatchSummary)
+    ).rejects.toThrow(
+      'Discord bot is missing required channel permissions for hidden-channel-id: ViewChannel. Bot=Tracker#0001 (bot-123). Channel=#pubg (hidden-channel-id, type=0). Guild=PUBG Guild (guild-123). Permissions: ViewChannel=no, SendMessages=yes, SendMessagesInThreads=yes, EmbedLinks=yes, ReadMessageHistory=yes.'
+    );
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });
 
