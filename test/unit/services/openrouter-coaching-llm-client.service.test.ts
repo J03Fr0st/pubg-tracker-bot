@@ -3,7 +3,9 @@ import type { CoachingInsight } from '../../../src/types/coaching.types';
 
 const insight: CoachingInsight = {
   playerName: 'TestPlayer',
-  category: 'fight-reset',
+  category: 'decisive-mistake',
+  kind: 'decisive-mistake',
+  title: 'Decisive mistake',
   timestamp: new Date('2024-01-01T10:18:42.000Z'),
   matchTimeSeconds: 1122,
   severity: 'high',
@@ -11,6 +13,14 @@ const insight: CoachingInsight = {
   evidence: ['Took 83 damage from EnemyOne', 'Died to EnemyOne 6s later'],
   recommendation:
     'Break line of sight, heal, or force a new angle before challenging the same player again.',
+  betterPlay: ['break line of sight', 'heal before re-engaging'],
+  claims: [
+    {
+      text: 'You re-peeked EnemyOne 6s after taking 83 damage and died for it.',
+      confidence: 'high',
+      evidence: ['Took 83 damage from EnemyOne'],
+    },
+  ],
 };
 
 describe('OpenRouterCoachingLlmClient', () => {
@@ -65,7 +75,9 @@ describe('OpenRouterCoachingLlmClient', () => {
     );
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe('anthropic/claude-sonnet-4');
-    expect(body.messages[0].content).toContain('Do not invent facts');
+    expect(body.messages[0].content).toContain('strict and blunt');
+    expect(body.messages[1].content).toContain('strict_blunt');
+    expect(body.messages[1].content).toContain('EnemyOne');
     expect(body.messages[1].content).toContain('Took 83 damage from EnemyOne');
     expect(result.sections[0].playerName).toBe('TestPlayer');
   });

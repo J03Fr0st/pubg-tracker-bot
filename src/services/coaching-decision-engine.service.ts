@@ -1,0 +1,165 @@
+import type {
+  CoachingInsight,
+  CoachingRating,
+  FightContext,
+  FightContextClaim,
+} from '../types/coaching.types';
+
+const HEAVY_DAMAGE_THRESHOLD = 60;
+const PATTERN_MIN_COUNT = 2;
+const MAX_INSIGHTS = 2;
+
+export class CoachingDecisionEngineService {
+  public createInsights(contexts: FightContext[]): CoachingInsight[] {
+    const decisive = this.createDecisiveInsight(contexts);
+    const pattern = this.createPatternInsight(contexts);
+    return [decisive, pattern]
+      .filter((insight): insight is CoachingInsight => Boolean(insight))
+      .slice(0, MAX_INSIGHTS);
+  }
+
+  private createDecisiveInsight(contexts: FightContext[]): CoachingInsight | null {
+    const ranked = contexts
+      .map((context) => ({ context, score: this.scoreContext(context) }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score);
+
+    const selected = ranked[0]?.context;
+    if (!selected) {
+      return null;
+    }
+
+    const claims = this.buildClaims(selected);
+    if (claims.length === 0) {
+      return null;
+    }
+
+    return {
+      playerName: selected.playerName,
+      category: 'decisive-mistake',
+      kind: 'decisive-mistake',
+      title: 'Decisive mistake',
+      timestamp: selected.timestamp,
+      matchTimeSeconds: selected.matchTimeSeconds,
+      severity: 'high',
+      confidence: this.lowestClaimConfidence(claims),
+      evidence: claims.map((claim) => claim.text),
+      recommendation:
+        'Break line of sight, heal, then re-engage from a new angle or with teammate pressure.',
+      betterPlay: [
+        'break line of sight',
+        'heal before re-engaging',
+        'wait for teammate trade pressure or force a new angle',
+      ],
+      claims,
+    };
+  }
+
+  private createPatternInsight(contexts: FightContext[]): CoachingInsight | null {
+    const badResetContexts = contexts.filter((context) => this.isBadReset(context));
+    if (badResetContexts.length < PATTERN_MIN_COUNT) {
+      return null;
+    }
+
+    const latest = badResetContexts.sort(
+      (left, right) => right.matchTimeSeconds - left.matchTimeSeconds
+    )[0];
+
+    return {
+      playerName: latest.playerName,
+      category: 'pattern',
+      kind: 'pattern',
+      title: 'Pattern to fix',
+      timestamp: latest.timestamp,
+      matchTimeSeconds: latest.matchTimeSeconds,
+      severity: 'medium',
+      confidence: 'high',
+      evidence: [
+        `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`,
+      ],
+      recommendation: 'Stop giving the same enemy a second clean fight after you are already damaged.',
+      betterPlay: [
+        'break line of sight',
+        'heal before re-engaging',
+        'wait for teammate trade pressure or force a new angle',
+      ],
+      claims: [
+        {
+          text: `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`,
+          confidence: 'high',
+          evidence: badResetContexts.map(
+            (context) => `${context.playerName} at ${context.matchTimeSeconds}s`
+          ),
+        },
+      ],
+    };
+  }
+
+  private buildClaims(context: FightContext): FightContextClaim[] {
+    const claims: FightContextClaim[] = [];
+    const heavyDamage = this.getHeavyDamage(context);
+    const seconds = heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
+
+    if (context.repeatedSameEnemy && heavyDamage && context.enemyName && seconds !== undefined) {
+      claims.push({
+        text: `You re-peeked ${context.enemyName} ${seconds}s after taking ${heavyDamage.damage} damage and ${context.outcome === 'death' ? 'died' : 'got knocked'} for it.`,
+        confidence: 'high',
+        evidence: [
+          `Took ${heavyDamage.damage} damage from ${context.enemyName}`,
+          `${context.outcome === 'death' ? 'Died' : 'Got knocked'} ${seconds}s later`,
+        ],
+      });
+    }
+
+    if (
+      context.tradeRangeConfidence !== 'low' &&
+      context.closestTeammateName &&
+      context.closestTeammateDistanceMeters !== undefined
+    ) {
+      claims.push({
+        text: `Your nearest tracked teammate appears to have been too far to trade at ${Math.round(context.closestTeammateDistanceMeters)}m away.`,
+        confidence: context.tradeRangeConfidence,
+        evidence: [`Closest tracked teammate: ${context.closestTeammateName}`],
+      });
+    }
+
+    if (
+      context.heightConfidence !== 'low' &&
+      context.heightDeltaMeters !== undefined &&
+      context.heightDeltaMeters > 0
+    ) {
+      claims.push({
+        text: `${context.enemyName ?? 'The enemy'} appears to have had a ${Math.round(context.heightDeltaMeters)}m height advantage.`,
+        confidence: context.heightConfidence,
+        evidence: ['Enemy z-position was higher than player z-position'],
+      });
+    }
+
+    return claims;
+  }
+
+  private scoreContext(context: FightContext): number {
+    let score = context.outcome === 'death' ? 50 : 40;
+    if (this.isBadReset(context)) score += 30;
+    if (context.tradeRangeConfidence !== 'low') score += 10;
+    if (context.heightConfidence !== 'low') score += 5;
+    return score;
+  }
+
+  private isBadReset(context: FightContext): boolean {
+    const heavyDamage = this.getHeavyDamage(context);
+    const noMeaningfulReposition =
+      context.repositionDistanceMeters === undefined || context.repositionDistanceMeters < 15;
+    return Boolean(heavyDamage && context.repeatedSameEnemy && noMeaningfulReposition);
+  }
+
+  private getHeavyDamage(context: FightContext) {
+    return context.damageTaken.find((event) => event.damage >= HEAVY_DAMAGE_THRESHOLD);
+  }
+
+  private lowestClaimConfidence(claims: FightContextClaim[]): CoachingRating {
+    if (claims.some((claim) => claim.confidence === 'low')) return 'low';
+    if (claims.some((claim) => claim.confidence === 'medium')) return 'medium';
+    return 'high';
+  }
+}
