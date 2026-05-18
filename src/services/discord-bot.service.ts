@@ -987,7 +987,7 @@ export class DiscordBotService {
           : this.createBasicPlayerEmbed(player, matchColor, matchId);
       });
 
-      const coachingEmbed = await this.createCoachingEmbed(
+      const coachingEmbeds = await this.createCoachingEmbeds(
         matchAnalysis,
         trackedPlayerNames,
         telemetryData,
@@ -995,9 +995,7 @@ export class DiscordBotService {
       );
 
       success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
-      return coachingEmbed
-        ? [mainEmbed, ...enhancedPlayerEmbeds, coachingEmbed]
-        : [mainEmbed, ...enhancedPlayerEmbeds];
+      return [mainEmbed, ...enhancedPlayerEmbeds, ...coachingEmbeds];
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
@@ -1005,12 +1003,12 @@ export class DiscordBotService {
     }
   }
 
-  private async createCoachingEmbed(
+  private async createCoachingEmbeds(
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
     telemetryData: TelemetryEvent[],
     matchColor: number
-  ): Promise<EmbedBuilder | null> {
+  ): Promise<EmbedBuilder[]> {
     try {
       const damageEvents = telemetryData.filter(
         (event) => event._T === 'LogPlayerTakeDamage'
@@ -1022,39 +1020,71 @@ export class DiscordBotService {
       );
 
       if (insights.length === 0) {
-        return null;
+        return [];
       }
 
       const narration = await this.coachingNarrator.narrate(insights);
-      return this.buildCoachingEmbed(narration, matchColor);
+      return this.buildCoachingEmbeds(narration, matchColor);
     } catch (err) {
       debug(`Coaching section failed, omitting coaching embed: ${err}`);
-      return null;
+      return [];
     }
   }
 
-  private buildCoachingEmbed(
+  private buildCoachingEmbeds(
     narration: CoachingNarration,
     matchColor: number
-  ): EmbedBuilder | null {
+  ): EmbedBuilder[] {
     if (narration.sections.length === 0) {
-      return null;
+      return [];
     }
 
-    const description = narration.sections
-      .map((section) =>
-        [`**${section.title ?? section.playerName}**`, ...section.lines].join('\n')
-      )
-      .join('\n\n');
+    const maxDescriptionLength = 3900;
+    const sectionBlocks = narration.sections
+      .map((section) => this.formatCoachingSection(section))
+      .filter((section) => section.trim().length > 0);
 
-    if (!description.trim()) {
-      return null;
+    const descriptions: string[] = [];
+    let currentDescription = '';
+
+    for (const sectionBlock of sectionBlocks) {
+      const nextDescription = currentDescription
+        ? `${currentDescription}\n\n${sectionBlock}`
+        : sectionBlock;
+
+      if (nextDescription.length <= maxDescriptionLength) {
+        currentDescription = nextDescription;
+        continue;
+      }
+
+      if (currentDescription) {
+        descriptions.push(currentDescription);
+      }
+      currentDescription =
+        sectionBlock.length <= maxDescriptionLength
+          ? sectionBlock
+          : `${sectionBlock.slice(0, maxDescriptionLength - 3)}...`;
     }
 
-    return new EmbedBuilder()
-      .setTitle('Coaching')
-      .setDescription(description.slice(0, 4096))
-      .setColor(matchColor);
+    if (currentDescription) {
+      descriptions.push(currentDescription);
+    }
+
+    if (descriptions.length === 0) {
+      return [];
+    }
+
+    return descriptions.map((description, index) =>
+      new EmbedBuilder()
+        .setTitle(index === 0 ? 'Coaching' : `Coaching (${index + 1})`)
+        .setDescription(description)
+        .setColor(matchColor)
+    );
+  }
+
+  private formatCoachingSection(section: CoachingNarration['sections'][number]): string {
+    const title = section.title ? `${section.playerName} - ${section.title}` : section.playerName;
+    return [`**${title}**`, ...section.lines].join('\n');
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {

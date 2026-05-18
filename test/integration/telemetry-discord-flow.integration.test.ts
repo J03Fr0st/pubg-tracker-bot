@@ -547,6 +547,7 @@ describe('Telemetry Discord Flow Integration', () => {
         .map((embed) => embed.toJSON());
 
       expect(serializedEmbeds.some((embed) => embed.title === 'Coaching')).toBe(true);
+      expect(JSON.stringify(serializedEmbeds)).toContain('TestPlayer1 - Decisive mistake');
       expect(JSON.stringify(serializedEmbeds)).toContain('Decisive mistake');
       expect(JSON.stringify(serializedEmbeds)).toContain('EnemyOne');
       expect(JSON.stringify(serializedEmbeds)).toContain('83 damage');

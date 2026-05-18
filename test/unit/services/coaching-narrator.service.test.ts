@@ -25,7 +25,10 @@ describe('CoachingNarratorService', () => {
     expect(narration.sections).toHaveLength(1);
     expect(narration.sections[0].playerName).toBe('TestPlayer');
     expect(narration.sections[0].lines[0]).toContain('18:42 - Fight Reset');
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+    expect(narration.sections[0].lines[1]).toBe('- Took 83 damage from EnemyOne');
+    expect(narration.sections[0].lines[2]).toBe('- Died to EnemyOne 6s later');
+    expect(narration.sections[0].lines[3]).toContain('Do this: Break line of sight');
+    expect(narration.sections[0].lines.join('\n')).not.toContain(';');
   });
 
   it('uses valid LLM narration when enabled', async () => {
@@ -63,7 +66,7 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+    expect(narration.sections[0].lines.join('\n')).toContain('Took 83 damage from EnemyOne');
   });
 
   it('rejects LLM narration that invents a new player name', async () => {
@@ -84,8 +87,9 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
-    expect(narration.sections[0].lines[0]).not.toContain('EnemyTwo');
+    const fallbackText = narration.sections[0].lines.join('\n');
+    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
+    expect(fallbackText).not.toContain('EnemyTwo');
   });
 
   it('formats decisive mistake and pattern section titles', async () => {
@@ -130,8 +134,9 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines[0]).not.toContain('999m');
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+    const fallbackText = narration.sections[0].lines.join('\n');
+    expect(fallbackText).not.toContain('999m');
+    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
   });
 
   it('rejects unsupported terrain labels from LLM output', async () => {
@@ -150,8 +155,9 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines[0]).not.toContain('field');
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+    const fallbackText = narration.sections[0].lines.join('\n');
+    expect(fallbackText).not.toContain('field');
+    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
   });
 
   it('rejects advice outside supplied better plays', async () => {
@@ -170,7 +176,8 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines[0]).not.toContain('smoke');
-    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+    const fallbackText = narration.sections[0].lines.join('\n');
+    expect(fallbackText).not.toContain('smoke');
+    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
   });
 });

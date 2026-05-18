@@ -80,22 +80,27 @@ export class CoachingNarratorService {
       sections: insights.map((insight) => ({
         playerName: insight.playerName,
         title: insight.title,
-        lines: [this.formatTemplateLine(insight)],
+        lines: this.formatTemplateLines(insight),
       })),
     };
   }
 
-  private formatTemplateLine(insight: CoachingInsight): string {
+  private formatTemplateLines(insight: CoachingInsight): string[] {
     const label = insight.title ?? this.toTitleCase(insight.category);
     const matchTime = this.formatMatchTime(insight.matchTimeSeconds);
-    const evidence = insight.evidence.join('; ');
-    const line = `${matchTime} - ${label}: ${evidence}. ${insight.recommendation}`;
+    const lines = [
+      `${matchTime} - ${label}`,
+      ...insight.evidence.map((evidence) => `- ${evidence}`),
+      `Do this: ${insight.recommendation}`,
+    ];
 
-    if (line.length <= this.options.maxLineLength) {
-      return line;
-    }
+    return lines.map((line) => this.truncateLine(line));
+  }
 
-    return `${line.slice(0, this.options.maxLineLength - 3)}...`;
+  private truncateLine(line: string): string {
+    return line.length <= this.options.maxLineLength
+      ? line
+      : `${line.slice(0, this.options.maxLineLength - 3)}...`;
   }
 
   private isValidNarration(narration: CoachingNarration, insights: CoachingInsight[]): boolean {
