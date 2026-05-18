@@ -107,6 +107,37 @@ describe('FightContextBuilderService', () => {
     expect(contexts[0].tradeRangeConfidence).toBe('medium');
   });
 
+  it('uses recent teammate damage positions for distance, angle, and trade damage', () => {
+    const damage = makeDamage({});
+    const death = makeDeath({});
+    const teammateDamage = makeDamage({
+      _D: '2024-01-01T10:18:40.000Z',
+      attacker: { name: 'TeamMate', location: { x: 500, y: 0, z: 0 } },
+      victim: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+      damage: 24,
+    });
+    const teammate = makeAnalysis({ playerName: 'TeamMate' });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([makeAnalysis({ deathEvents: [death] }), teammate]),
+      ['TestPlayer', 'TeamMate'],
+      [damage, teammateDamage]
+    );
+
+    expect(contexts[0].closestTeammateName).toBe('TeamMate');
+    expect(contexts[0].closestTeammateDistanceMeters).toBe(4);
+    expect(contexts[0].closestTeammateToEnemyDistanceMeters).toBe(5);
+    expect(contexts[0].teammateAngleFromPlayerToEnemyDegrees).toBe(0);
+    expect(contexts[0].enemyDistanceMeters).toBe(9);
+    expect(contexts[0].closestTeammateDamageToEnemy[0]).toMatchObject({
+      attackerName: 'TeamMate',
+      victimName: 'EnemyOne',
+      damage: 24,
+    });
+    expect(contexts[0].tradeRangeConfidence).toBe('high');
+  });
+
   it('detects no meaningful reposition when the player barely moves after heavy damage', () => {
     const damage = makeDamage({
       victim: { name: 'TestPlayer', location: { x: 0, y: 0, z: 0 } },

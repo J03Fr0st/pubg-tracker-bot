@@ -8,6 +8,8 @@ import type {
 const HEAVY_DAMAGE_THRESHOLD = 60;
 const PATTERN_MIN_COUNT = 2;
 const MAX_INSIGHTS = 2;
+const TRADE_RANGE_METERS = 60;
+const STACKED_ANGLE_DEGREES = 25;
 
 export class CoachingDecisionEngineService {
   public createInsights(contexts: FightContext[]): CoachingInsight[] {
@@ -114,12 +116,47 @@ export class CoachingDecisionEngineService {
     if (
       context.tradeRangeConfidence !== 'low' &&
       context.closestTeammateName &&
-      context.closestTeammateDistanceMeters !== undefined
+      context.closestTeammateDistanceMeters !== undefined &&
+      context.closestTeammateDistanceMeters > TRADE_RANGE_METERS
     ) {
       claims.push({
         text: `Your nearest tracked teammate appears to have been too far to trade at ${Math.round(context.closestTeammateDistanceMeters)}m away.`,
         confidence: context.tradeRangeConfidence,
         evidence: [`Closest tracked teammate: ${context.closestTeammateName}`],
+      });
+    }
+
+    if (
+      context.tradeRangeConfidence !== 'low' &&
+      context.closestTeammateName &&
+      context.closestTeammateDistanceMeters !== undefined &&
+      context.closestTeammateDistanceMeters <= TRADE_RANGE_METERS &&
+      context.enemyName &&
+      context.closestTeammateDamageToEnemy.length === 0
+    ) {
+      claims.push({
+        text: `${context.closestTeammateName} was ${Math.round(context.closestTeammateDistanceMeters)}m from you, but telemetry shows no damage from them to ${context.enemyName} in the 10s before you went down.`,
+        confidence: context.tradeRangeConfidence,
+        evidence: [
+          `Closest tracked teammate: ${context.closestTeammateName}`,
+          `Enemy distance: ${context.enemyDistanceMeters ? `${Math.round(context.enemyDistanceMeters)}m` : 'unknown'}`,
+        ],
+      });
+    }
+
+    if (
+      context.tradeRangeConfidence !== 'low' &&
+      context.closestTeammateName &&
+      context.enemyName &&
+      context.teammateAngleFromPlayerToEnemyDegrees !== undefined &&
+      context.teammateAngleFromPlayerToEnemyDegrees <= STACKED_ANGLE_DEGREES
+    ) {
+      claims.push({
+        text: `${context.closestTeammateName} was only ${context.teammateAngleFromPlayerToEnemyDegrees} degrees off your logged line to ${context.enemyName}; the positions were close together, not a separate angle.`,
+        confidence: context.tradeRangeConfidence,
+        evidence: [
+          `Teammate angle from player-to-enemy line: ${context.teammateAngleFromPlayerToEnemyDegrees} degrees`,
+        ],
       });
     }
 
@@ -142,6 +179,7 @@ export class CoachingDecisionEngineService {
     let score = context.outcome === 'death' ? 50 : 40;
     if (this.isBadReset(context)) score += 30;
     if (context.tradeRangeConfidence !== 'low') score += 10;
+    if (context.closestTeammateDamageToEnemy.length === 0) score += 5;
     if (context.heightConfidence !== 'low') score += 5;
     return score;
   }

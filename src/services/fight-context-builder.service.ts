@@ -15,6 +15,7 @@ const CONTEXT_WINDOW_SECONDS = 45;
 const TRADE_RANGE_METERS = 60;
 const MEANINGFUL_REPOSITION_METERS = 15;
 const HEIGHT_ADVANTAGE_METERS = 10;
+const TRADE_DAMAGE_WINDOW_SECONDS = 10;
 
 type DecisiveEvent = LogPlayerKillV2 | LogPlayerMakeGroggy;
 type ActorWithPosition = { name?: string; location?: TelemetryPosition };
@@ -83,7 +84,28 @@ export class FightContextBuilderService {
       analysis.playerName,
       playerPosition,
       matchAnalysis,
-      trackedPlayerNames
+      trackedPlayerNames,
+      timestamp,
+      damageEvents
+    );
+    const enemyDistanceMeters =
+      playerPosition && enemyPosition
+        ? this.distanceMeters(playerPosition, enemyPosition)
+        : undefined;
+    const closestTeammateToEnemyDistanceMeters =
+      closestTeammate?.position && enemyPosition
+        ? this.distanceMeters(closestTeammate.position, enemyPosition)
+        : undefined;
+    const teammateAngleFromPlayerToEnemyDegrees =
+      playerPosition && enemyPosition && closestTeammate?.position
+        ? this.angleDegrees(playerPosition, enemyPosition, closestTeammate.position)
+        : undefined;
+    const closestTeammateDamageToEnemy = this.getDamageFromPlayerToEnemy(
+      closestTeammate?.name,
+      enemyName,
+      timestamp,
+      damageEvents,
+      analysis.matchStartTime
     );
     const repositionDistanceMeters = this.getRepositionDistanceMeters(
       damageTaken,
@@ -107,8 +129,13 @@ export class FightContextBuilderService {
       playerPosition,
       enemyPosition,
       closestTeammateName: closestTeammate?.name,
+      closestTeammatePosition: closestTeammate?.position,
       closestTeammateDistanceMeters: closestTeammate?.distanceMeters,
-      tradeRangeConfidence: closestTeammate ? 'medium' : 'low',
+      closestTeammateToEnemyDistanceMeters,
+      teammateAngleFromPlayerToEnemyDegrees,
+      closestTeammateDamageToEnemy,
+      enemyDistanceMeters,
+      tradeRangeConfidence: closestTeammate ? closestTeammate.confidence : 'low',
       repositionDistanceMeters,
       repositionConfidence: repositionDistanceMeters === undefined ? 'low' : 'high',
       heightDeltaMeters,
@@ -140,7 +167,7 @@ export class FightContextBuilderService {
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
       .filter((event) => {
-        const seconds = this.secondsBetween(event.timestamp, decisiveTime);
+        const seconds = this.signedSecondsBetween(event.timestamp, decisiveTime);
         return seconds >= 0 && seconds <= CONTEXT_WINDOW_SECONDS;
       });
   }
@@ -156,7 +183,7 @@ export class FightContextBuilderService {
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
       .filter((event) => {
-        const seconds = this.secondsBetween(event.timestamp, decisiveTime);
+        const seconds = this.signedSecondsBetween(event.timestamp, decisiveTime);
         return seconds >= 0 && seconds <= CONTEXT_WINDOW_SECONDS;
       });
   }
@@ -184,8 +211,17 @@ export class FightContextBuilderService {
     playerName: string,
     playerPosition: TelemetryPosition | undefined,
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[]
-  ): { name: string; distanceMeters: number } | undefined {
+    trackedPlayerNames: string[],
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[]
+  ):
+    | {
+        name: string;
+        distanceMeters: number;
+        position: TelemetryPosition;
+        confidence: 'high' | 'medium';
+      }
+    | undefined {
     if (!playerPosition) {
       return undefined;
     }
@@ -194,15 +230,83 @@ export class FightContextBuilderService {
       .filter((name) => name !== playerName)
       .map((name) => {
         const analysis = matchAnalysis.playerAnalyses.get(name);
-        const position = analysis ? this.getLastKnownPlayerPosition(analysis) : undefined;
+        const latestDamagePosition = this.getLatestActorPosition(name, decisiveTime, damageEvents);
+        const position =
+          latestDamagePosition ?? (analysis ? this.getLastKnownPlayerPosition(analysis) : undefined);
         return position
-          ? { name, distanceMeters: this.distanceMeters(playerPosition, position) }
+          ? {
+              name,
+              distanceMeters: this.distanceMeters(playerPosition, position),
+              position,
+              confidence: latestDamagePosition ? 'high' : 'medium',
+            }
           : undefined;
       })
-      .filter((candidate): candidate is { name: string; distanceMeters: number } =>
-        Boolean(candidate)
+      .filter(
+        (
+          candidate
+        ): candidate is {
+          name: string;
+          distanceMeters: number;
+          position: TelemetryPosition;
+          confidence: 'high' | 'medium';
+        } => Boolean(candidate)
       )
       .sort((left, right) => left.distanceMeters - right.distanceMeters)[0];
+  }
+
+  private getLatestActorPosition(
+    actorName: string,
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[]
+  ): TelemetryPosition | undefined {
+    return damageEvents
+      .map((event) => {
+        const timestamp = this.getEventTime(event);
+        const attackerPosition =
+          this.getActorName(event.attacker) === actorName
+            ? this.getActorPosition(event.attacker)
+            : undefined;
+        const victimPosition =
+          this.getActorName(event.victim) === actorName
+            ? this.getActorPosition(event.victim)
+            : undefined;
+        const position = attackerPosition ?? victimPosition;
+        return timestamp && position ? { timestamp, position } : undefined;
+      })
+      .filter((entry): entry is { timestamp: Date; position: TelemetryPosition } =>
+        Boolean(entry)
+      )
+      .filter((entry) => {
+        const seconds = this.signedSecondsBetween(entry.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= CONTEXT_WINDOW_SECONDS;
+      })
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]?.position;
+  }
+
+  private getDamageFromPlayerToEnemy(
+    playerName: string | undefined,
+    enemyName: string | undefined,
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): FightDamageEvent[] {
+    if (!playerName || !enemyName) {
+      return [];
+    }
+
+    return damageEvents
+      .filter(
+        (event) =>
+          this.getActorName(event.attacker) === playerName &&
+          this.getActorName(event.victim) === enemyName
+      )
+      .map((event) => this.toFightDamageEvent(event, matchStartTime))
+      .filter((event): event is FightDamageEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = this.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= TRADE_DAMAGE_WINDOW_SECONDS;
+      });
   }
 
   private getLastKnownPlayerPosition(analysis: PlayerAnalysis): TelemetryPosition | undefined {
@@ -268,10 +372,32 @@ export class FightContextBuilderService {
     return Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
   }
 
+  private signedSecondsBetween(start: Date, end: Date): number {
+    return Math.round((end.getTime() - start.getTime()) / 1000);
+  }
+
   private distanceMeters(left: TelemetryPosition, right: TelemetryPosition): number {
     const dx = left.x - right.x;
     const dy = left.y - right.y;
     return Math.round((Math.sqrt(dx * dx + dy * dy) / 100) * 10) / 10;
+  }
+
+  private angleDegrees(
+    origin: TelemetryPosition,
+    firstTarget: TelemetryPosition,
+    secondTarget: TelemetryPosition
+  ): number | undefined {
+    const first = { x: firstTarget.x - origin.x, y: firstTarget.y - origin.y };
+    const second = { x: secondTarget.x - origin.x, y: secondTarget.y - origin.y };
+    const firstLength = Math.sqrt(first.x * first.x + first.y * first.y);
+    const secondLength = Math.sqrt(second.x * second.x + second.y * second.y);
+    if (firstLength === 0 || secondLength === 0) {
+      return undefined;
+    }
+
+    const cosine = (first.x * second.x + first.y * second.y) / (firstLength * secondLength);
+    const boundedCosine = Math.max(-1, Math.min(1, cosine));
+    return Math.round((Math.acos(boundedCosine) * 180) / Math.PI);
   }
 }
 
@@ -280,4 +406,5 @@ export const FIGHT_CONTEXT_THRESHOLDS = {
   tradeRangeMeters: TRADE_RANGE_METERS,
   meaningfulRepositionMeters: MEANINGFUL_REPOSITION_METERS,
   heightAdvantageMeters: HEIGHT_ADVANTAGE_METERS,
+  tradeDamageWindowSeconds: TRADE_DAMAGE_WINDOW_SECONDS,
 };

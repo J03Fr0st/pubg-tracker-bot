@@ -46,7 +46,12 @@ export interface FightContext {
   playerPosition?: TelemetryPosition;
   enemyPosition?: TelemetryPosition;
   closestTeammateName?: string;
+  closestTeammatePosition?: TelemetryPosition;
   closestTeammateDistanceMeters?: number;
+  closestTeammateToEnemyDistanceMeters?: number;
+  teammateAngleFromPlayerToEnemyDegrees?: number;
+  closestTeammateDamageToEnemy: FightDamageEvent[];
+  enemyDistanceMeters?: number;
   tradeRangeConfidence: CoachingRating;
   repositionDistanceMeters?: number;
   repositionConfidence: CoachingRating;

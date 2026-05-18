@@ -20,6 +20,7 @@ function makeContext(overrides: Partial<FightContext>): FightContext {
     damageDealt: [],
     closestTeammateName: 'TeamMate',
     closestTeammateDistanceMeters: 78,
+    closestTeammateDamageToEnemy: [],
     tradeRangeConfidence: 'medium',
     repositionDistanceMeters: 4,
     repositionConfidence: 'high',
@@ -52,6 +53,58 @@ describe('CoachingDecisionEngineService', () => {
       'appears to have been too far to trade'
     );
     expect(insights[0].recommendation).toContain('Break line of sight');
+  });
+
+  it('calls out close spacing that does not become trade damage', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        closestTeammateDistanceMeters: 22,
+        enemyDistanceMeters: 31,
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).toContain(
+      'TeamMate was 22m from you, but telemetry shows no damage from them to EnemyOne'
+    );
+  });
+
+  it('describes stacked logged geometry without claiming line of sight', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        closestTeammateDistanceMeters: 22,
+        enemyDistanceMeters: 31,
+        teammateAngleFromPlayerToEnemyDegrees: 12,
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).toContain(
+      'TeamMate was only 12 degrees off your logged line to EnemyOne'
+    );
+    expect(insights[0].evidence.join(' ')).not.toContain('line of sight');
+  });
+
+  it('does not call close spacing a missed trade when teammate damaged the enemy', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        closestTeammateDistanceMeters: 22,
+        closestTeammateDamageToEnemy: [
+          {
+            timestamp: new Date('2024-01-01T10:18:40.000Z'),
+            matchTimeSeconds: 1120,
+            attackerName: 'TeamMate',
+            victimName: 'EnemyOne',
+            damage: 24,
+          },
+        ],
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).not.toContain(
+      'no damage from them to EnemyOne'
+    );
   });
 
   it('omits low-confidence geometry claims', () => {
