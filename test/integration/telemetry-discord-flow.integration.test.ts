@@ -10,24 +10,54 @@ jest.mock('discord.js', () => ({
     login: jest.fn().mockResolvedValue('logged_in'),
     channels: {
       fetch: jest.fn().mockResolvedValue({
+        isTextBased: jest.fn().mockReturnValue(true),
+        type: 0,
+        permissionsFor: jest.fn().mockReturnValue({
+          has: jest.fn().mockReturnValue(true),
+        }),
         send: jest.fn().mockResolvedValue({ id: 'message_id' }),
       }),
     },
   })),
+  ChannelType: { GuildText: 0 },
   Events: { InteractionCreate: 'interactionCreate' },
   GatewayIntentBits: {
     Guilds: 1,
     GuildMessages: 2,
     MessageContent: 4,
   },
-  EmbedBuilder: jest.fn().mockImplementation(() => ({
-    setTitle: jest.fn().mockReturnThis(),
-    setDescription: jest.fn().mockReturnThis(),
-    setColor: jest.fn().mockReturnThis(),
-    setFooter: jest.fn().mockReturnThis(),
-    setTimestamp: jest.fn().mockReturnThis(),
-    addFields: jest.fn().mockReturnThis(),
-  })),
+  PermissionFlagsBits: {
+    ViewChannel: BigInt(1),
+    SendMessages: BigInt(2),
+    EmbedLinks: BigInt(4),
+  },
+  EmbedBuilder: jest.fn().mockImplementation(() => {
+    const data: Record<string, unknown> = {};
+    return {
+      setTitle: jest.fn(function (this: unknown, title: string) {
+        data.title = title;
+        return this;
+      }),
+      setDescription: jest.fn(function (this: unknown, description: string) {
+        data.description = description;
+        return this;
+      }),
+      setColor: jest.fn(function (this: unknown, color: number) {
+        data.color = color;
+        return this;
+      }),
+      setFooter: jest.fn(function (this: unknown, footer: unknown) {
+        data.footer = footer;
+        return this;
+      }),
+      setTimestamp: jest.fn(function (this: unknown, timestamp: Date) {
+        data.timestamp = timestamp;
+        return this;
+      }),
+      addFields: jest.fn().mockReturnThis(),
+      toJSON: jest.fn(() => data),
+    };
+  }),
   REST: jest.fn().mockImplementation(() => ({
     setToken: jest.fn().mockReturnThis(),
     put: jest.fn().mockResolvedValue([]),
@@ -82,6 +112,17 @@ function createPlayerStats(overrides: any = {}) {
     teamKills: 0,
     vehicleDestroys: 0,
     ...overrides,
+  };
+}
+
+function createMockTextChannel() {
+  return {
+    isTextBased: jest.fn().mockReturnValue(true),
+    type: 0,
+    permissionsFor: jest.fn().mockReturnValue({
+      has: jest.fn().mockReturnValue(true),
+    }),
+    send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
   };
 }
 
@@ -192,9 +233,7 @@ describe('Telemetry Discord Flow Integration', () => {
       mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
 
       // Mock the channel send
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -252,9 +291,7 @@ describe('Telemetry Discord Flow Integration', () => {
       );
 
       // Mock the channel send
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -303,9 +340,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       // Mock the channel send
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -390,9 +425,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(extendedTelemetryData);
 
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -439,9 +472,7 @@ describe('Telemetry Discord Flow Integration', () => {
         { invalid: 'data', structure: true }, // Invalid telemetry data
       ]);
 
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -451,6 +482,121 @@ describe('Telemetry Discord Flow Integration', () => {
       ).resolves.toBeUndefined();
 
       // Verify basic embeds were still sent as fallback
+      expect(mockChannel.send).toHaveBeenCalled();
+    });
+
+    it('should append a coaching embed when telemetry produces a strong coaching insight', async () => {
+      const mockSummary: DiscordMatchGroupSummary = {
+        matchId: 'test-match-coaching',
+        mapName: 'Erangel',
+        gameMode: 'squad',
+        playedAt: '2024-01-01T10:00:00.000Z',
+        teamRank: 5,
+        telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching',
+        players: [
+          {
+            name: 'TestPlayer1',
+            stats: createPlayerStats({
+              kills: 0,
+              DBNOs: 0,
+              damageDealt: 0,
+              longestKill: 0,
+              timeSurvived: 1122,
+              winPlace: 5,
+              name: 'TestPlayer1',
+            }),
+          },
+        ],
+      };
+
+      const coachingTelemetry = [
+        {
+          _D: '2024-01-01T10:18:36.000Z',
+          _T: 'LogPlayerTakeDamage',
+          attacker: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+          damage: 83,
+          damageCauserName: 'WeapBerylM762_C',
+        } as LogPlayerTakeDamage,
+        {
+          _D: '2024-01-01T10:18:42.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+          damageCauserName: 'WeapBerylM762_C',
+          distance: 4200,
+        } as LogPlayerKillV2,
+      ];
+
+      const mockPubgClient = (discordBotService as any).pubgClient;
+      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(coachingTelemetry);
+
+      const mockChannel = createMockTextChannel();
+      const mockClient = (discordBotService as any).client;
+      mockClient.channels.fetch.mockResolvedValue(mockChannel);
+
+      await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
+
+      const serializedEmbeds = mockChannel.send.mock.calls
+        .flatMap((call) => call[0].embeds)
+        .map((embed) => embed.toJSON());
+
+      expect(serializedEmbeds.some((embed) => embed.title === 'Coaching')).toBe(true);
+      expect(JSON.stringify(serializedEmbeds)).toContain('Fight Reset');
+      expect(JSON.stringify(serializedEmbeds)).toContain('Took 83 damage from EnemyOne');
+    });
+
+    it('should still post match summary when coaching narration fails', async () => {
+      const mockSummary: DiscordMatchGroupSummary = {
+        matchId: 'test-match-coaching-fallback',
+        mapName: 'Erangel',
+        gameMode: 'squad',
+        playedAt: '2024-01-01T10:00:00.000Z',
+        teamRank: 5,
+        telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching-fallback',
+        players: [
+          {
+            name: 'TestPlayer1',
+            stats: createPlayerStats({
+              kills: 0,
+              DBNOs: 0,
+              damageDealt: 0,
+              timeSurvived: 1122,
+              winPlace: 5,
+              name: 'TestPlayer1',
+            }),
+          },
+        ],
+      };
+
+      const mockPubgClient = (discordBotService as any).pubgClient;
+      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue([
+        {
+          _D: '2024-01-01T10:18:36.000Z',
+          _T: 'LogPlayerTakeDamage',
+          attacker: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+          damage: 83,
+        } as LogPlayerTakeDamage,
+        {
+          _D: '2024-01-01T10:18:42.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+        } as LogPlayerKillV2,
+      ]);
+
+      (discordBotService as any).coachingNarrator = {
+        narrate: jest.fn().mockRejectedValue(new Error('Narration failed')),
+      };
+
+      const mockChannel = createMockTextChannel();
+      const mockClient = (discordBotService as any).client;
+      mockClient.channels.fetch.mockResolvedValue(mockChannel);
+
+      await expect(
+        discordBotService.sendMatchSummary('test-channel-id', mockSummary)
+      ).resolves.toBeUndefined();
       expect(mockChannel.send).toHaveBeenCalled();
     });
   });
@@ -475,9 +621,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
 
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -512,9 +656,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
 
-      const mockChannel = {
-        send: jest.fn().mockResolvedValue({ id: 'sent_message_id' }),
-      };
+      const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
       mockClient.channels.fetch.mockResolvedValue(mockChannel);
 

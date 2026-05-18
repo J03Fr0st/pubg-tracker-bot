@@ -6,12 +6,14 @@ import {
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
+  type LogPlayerTakeDamage,
   MAP_NAMES,
   type Participant,
   type Player,
   PubgClient,
   type Roster,
   type Shard,
+  type TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 import {
   type Channel,
@@ -27,12 +29,14 @@ import {
   SlashCommandBuilder,
   type TextBasedChannel,
 } from 'discord.js';
+import { appConfig } from '../config/config';
 import type {
   AssistInfo,
   KillChain,
   MatchAnalysis,
   PlayerAnalysis,
 } from '../types/analytics-results.types';
+import type { CoachingNarration } from '../types/coaching.types';
 import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
@@ -41,6 +45,9 @@ import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
+import { CoachingNarratorService } from './coaching-narrator.service';
+import { MatchCoachingService } from './match-coaching.service';
+import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from './player-stats.service';
 import { PubgStorageService } from './pubg-storage.service';
 import { TelemetryProcessorService } from './telemetry-processor.service';
@@ -72,6 +79,8 @@ export class DiscordBotService {
   private readonly pubgClient: PubgClient;
   private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
+  private readonly matchCoachingService: MatchCoachingService;
+  private coachingNarrator: CoachingNarratorService;
   private readonly commands = [
     new SlashCommandBuilder()
       .setName('add')
@@ -130,6 +139,21 @@ export class DiscordBotService {
     });
     this.playerStatsService = new PlayerStatsService(this.pubgClient, shard);
     this.telemetryProcessor = new TelemetryProcessorService();
+    this.matchCoachingService = new MatchCoachingService();
+    const llmClient =
+      appConfig.llm.coachingEnabled &&
+      appConfig.llm.openRouterApiKey &&
+      appConfig.llm.openRouterModel
+        ? new OpenRouterCoachingLlmClient({
+            apiKey: appConfig.llm.openRouterApiKey,
+            model: appConfig.llm.openRouterModel,
+            timeoutMs: appConfig.llm.timeoutMs,
+          })
+        : undefined;
+    this.coachingNarrator = new CoachingNarratorService(llmClient, {
+      enabled: Boolean(llmClient),
+      maxLineLength: 240,
+    });
     this.setupEventHandlers();
   }
 
@@ -963,13 +987,74 @@ export class DiscordBotService {
           : this.createBasicPlayerEmbed(player, matchColor, matchId);
       });
 
+      const coachingEmbed = await this.createCoachingEmbed(
+        matchAnalysis,
+        trackedPlayerNames,
+        telemetryData,
+        matchColor
+      );
+
       success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
-      return [mainEmbed, ...enhancedPlayerEmbeds];
+      return coachingEmbed
+        ? [mainEmbed, ...enhancedPlayerEmbeds, coachingEmbed]
+        : [mainEmbed, ...enhancedPlayerEmbeds];
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
       return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
     }
+  }
+
+  private async createCoachingEmbed(
+    matchAnalysis: MatchAnalysis,
+    trackedPlayerNames: string[],
+    telemetryData: TelemetryEvent[],
+    matchColor: number
+  ): Promise<EmbedBuilder | null> {
+    try {
+      const damageEvents = telemetryData.filter(
+        (event) => event._T === 'LogPlayerTakeDamage'
+      ) as LogPlayerTakeDamage[];
+      const insights = this.matchCoachingService.analyzeMatch(
+        matchAnalysis,
+        trackedPlayerNames,
+        damageEvents
+      );
+
+      if (insights.length === 0) {
+        return null;
+      }
+
+      const narration = await this.coachingNarrator.narrate(insights);
+      return this.buildCoachingEmbed(narration, matchColor);
+    } catch (err) {
+      debug(`Coaching section failed, omitting coaching embed: ${err}`);
+      return null;
+    }
+  }
+
+  private buildCoachingEmbed(
+    narration: CoachingNarration,
+    matchColor: number
+  ): EmbedBuilder | null {
+    if (narration.sections.length === 0) {
+      return null;
+    }
+
+    const description = narration.sections
+      .map((section) =>
+        [`**${section.playerName}**`, ...section.lines.map((line) => `- ${line}`)].join('\n')
+      )
+      .join('\n\n');
+
+    if (!description.trim()) {
+      return null;
+    }
+
+    return new EmbedBuilder()
+      .setTitle('Coaching')
+      .setDescription(description.slice(0, 4096))
+      .setColor(matchColor);
   }
 
   private getReadableDamageCauserName(weaponCode: string): string {
