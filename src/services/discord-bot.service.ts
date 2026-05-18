@@ -1043,7 +1043,7 @@ export class DiscordBotService {
 
     const description = narration.sections
       .map((section) =>
-        [`**${section.playerName}**`, ...section.lines.map((line) => `- ${line}`)].join('\n')
+        [`**${section.title ?? section.playerName}**`, ...section.lines].join('\n')
       )
       .join('\n\n');
 

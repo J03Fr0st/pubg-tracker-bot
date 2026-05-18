@@ -1,4 +1,5 @@
 import type { LogPlayerKillV2, LogPlayerMakeGroggy, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
+import { CoachingNarratorService } from '../../src/services/coaching-narrator.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
 import { TelemetryProcessorService } from '../../src/services/telemetry-processor.service';
 import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
@@ -135,6 +136,10 @@ describe('Telemetry Discord Flow Integration', () => {
     jest.clearAllMocks();
 
     discordBotService = new DiscordBotService('mock_api_key', 'steam');
+    (discordBotService as any).coachingNarrator = new CoachingNarratorService(undefined, {
+      enabled: false,
+      maxLineLength: 240,
+    });
 
     // Setup mock telemetry data
     mockTelemetryData = [
@@ -542,8 +547,73 @@ describe('Telemetry Discord Flow Integration', () => {
         .map((embed) => embed.toJSON());
 
       expect(serializedEmbeds.some((embed) => embed.title === 'Coaching')).toBe(true);
-      expect(JSON.stringify(serializedEmbeds)).toContain('Fight Reset');
-      expect(JSON.stringify(serializedEmbeds)).toContain('Took 83 damage from EnemyOne');
+      expect(JSON.stringify(serializedEmbeds)).toContain('Decisive mistake');
+      expect(JSON.stringify(serializedEmbeds)).toContain('EnemyOne');
+      expect(JSON.stringify(serializedEmbeds)).toContain('83 damage');
+    });
+
+    it('adds pattern to fix only when repeated coaching evidence exists', async () => {
+      const mockSummary: DiscordMatchGroupSummary = {
+        matchId: 'test-match-coaching-pattern',
+        mapName: 'Erangel',
+        gameMode: 'squad',
+        playedAt: '2024-01-01T10:00:00.000Z',
+        teamRank: 5,
+        telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching-pattern',
+        players: [
+          {
+            name: 'TestPlayer1',
+            stats: createPlayerStats({ name: 'TestPlayer1', winPlace: 5 }),
+          },
+        ],
+      };
+
+      const telemetry = [
+        {
+          _D: '2024-01-01T10:10:00.000Z',
+          _T: 'LogPlayerTakeDamage',
+          attacker: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+          damage: 83,
+        },
+        {
+          _D: '2024-01-01T10:10:06.000Z',
+          _T: 'LogPlayerMakeGroggy',
+          attacker: { name: 'EnemyOne' },
+          victim: { name: 'TestPlayer1' },
+        },
+        {
+          _D: '2024-01-01T10:18:36.000Z',
+          _T: 'LogPlayerTakeDamage',
+          attacker: { name: 'EnemyTwo' },
+          victim: { name: 'TestPlayer1' },
+          damage: 90,
+        },
+        {
+          _D: '2024-01-01T10:18:42.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'EnemyTwo' },
+          victim: { name: 'TestPlayer1' },
+        },
+      ];
+
+      const mockPubgClient = (discordBotService as any).pubgClient;
+      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(telemetry);
+
+      const mockChannel = createMockTextChannel();
+      const mockClient = (discordBotService as any).client;
+      mockClient.channels.fetch.mockResolvedValue(mockChannel);
+
+      await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
+
+      const serialized = JSON.stringify(
+        mockChannel.send.mock.calls
+          .flatMap((call) => call[0].embeds)
+          .map((embed) => embed.toJSON())
+      );
+
+      expect(serialized).toContain('Decisive mistake');
+      expect(serialized).toContain('Pattern to fix');
     });
 
     it('should still post match summary when coaching narration fails', async () => {
