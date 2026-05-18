@@ -87,4 +87,90 @@ describe('CoachingNarratorService', () => {
     expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
     expect(narration.sections[0].lines[0]).not.toContain('EnemyTwo');
   });
+
+  it('formats decisive mistake and pattern section titles', async () => {
+    const service = new CoachingNarratorService(undefined, {
+      enabled: false,
+      maxLineLength: 280,
+    });
+
+    const narration = await service.narrate([
+      {
+        ...insight,
+        category: 'decisive-mistake',
+        kind: 'decisive-mistake',
+        title: 'Decisive mistake',
+      },
+      {
+        ...insight,
+        category: 'pattern',
+        kind: 'pattern',
+        title: 'Pattern to fix',
+        recommendation: 'Stop giving the same enemy a second clean fight.',
+      },
+    ]);
+
+    expect(narration.sections[0].title).toBe('Decisive mistake');
+    expect(narration.sections[1].title).toBe('Pattern to fix');
+  });
+
+  it('rejects LLM narration that invents a new distance', async () => {
+    const llmClient: CoachingLlmClient = {
+      narrate: jest.fn().mockResolvedValue({
+        sections: [
+          {
+            playerName: 'TestPlayer',
+            title: 'Decisive mistake',
+            lines: ['You were 999m away from trade pressure.'],
+          },
+        ],
+      }),
+    };
+    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
+
+    const narration = await service.narrate([insight]);
+
+    expect(narration.sections[0].lines[0]).not.toContain('999m');
+    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+  });
+
+  it('rejects unsupported terrain labels from LLM output', async () => {
+    const llmClient: CoachingLlmClient = {
+      narrate: jest.fn().mockResolvedValue({
+        sections: [
+          {
+            playerName: 'TestPlayer',
+            title: 'Decisive mistake',
+            lines: ['You died because you crossed a field with no cover.'],
+          },
+        ],
+      }),
+    };
+    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
+
+    const narration = await service.narrate([insight]);
+
+    expect(narration.sections[0].lines[0]).not.toContain('field');
+    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+  });
+
+  it('rejects advice outside supplied better plays', async () => {
+    const llmClient: CoachingLlmClient = {
+      narrate: jest.fn().mockResolvedValue({
+        sections: [
+          {
+            playerName: 'TestPlayer',
+            title: 'Decisive mistake',
+            lines: ['You should have thrown a smoke and crashed the compound.'],
+          },
+        ],
+      }),
+    };
+    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
+
+    const narration = await service.narrate([insight]);
+
+    expect(narration.sections[0].lines[0]).not.toContain('smoke');
+    expect(narration.sections[0].lines[0]).toContain('Took 83 damage from EnemyOne');
+  });
 });

@@ -13,10 +13,40 @@ const DEFAULT_OPTIONS: CoachingNarratorOptions = {
 
 const COMMON_ALLOWED_WORDS = new Set([
   'Break',
+  'Decisive',
   'Do',
+  'Died',
+  'Enemy',
   'Fight',
+  'Got',
+  'Pattern',
   'Reset',
+  'Stop',
+  'The',
+  'Took',
   'You',
+  'Your',
+]);
+
+const UNSUPPORTED_TERRAIN_WORDS = new Set([
+  'field',
+  'ridge',
+  'compound',
+  'tree',
+  'rock',
+  'wall',
+  'city',
+  'bridge',
+  'shoreline',
+  'cover',
+]);
+
+const ADVICE_WORDS = new Set([
+  'smoke',
+  'grenade',
+  'crash',
+  'compound',
+  'vehicle',
 ]);
 
 export class CoachingNarratorService {
@@ -46,24 +76,17 @@ export class CoachingNarratorService {
   }
 
   private createTemplateNarration(insights: CoachingInsight[]): CoachingNarration {
-    const sectionsByPlayer = new Map<string, string[]>();
-
-    for (const insight of insights) {
-      const lines = sectionsByPlayer.get(insight.playerName) ?? [];
-      lines.push(this.formatTemplateLine(insight));
-      sectionsByPlayer.set(insight.playerName, lines);
-    }
-
     return {
-      sections: Array.from(sectionsByPlayer.entries()).map(([playerName, lines]) => ({
-        playerName,
-        lines,
+      sections: insights.map((insight) => ({
+        playerName: insight.playerName,
+        title: insight.title,
+        lines: [this.formatTemplateLine(insight)],
       })),
     };
   }
 
   private formatTemplateLine(insight: CoachingInsight): string {
-    const label = this.toTitleCase(insight.category);
+    const label = insight.title ?? this.toTitleCase(insight.category);
     const matchTime = this.formatMatchTime(insight.matchTimeSeconds);
     const evidence = insight.evidence.join('; ');
     const line = `${matchTime} - ${label}: ${evidence}. ${insight.recommendation}`;
@@ -94,6 +117,17 @@ export class CoachingNarratorService {
           return false;
         }
 
+        const lowerLine = line.toLowerCase();
+        for (const word of UNSUPPORTED_TERRAIN_WORDS) {
+          if (lowerLine.includes(word) && !this.isWordSupported(word, insights)) {
+            return false;
+          }
+        }
+
+        if (!this.onlyUsesSupportedAdvice(lowerLine, insights)) {
+          return false;
+        }
+
         for (const number of line.match(/\d+/g) ?? []) {
           if (!allowedNumbers.has(number)) {
             return false;
@@ -120,7 +154,7 @@ export class CoachingNarratorService {
         allowedNumbers.add(part);
         allowedNumbers.add(String(Number(part)));
       }
-      for (const text of [...insight.evidence, insight.recommendation]) {
+      for (const text of this.getAllowedText(insight)) {
         for (const number of text.match(/\d+/g) ?? []) {
           allowedNumbers.add(number);
         }
@@ -136,11 +170,17 @@ export class CoachingNarratorService {
     for (const insight of insights) {
       allowedNames.add(insight.playerName);
       allowedNames.add(this.toTitleCase(insight.category).replace(/\s+/g, ''));
+      if (insight.title) {
+        allowedNames.add(insight.title.replace(/\s+/g, ''));
+        for (const word of insight.title.split(' ')) {
+          allowedNames.add(word);
+        }
+      }
       for (const word of this.toTitleCase(insight.category).split(' ')) {
         allowedNames.add(word);
       }
 
-      for (const text of [...insight.evidence, insight.recommendation]) {
+      for (const text of this.getAllowedText(insight)) {
         for (const token of text.match(/\b[A-Z][A-Za-z0-9_]+\b/g) ?? []) {
           allowedNames.add(token);
         }
@@ -148,6 +188,36 @@ export class CoachingNarratorService {
     }
 
     return allowedNames;
+  }
+
+  private getAllowedText(insight: CoachingInsight): string[] {
+    return [
+      ...insight.evidence,
+      insight.recommendation,
+      ...(insight.betterPlay ?? []),
+      ...(insight.claims?.map((claim) => claim.text) ?? []),
+    ];
+  }
+
+  private isWordSupported(word: string, insights: CoachingInsight[]): boolean {
+    return insights.some((insight) =>
+      this.getAllowedText(insight).join(' ').toLowerCase().includes(word)
+    );
+  }
+
+  private onlyUsesSupportedAdvice(line: string, insights: CoachingInsight[]): boolean {
+    const supportedAdvice = insights
+      .flatMap((insight) => [insight.recommendation, ...(insight.betterPlay ?? [])])
+      .join(' ')
+      .toLowerCase();
+
+    for (const word of ADVICE_WORDS) {
+      if (line.includes(word) && !supportedAdvice.includes(word)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private formatMatchTime(seconds: number): string {

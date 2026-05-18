@@ -33,18 +33,23 @@ export class OpenRouterCoachingLlmClient implements CoachingLlmClient {
             {
               role: 'system',
               content:
-                'You are a PUBG coaching assistant. Rewrite the supplied telemetry-backed coaching insights for Discord. Do not invent facts. Do not add advice that is not supported by the evidence. Keep each insight under two short sentences. Return only valid JSON.',
+                'You are a strict and blunt PUBG coach narrator. Rewrite only the supplied telemetry-backed coaching facts for Discord. Do not infer tactics from raw telemetry. Do not invent names, numbers, terrain, cover, weapons, distances, or advice. Return only valid JSON with sections[].playerName, sections[].title, and sections[].lines.',
             },
             {
               role: 'user',
               content: JSON.stringify({
+                tone: 'strict_blunt',
                 insights: insights.map((insight) => ({
                   playerName: insight.playerName,
+                  title: insight.title,
                   category: insight.category,
+                  kind: insight.kind,
                   matchTime: this.formatMatchTime(insight.matchTimeSeconds),
                   severity: insight.severity,
                   confidence: insight.confidence,
+                  claims: insight.claims ?? [],
                   evidence: insight.evidence,
+                  betterPlay: insight.betterPlay ?? [insight.recommendation],
                   recommendation: insight.recommendation,
                 })),
               }),
