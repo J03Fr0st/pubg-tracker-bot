@@ -16,7 +16,7 @@ const insight: CoachingInsight = {
   betterPlay: ['break line of sight', 'heal before re-engaging'],
   claims: [
     {
-      text: 'You re-peeked EnemyOne 6s after taking 83 damage and died for it.',
+      text: 'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset.',
       confidence: 'high',
       evidence: ['Took 83 damage from EnemyOne'],
     },

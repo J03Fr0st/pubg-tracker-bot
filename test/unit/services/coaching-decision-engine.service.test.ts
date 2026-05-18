@@ -46,7 +46,7 @@ describe('CoachingDecisionEngineService', () => {
       confidence: 'medium',
     });
     expect(insights[0].evidence.join(' ')).toContain(
-      're-peeked EnemyOne 6s after taking 83 damage'
+      'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset'
     );
     expect(insights[0].evidence.join(' ')).toContain(
       'appears to have been too far to trade'

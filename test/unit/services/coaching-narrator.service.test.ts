@@ -72,7 +72,7 @@ describe('CoachingNarratorService', () => {
         sections: [
           {
             playerName: 'TestPlayer',
-            lines: ['18:42 - Fight Reset: EnemyTwo punished your re-peek. Heal before re-engaging.'],
+            lines: ['18:42 - Fight Reset: EnemyTwo punished your swing. Heal before re-engaging.'],
           },
         ],
       }),

@@ -35,7 +35,7 @@ function makeMatchAnalysis(analysis: PlayerAnalysis): MatchAnalysis {
 }
 
 describe('MatchCoachingService', () => {
-  it('emits a high-confidence fight-reset insight when the same attacker punishes a re-peek', () => {
+  it('emits a high-confidence fight-reset insight when the same attacker punishes a failed reset', () => {
     const damage = {
       _D: '2024-01-01T10:18:36.000Z',
       _T: 'LogPlayerTakeDamage',
@@ -82,7 +82,7 @@ describe('MatchCoachingService', () => {
     expect(insights[0].recommendation).toContain('Break line of sight');
   });
 
-  it('does not emit a re-peek insight when the attacker is different', () => {
+  it('does not emit a same-enemy reset insight when the attacker is different', () => {
     const damage = {
       _D: '2024-01-01T10:18:36.000Z',
       _T: 'LogPlayerTakeDamage',

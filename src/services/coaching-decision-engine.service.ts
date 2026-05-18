@@ -102,7 +102,7 @@ export class CoachingDecisionEngineService {
 
     if (context.repeatedSameEnemy && heavyDamage && context.enemyName && seconds !== undefined) {
       claims.push({
-        text: `You re-peeked ${context.enemyName} ${seconds}s after taking ${heavyDamage.damage} damage and ${context.outcome === 'death' ? 'died' : 'got knocked'} for it.`,
+        text: `${context.enemyName} hit you for ${heavyDamage.damage} damage, then ${seconds}s later you ${context.outcome === 'death' ? 'died' : 'got knocked'} to the same player before creating a reset.`,
         confidence: 'high',
         evidence: [
           `Took ${heavyDamage.damage} damage from ${context.enemyName}`,

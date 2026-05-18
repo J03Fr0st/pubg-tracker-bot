@@ -56,7 +56,7 @@ function makeDeath(overrides: Record<string, unknown>): LogPlayerKillV2 {
 }
 
 describe('FightContextBuilderService', () => {
-  it('builds a decisive fight context for a same-enemy re-peek death', () => {
+  it('builds a decisive fight context for a same-enemy failed reset death', () => {
     const damage = makeDamage({});
     const death = makeDeath({});
     const service = new FightContextBuilderService();
