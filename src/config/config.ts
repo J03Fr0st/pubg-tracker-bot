@@ -32,6 +32,15 @@ export interface AppConfig {
     checkIntervalMs: number;
     maxMatchesToProcess: number;
   };
+
+  // LLM coaching configuration
+  llm: {
+    coachingEnabled: boolean;
+    provider: 'openrouter';
+    openRouterApiKey?: string;
+    openRouterModel?: string;
+    timeoutMs: number;
+  };
 }
 
 /**
@@ -70,6 +79,15 @@ function getNumericEnv(name: string, defaultValue: number): number {
   return numericValue;
 }
 
+function getBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const value = process.env[name];
+  if (!value) {
+    return defaultValue;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
 /**
  * Application configuration loaded from environment variables
  */
@@ -90,6 +108,13 @@ export const appConfig: AppConfig = {
   monitoring: {
     checkIntervalMs: getNumericEnv('CHECK_INTERVAL_MS', 90000),
     maxMatchesToProcess: getNumericEnv('MAX_MATCHES_TO_PROCESS', 3),
+  },
+  llm: {
+    coachingEnabled: getBooleanEnv('LLM_COACHING_ENABLED', false),
+    provider: 'openrouter',
+    openRouterApiKey: process.env.OPENROUTER_API_KEY,
+    openRouterModel: process.env.OPENROUTER_MODEL,
+    timeoutMs: getNumericEnv('LLM_TIMEOUT_MS', 8000),
   },
 };
 
@@ -132,6 +157,16 @@ export function validateConfig(): void {
 
   if (appConfig.monitoring.maxMatchesToProcess <= 0) {
     throw new Error('Max matches to process must be greater than 0');
+  }
+
+  if (appConfig.llm.coachingEnabled && !appConfig.llm.openRouterApiKey) {
+    warn(
+      'LLM coaching is enabled but OPENROUTER_API_KEY is missing; coaching will use template narration'
+    );
+  }
+
+  if (appConfig.llm.timeoutMs <= 0) {
+    throw new Error('LLM timeout must be greater than 0');
   }
 
   success('Configuration validated successfully');
