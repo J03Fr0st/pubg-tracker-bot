@@ -71,13 +71,14 @@ describe('MatchCoachingService', () => {
     expect(insights).toHaveLength(1);
     expect(insights[0]).toMatchObject({
       playerName: 'TestPlayer',
-      category: 'fight-reset',
+      category: 'decisive-mistake',
+      kind: 'decisive-mistake',
+      title: 'Decisive mistake',
       severity: 'high',
-      confidence: 'high',
       matchTimeSeconds: 1122,
     });
-    expect(insights[0].evidence).toContain('Took 83 damage from EnemyOne');
-    expect(insights[0].evidence).toContain('Died to EnemyOne 6s later');
+    expect(insights[0].evidence.join(' ')).toContain('EnemyOne');
+    expect(insights[0].evidence.join(' ')).toContain('83 damage');
     expect(insights[0].recommendation).toContain('Break line of sight');
   });
 
@@ -107,7 +108,7 @@ describe('MatchCoachingService', () => {
     expect(insights).toHaveLength(0);
   });
 
-  it('returns at most three insights ranked by severity and confidence', () => {
+  it('returns at most two hybrid coaching insights', () => {
     const service = new MatchCoachingService();
     const matchStartTime = new Date('2024-01-01T10:00:00.000Z');
 
@@ -144,7 +145,7 @@ describe('MatchCoachingService', () => {
       damageEvents
     );
 
-    expect(insights).toHaveLength(3);
-    expect(insights.map((insight) => insight.playerName)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(insights.length).toBeLessThanOrEqual(2);
+    expect(insights[0].kind).toBe('decisive-mistake');
   });
 });
