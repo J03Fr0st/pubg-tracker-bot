@@ -1,5 +1,5 @@
-import { ProcessedMatchRepository } from '../../../src/data/repositories/processed-match.repository';
 import prisma from '../../../src/data/prisma.client';
+import { ProcessedMatchRepository } from '../../../src/data/repositories/processed-match.repository';
 
 jest.mock('../../../src/data/prisma.client', () => ({
   __esModule: true,

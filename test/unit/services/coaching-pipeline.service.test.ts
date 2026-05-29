@@ -1,11 +1,8 @@
-import type {
-  CoachingInsight,
-  CoachingNarration,
-} from '../../../src/types/coaching.types';
-import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
+import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
 import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
-import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
+import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
+import type { CoachingInsight, CoachingNarration } from '../../../src/types/coaching.types';
 
 describe('CoachingPipelineService', () => {
   const fakeMatchAnalysis = {

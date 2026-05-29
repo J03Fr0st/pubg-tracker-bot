@@ -1,12 +1,9 @@
 import type { LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
 import type { MatchAnalysis } from '../types/analytics-results.types';
-import type {
-  CoachingInsight,
-  CoachingNarration,
-} from '../types/coaching.types';
+import type { CoachingInsight, CoachingNarration } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
-import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
-import { FightContextBuilderService } from './fight-context-builder.service';
+import type { CoachingDecisionEngineService } from './coaching-decision-engine.service';
+import type { FightContextBuilderService } from './fight-context-builder.service';
 
 export interface CoachingAnalyzer {
   analyze(

@@ -1,5 +1,5 @@
-import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
 import prisma from '../../../src/data/prisma.client';
+import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
 
 jest.mock('../../../src/data/prisma.client', () => ({
   __esModule: true,

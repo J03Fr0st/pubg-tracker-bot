@@ -608,9 +608,7 @@ describe('Telemetry Discord Flow Integration', () => {
       await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
 
       const serialized = JSON.stringify(
-        mockChannel.send.mock.calls
-          .flatMap((call) => call[0].embeds)
-          .map((embed) => embed.toJSON())
+        mockChannel.send.mock.calls.flatMap((call) => call[0].embeds).map((embed) => embed.toJSON())
       );
 
       expect(serialized).toContain('Decisive mistake');
