@@ -37,18 +37,19 @@ export interface AssistInfo {
   weapon: string;
 }
 
-export interface PlayerAnalysis {
+export interface PlayerTelemetry {
   playerName: string;
-  matchStartTime: Date; // Actual match start time for proper timeline calculation
-  // Raw events (use existing types)
+  matchStartTime: Date;
   killEvents: LogPlayerKillV2[];
   knockdownEvents: LogPlayerMakeGroggy[];
   damageEvents: LogPlayerTakeDamage[];
   reviveEvents: LogPlayerRevive[];
-  // Events where player is the victim
   deathEvents: LogPlayerKillV2[];
   knockedDownEvents: LogPlayerMakeGroggy[];
-  // Calculated analytics
+}
+
+export interface PlayerStats {
+  playerName: string;
   weaponStats: WeaponStats[];
   killChains: KillChain[];
   calculatedAssists: AssistInfo[];
@@ -59,6 +60,8 @@ export interface PlayerAnalysis {
   headshotPercentage: number;
   killsPerMinute: number;
 }
+
+export interface PlayerAnalysis extends PlayerTelemetry, PlayerStats {}
 
 export interface MatchAnalysis {
   matchId: string;
