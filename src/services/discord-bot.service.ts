@@ -30,6 +30,10 @@ import {
   type TextBasedChannel,
 } from 'discord.js';
 import { appConfig } from '../config/config';
+import { MatchRepository } from '../data/repositories/match.repository';
+import { PlayerRepository } from '../data/repositories/player.repository';
+import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+import { TelemetryRepository } from '../data/repositories/telemetry.repository';
 import type {
   AssistInfo,
   KillChain,
@@ -45,11 +49,12 @@ import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
+import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
 import { CoachingNarratorService } from './coaching-narrator.service';
-import { MatchCoachingService } from './match-coaching.service';
+import { CoachingPipelineService } from './coaching-pipeline.service';
+import { FightContextBuilderService } from './fight-context-builder.service';
 import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from './player-stats.service';
-import { PubgStorageService } from './pubg-storage.service';
 import { TelemetryProcessorService } from './telemetry-processor.service';
 
 interface ParticipantMatchStats {
@@ -75,11 +80,14 @@ const DISCORD_MISSING_PERMISSIONS = 50013;
 
 export class DiscordBotService {
   private readonly client: Client;
-  private readonly pubgStorageService: PubgStorageService;
+  private readonly playerRepository = new PlayerRepository();
+  private readonly processedMatchRepository = new ProcessedMatchRepository();
+  private readonly matchRepository = new MatchRepository();
+  private readonly telemetryRepository = new TelemetryRepository();
   private readonly pubgClient: PubgClient;
   private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
-  private readonly matchCoachingService: MatchCoachingService;
+  private readonly coachingPipeline: CoachingPipelineService;
   private coachingNarrator: CoachingNarratorService;
   private readonly commands = [
     new SlashCommandBuilder()
@@ -132,14 +140,12 @@ export class DiscordBotService {
         GatewayIntentBits.MessageContent,
       ],
     });
-    this.pubgStorageService = new PubgStorageService();
     this.pubgClient = new PubgClient({
       apiKey,
       shard: shard as any, // Cast to handle type compatibility
     });
     this.playerStatsService = new PlayerStatsService(this.pubgClient, shard);
     this.telemetryProcessor = new TelemetryProcessorService();
-    this.matchCoachingService = new MatchCoachingService();
     const llmClient =
       appConfig.llm.coachingEnabled &&
       appConfig.llm.openRouterApiKey &&
@@ -153,6 +159,11 @@ export class DiscordBotService {
     this.coachingNarrator = new CoachingNarratorService(llmClient, {
       enabled: Boolean(llmClient),
       maxLineLength: 240,
+    });
+    this.coachingPipeline = CoachingPipelineService.withDefaults({
+      fightContextBuilder: new FightContextBuilderService(),
+      decisionEngine: new CoachingDecisionEngineService(),
+      narrate: (insights) => this.coachingNarrator.narrate(insights),
     });
     this.setupEventHandlers();
   }
@@ -271,12 +282,14 @@ export class DiscordBotService {
     channel?: Channel | TextBasedChannel | SendableTextChannel
   ): never {
     if (this.isDiscordAccessError(err)) {
-      throw new Error(`Discord bot cannot access channel ${channelId}. ${[
-        this.formatDiscordError(err),
-        this.formatDiscordChannelDiagnostics(channel),
-      ]
-        .filter(Boolean)
-        .join(' ')}`);
+      throw new Error(
+        `Discord bot cannot access channel ${channelId}. ${[
+          this.formatDiscordError(err),
+          this.formatDiscordChannelDiagnostics(channel),
+        ]
+          .filter(Boolean)
+          .join(' ')}`
+      );
     }
 
     throw err;
@@ -314,9 +327,7 @@ export class DiscordBotService {
         }
       | undefined;
 
-    const bot = botUser
-      ? `Bot=${botUser.tag ?? 'unknown'} (${botUser.id}).`
-      : 'Bot=not logged in.';
+    const bot = botUser ? `Bot=${botUser.tag ?? 'unknown'} (${botUser.id}).` : 'Bot=not logged in.';
     const channelInfo = channelLike
       ? `Channel=#${channelLike.name ?? 'unknown'} (${channelLike.id ?? 'unknown'}, type=${channelLike.type ?? 'unknown'}).`
       : 'Channel=unresolved.';
@@ -418,7 +429,7 @@ export class DiscordBotService {
         ? playerResponse.data[0]
         : (playerResponse.data as Player);
 
-      await this.pubgStorageService.addPlayer({
+      await this.playerRepository.savePlayer({
         id: player.id,
         type: player.type,
         attributes: player.attributes,
@@ -456,7 +467,7 @@ export class DiscordBotService {
     const playerName = interaction.options.getString('playername', true);
 
     try {
-      await this.pubgStorageService.removePlayer(playerName);
+      await this.playerRepository.removePlayer(playerName);
       const successEmbed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Player Removed')
@@ -481,7 +492,7 @@ export class DiscordBotService {
 
   private async handleListPlayers(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
-    const players = await this.pubgStorageService.getAllPlayers();
+    const players = await this.playerRepository.getAllPlayers();
 
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
@@ -508,7 +519,7 @@ export class DiscordBotService {
 
     try {
       // Get details about the last match before removing it
-      const lastMatch = await this.pubgStorageService.getLastProcessedMatch();
+      const lastMatch = await this.processedMatchRepository.getLastProcessedMatch();
 
       if (!lastMatch) {
         debug(`No matches found to remove for user ${userName}`);
@@ -528,7 +539,7 @@ export class DiscordBotService {
       );
 
       // Remove the last processed match
-      const removedMatchId = await this.pubgStorageService.removeLastProcessedMatch();
+      const removedMatchId = await this.processedMatchRepository.removeLastProcessedMatch();
 
       if (removedMatchId) {
         success(`Successfully removed last match ${removedMatchId} by user ${userName}`);
@@ -579,7 +590,7 @@ export class DiscordBotService {
     const matchId = interaction.options.getString('matchid', true);
     debug(`User ${userName} requested to remove match ${matchId}`);
     try {
-      const deleted = await this.pubgStorageService.removeProcessedMatch(matchId);
+      const deleted = await this.processedMatchRepository.removeProcessedMatch(matchId);
       if (deleted) {
         const successEmbed = new EmbedBuilder()
           .setColor(0x00ff00)
@@ -625,7 +636,7 @@ export class DiscordBotService {
       debug(`Successfully fetched match details for ${matchId}`);
 
       // Get all monitored players to find any that participated in this match
-      const monitoredPlayers = await this.pubgStorageService.getAllPlayers();
+      const monitoredPlayers = await this.playerRepository.getAllPlayers();
       const monitoredPlayerNames = monitoredPlayers.map((p) => p.name);
 
       // Extract participants from match details
@@ -831,7 +842,7 @@ export class DiscordBotService {
     try {
       // Check DB cache first
       try {
-        const cached = await this.pubgStorageService.getCachedTelemetryAnalyses(matchId);
+        const cached = await this.telemetryRepository.getCachedAnalyses(matchId);
         if (cached) {
           debug(`Using cached telemetry analysis for match ${matchId}`);
           const matchAnalysis: MatchAnalysis = {
@@ -844,7 +855,7 @@ export class DiscordBotService {
           };
 
           // Build participant stats map from DB
-          const matchData = await this.pubgStorageService.getMatch(matchId);
+          const matchData = await this.matchRepository.findMatch(matchId);
           const participantStatsMap = new Map<string, ParticipantMatchStats>();
           if (matchData?.participants) {
             for (const p of matchData.participants) {
@@ -924,12 +935,12 @@ export class DiscordBotService {
       for (const [name, analysis] of matchAnalysis.playerAnalyses) {
         analysesObj[name] = analysis;
       }
-      this.pubgStorageService
+      this.telemetryRepository
         .saveTelemetry(matchId, telemetryData, analysesObj)
         .catch((err) => debug(`Failed to cache telemetry for ${matchId}: ${err}`));
 
       // Build participant stats map from DB
-      const matchData = await this.pubgStorageService.getMatch(matchId);
+      const matchData = await this.matchRepository.findMatch(matchId);
       const participantStatsMap = new Map<string, ParticipantMatchStats>();
       if (matchData?.participants) {
         for (const p of matchData.participants) {
@@ -1009,32 +1020,23 @@ export class DiscordBotService {
     telemetryData: TelemetryEvent[],
     matchColor: number
   ): Promise<EmbedBuilder[]> {
-    try {
-      const damageEvents = telemetryData.filter(
-        (event) => event._T === 'LogPlayerTakeDamage'
-      ) as LogPlayerTakeDamage[];
-      const insights = this.matchCoachingService.analyzeMatch(
-        matchAnalysis,
-        trackedPlayerNames,
-        damageEvents
-      );
+    const damageEvents = telemetryData.filter(
+      (event) => event._T === 'LogPlayerTakeDamage'
+    ) as LogPlayerTakeDamage[];
 
-      if (insights.length === 0) {
-        return [];
-      }
+    const result = await this.coachingPipeline.run(matchAnalysis, trackedPlayerNames, damageEvents);
 
-      const narration = await this.coachingNarrator.narrate(insights);
-      return this.buildCoachingEmbeds(narration, matchColor);
-    } catch (err) {
-      debug(`Coaching section failed, omitting coaching embed: ${err}`);
+    if (result.kind === 'empty') {
       return [];
     }
+    if (result.kind === 'failed') {
+      error(`Coaching pipeline failed at ${result.stage}: ${result.reason}`);
+      return [];
+    }
+    return this.buildCoachingEmbeds(result.narration, matchColor);
   }
 
-  private buildCoachingEmbeds(
-    narration: CoachingNarration,
-    matchColor: number
-  ): EmbedBuilder[] {
+  private buildCoachingEmbeds(narration: CoachingNarration, matchColor: number): EmbedBuilder[] {
     if (narration.sections.length === 0) {
       return [];
     }

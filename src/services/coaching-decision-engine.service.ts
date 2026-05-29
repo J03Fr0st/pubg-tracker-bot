@@ -1,3 +1,7 @@
+import {
+  type CoachingScoringWeights,
+  DEFAULT_COACHING_SCORING_WEIGHTS,
+} from '../config/coaching-weights';
 import type {
   CoachingInsight,
   CoachingRating,
@@ -12,6 +16,10 @@ const TRADE_RANGE_METERS = 60;
 const STACKED_ANGLE_DEGREES = 25;
 
 export class CoachingDecisionEngineService {
+  public constructor(
+    private readonly weights: CoachingScoringWeights = DEFAULT_COACHING_SCORING_WEIGHTS
+  ) {}
+
   public createInsights(contexts: FightContext[]): CoachingInsight[] {
     const decisive = this.createDecisiveInsight(contexts);
     const pattern = this.createPatternInsight(contexts);
@@ -79,7 +87,8 @@ export class CoachingDecisionEngineService {
       evidence: [
         `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`,
       ],
-      recommendation: 'Stop giving the same enemy a second clean fight after you are already damaged.',
+      recommendation:
+        'Stop giving the same enemy a second clean fight after you are already damaged.',
       betterPlay: [
         'break line of sight',
         'heal before re-engaging',
@@ -100,7 +109,9 @@ export class CoachingDecisionEngineService {
   private buildClaims(context: FightContext): FightContextClaim[] {
     const claims: FightContextClaim[] = [];
     const heavyDamage = this.getHeavyDamage(context);
-    const seconds = heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
+    const seconds = heavyDamage
+      ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds
+      : undefined;
 
     if (context.repeatedSameEnemy && heavyDamage && context.enemyName && seconds !== undefined) {
       claims.push({
@@ -176,11 +187,11 @@ export class CoachingDecisionEngineService {
   }
 
   private scoreContext(context: FightContext): number {
-    let score = context.outcome === 'death' ? 50 : 40;
-    if (this.isBadReset(context)) score += 30;
-    if (context.tradeRangeConfidence !== 'low') score += 10;
-    if (context.closestTeammateDamageToEnemy.length === 0) score += 5;
-    if (context.heightConfidence !== 'low') score += 5;
+    let score = context.outcome === 'death' ? this.weights.deathOutcome : this.weights.knockOutcome;
+    if (this.isBadReset(context)) score += this.weights.badReset;
+    if (context.tradeRangeConfidence !== 'low') score += this.weights.tradeRangeKnown;
+    if (context.closestTeammateDamageToEnemy.length === 0) score += this.weights.noTeammateDamage;
+    if (context.heightConfidence !== 'low') score += this.weights.heightKnown;
     return score;
   }
 

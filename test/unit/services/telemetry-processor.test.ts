@@ -1,9 +1,9 @@
-import {
-  type LogPlayerKillV2,
-  type LogPlayerMakeGroggy,
-  type LogPlayerTakeDamage,
-  type LogWeaponFireCount,
-  type TelemetryEvent,
+import type {
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  LogPlayerTakeDamage,
+  LogWeaponFireCount,
+  TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 import { TelemetryProcessorService } from '../../../src/services/telemetry-processor.service';
 

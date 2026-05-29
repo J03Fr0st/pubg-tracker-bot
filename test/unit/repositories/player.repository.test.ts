@@ -1,5 +1,5 @@
-import { PlayerRepository } from '../../../src/data/repositories/player.repository';
 import prisma from '../../../src/data/prisma.client';
+import { PlayerRepository } from '../../../src/data/repositories/player.repository';
 
 jest.mock('../../../src/data/prisma.client', () => ({
   __esModule: true,

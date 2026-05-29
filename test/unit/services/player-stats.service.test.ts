@@ -1,6 +1,6 @@
-import { PlayerStatsService } from '../../../src/services/player-stats.service';
-import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
 import type { PubgClient } from '@j03fr0st/pubg-ts';
+import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
+import { PlayerStatsService } from '../../../src/services/player-stats.service';
 
 jest.mock('../../../src/data/repositories/season-cache.repository');
 

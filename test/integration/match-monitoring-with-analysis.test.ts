@@ -130,9 +130,7 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
       guild: { id: 'guild-123', name: 'PUBG Guild' },
       isTextBased: jest.fn().mockReturnValue(true),
       permissionsFor: jest.fn().mockReturnValue({
-        has: jest.fn(
-          (permission: bigint) => permission === BigInt(1) || permission === BigInt(8)
-        ),
+        has: jest.fn((permission: bigint) => permission === BigInt(1) || permission === BigInt(8)),
       }),
       send: jest.fn().mockRejectedValue(discordMissingAccessError),
     };
