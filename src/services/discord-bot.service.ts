@@ -46,6 +46,7 @@ import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { CoachingNarratorService } from './coaching-narrator.service';
+import { CoachingPipelineService } from './coaching-pipeline.service';
 import { MatchCoachingService } from './match-coaching.service';
 import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from './player-stats.service';
@@ -80,6 +81,7 @@ export class DiscordBotService {
   private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
   private readonly matchCoachingService: MatchCoachingService;
+  private readonly coachingPipeline: CoachingPipelineService;
   private coachingNarrator: CoachingNarratorService;
   private readonly commands = [
     new SlashCommandBuilder()
@@ -153,6 +155,11 @@ export class DiscordBotService {
     this.coachingNarrator = new CoachingNarratorService(llmClient, {
       enabled: Boolean(llmClient),
       maxLineLength: 240,
+    });
+    this.coachingPipeline = new CoachingPipelineService({
+      analyze: (analysis, names, damage) =>
+        this.matchCoachingService.analyzeMatch(analysis, names, damage),
+      narrate: (insights) => this.coachingNarrator.narrate(insights),
     });
     this.setupEventHandlers();
   }
@@ -1009,26 +1016,24 @@ export class DiscordBotService {
     telemetryData: TelemetryEvent[],
     matchColor: number
   ): Promise<EmbedBuilder[]> {
-    try {
-      const damageEvents = telemetryData.filter(
-        (event) => event._T === 'LogPlayerTakeDamage'
-      ) as LogPlayerTakeDamage[];
-      const insights = this.matchCoachingService.analyzeMatch(
-        matchAnalysis,
-        trackedPlayerNames,
-        damageEvents
-      );
+    const damageEvents = telemetryData.filter(
+      (event) => event._T === 'LogPlayerTakeDamage'
+    ) as LogPlayerTakeDamage[];
 
-      if (insights.length === 0) {
-        return [];
-      }
+    const result = await this.coachingPipeline.run(
+      matchAnalysis,
+      trackedPlayerNames,
+      damageEvents
+    );
 
-      const narration = await this.coachingNarrator.narrate(insights);
-      return this.buildCoachingEmbeds(narration, matchColor);
-    } catch (err) {
-      debug(`Coaching section failed, omitting coaching embed: ${err}`);
+    if (result.kind === 'empty') {
       return [];
     }
+    if (result.kind === 'failed') {
+      error(`Coaching pipeline failed at ${result.stage}: ${result.reason}`);
+      return [];
+    }
+    return this.buildCoachingEmbeds(result.narration, matchColor);
   }
 
   private buildCoachingEmbeds(
