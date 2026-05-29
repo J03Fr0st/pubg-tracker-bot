@@ -4,7 +4,6 @@ import { appConfig, validateConfig } from './config/config';
 import prisma from './data/prisma.client';
 import { DiscordBotService } from './services/discord-bot.service';
 import { MatchMonitorService } from './services/match-monitor.service';
-import { PubgStorageService } from './services/pubg-storage.service';
 import { database, discord, error, monitor, shutdown, startup } from './utils/logger';
 
 /**
@@ -23,7 +22,6 @@ async function main(): Promise<void> {
 
     // Initialize services
     startup('Initializing services...');
-    const pubgStorage = new PubgStorageService();
     const discordBot = new DiscordBotService(appConfig.pubg.apiKey, appConfig.pubg.shard as Shard);
 
     // Initialize Discord bot
@@ -33,7 +31,6 @@ async function main(): Promise<void> {
     // Start match monitoring
     monitor('Starting match monitoring...');
     const matchMonitor = new MatchMonitorService(
-      pubgStorage,
       discordBot,
       appConfig.pubg.apiKey,
       appConfig.pubg.shard as Shard

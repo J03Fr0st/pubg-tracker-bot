@@ -7,6 +7,9 @@ import {
   type Shard,
 } from '@j03fr0st/pubg-ts';
 import { appConfig } from '../config/config';
+import { MatchRepository } from '../data/repositories/match.repository';
+import { PlayerRepository } from '../data/repositories/player.repository';
+import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
@@ -14,7 +17,6 @@ import type {
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
-import type { PubgStorageService } from './pubg-storage.service';
 
 export class MatchMonitorService {
   private readonly checkInterval: number;
@@ -24,8 +26,11 @@ export class MatchMonitorService {
   private shouldStop = false;
   private readonly pubgClient: PubgClient;
 
+  private readonly playerRepository = new PlayerRepository();
+  private readonly processedMatchRepository = new ProcessedMatchRepository();
+  private readonly matchRepository = new MatchRepository();
+
   constructor(
-    private readonly storage: PubgStorageService,
     private readonly discordBot: DiscordBotService,
     apiKey: string,
     shard: Shard = 'steam'
@@ -58,7 +63,10 @@ export class MatchMonitorService {
     try {
       await this.discordBot.validateChannelAccess(this.channelId);
     } catch (err) {
-      error('Discord channel access validation failed. Match monitoring will not start:', err as Error);
+      error(
+        'Discord channel access validation failed. Match monitoring will not start:',
+        err as Error
+      );
       throw err;
     }
 
@@ -116,7 +124,7 @@ export class MatchMonitorService {
 
   private async checkNewMatches(): Promise<void> {
     const cycleStartTime = Date.now();
-    const players = await this.storage.getAllPlayers();
+    const players = await this.playerRepository.getAllPlayers();
 
     if (players.length === 0) {
       debug('No players to monitor, skipping check');
@@ -140,7 +148,7 @@ export class MatchMonitorService {
         const playerData = Array.isArray(playerResponse.data)
           ? playerResponse.data[0]
           : (playerResponse.data as Player);
-        await this.storage.addPlayer({
+        await this.playerRepository.savePlayer({
           id: playerData.id,
           type: playerData.type,
           attributes: playerData.attributes,
@@ -177,7 +185,7 @@ export class MatchMonitorService {
     }
 
     // Filter out already processed matches BEFORE making API calls
-    const processedMatches = await this.storage.getProcessedMatches();
+    const processedMatches = await this.processedMatchRepository.getProcessedMatches();
     debug(`Retrieved ${processedMatches.length} previously processed matches`);
 
     const newMatchIds = Array.from(uniqueMatchIds.keys()).filter(
@@ -201,7 +209,7 @@ export class MatchMonitorService {
 
         // Persist match data to DB
         try {
-          await this.storage.saveMatch(matchDetails);
+          await this.matchRepository.saveMatch(matchDetails);
         } catch (saveErr) {
           warn(`Failed to save match ${matchId} to DB: ${saveErr}`);
         }
@@ -235,7 +243,7 @@ export class MatchMonitorService {
         const summary = await this.createMatchSummary(match);
         if (summary) {
           await this.discordBot.sendMatchSummary(this.channelId, summary);
-          await this.storage.addProcessedMatch(match.matchId);
+          await this.processedMatchRepository.addProcessedMatch(match.matchId);
           processedCount++;
           debug(`Match ${match.matchId} processed successfully`);
         } else {
