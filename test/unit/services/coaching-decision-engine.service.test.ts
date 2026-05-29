@@ -1,3 +1,7 @@
+import {
+  type CoachingScoringWeights,
+  DEFAULT_COACHING_SCORING_WEIGHTS,
+} from '../../../src/config/coaching-weights';
 import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 import type { FightContext } from '../../../src/types/coaching.types';
 
@@ -49,9 +53,7 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights[0].evidence.join(' ')).toContain(
       'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset'
     );
-    expect(insights[0].evidence.join(' ')).toContain(
-      'appears to have been too far to trade'
-    );
+    expect(insights[0].evidence.join(' ')).toContain('appears to have been too far to trade');
     expect(insights[0].recommendation).toContain('Break line of sight');
   });
 
@@ -102,9 +104,7 @@ describe('CoachingDecisionEngineService', () => {
       }),
     ]);
 
-    expect(insights[0].evidence.join(' ')).not.toContain(
-      'no damage from them to EnemyOne'
-    );
+    expect(insights[0].evidence.join(' ')).not.toContain('no damage from them to EnemyOne');
   });
 
   it('omits low-confidence geometry claims', () => {
@@ -148,5 +148,42 @@ describe('CoachingDecisionEngineService', () => {
     ]);
 
     expect(insights).toHaveLength(2);
+  });
+});
+
+describe('CoachingDecisionEngineService — scoring weights', () => {
+  it('exposes default weights matching legacy magic numbers', () => {
+    expect(DEFAULT_COACHING_SCORING_WEIGHTS).toEqual<CoachingScoringWeights>({
+      deathOutcome: 50,
+      knockOutcome: 40,
+      badReset: 30,
+      tradeRangeKnown: 10,
+      noTeammateDamage: 5,
+      heightKnown: 5,
+    });
+  });
+
+  it('accepts injected weights and uses them in scoring', () => {
+    const deathCtx = makeContext({ playerName: 'DeathPlayer', outcome: 'death' });
+    const knockCtx = makeContext({
+      playerName: 'KnockPlayer',
+      outcome: 'knock',
+      closestTeammateDistanceMeters: undefined,
+      closestTeammateName: undefined,
+      tradeRangeConfidence: 'low',
+      heightDeltaMeters: undefined,
+      heightConfidence: 'low',
+    });
+    const engine = new CoachingDecisionEngineService({
+      ...DEFAULT_COACHING_SCORING_WEIGHTS,
+      deathOutcome: 1000,
+      knockOutcome: 0,
+      badReset: 0,
+      tradeRangeKnown: 0,
+      noTeammateDamage: 0,
+      heightKnown: 0,
+    });
+
+    expect(engine.createInsights([deathCtx, knockCtx])[0].playerName).toBe(deathCtx.playerName);
   });
 });
