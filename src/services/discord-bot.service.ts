@@ -47,7 +47,8 @@ import { debug, error, success } from '../utils/logger';
 import { MatchColorUtil } from '../utils/match-colors.util';
 import { CoachingNarratorService } from './coaching-narrator.service';
 import { CoachingPipelineService } from './coaching-pipeline.service';
-import { MatchCoachingService } from './match-coaching.service';
+import { FightContextBuilderService } from './fight-context-builder.service';
+import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
 import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from './player-stats.service';
 import { PubgStorageService } from './pubg-storage.service';
@@ -80,7 +81,6 @@ export class DiscordBotService {
   private readonly pubgClient: PubgClient;
   private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
-  private readonly matchCoachingService: MatchCoachingService;
   private readonly coachingPipeline: CoachingPipelineService;
   private coachingNarrator: CoachingNarratorService;
   private readonly commands = [
@@ -141,7 +141,6 @@ export class DiscordBotService {
     });
     this.playerStatsService = new PlayerStatsService(this.pubgClient, shard);
     this.telemetryProcessor = new TelemetryProcessorService();
-    this.matchCoachingService = new MatchCoachingService();
     const llmClient =
       appConfig.llm.coachingEnabled &&
       appConfig.llm.openRouterApiKey &&
@@ -156,9 +155,9 @@ export class DiscordBotService {
       enabled: Boolean(llmClient),
       maxLineLength: 240,
     });
-    this.coachingPipeline = new CoachingPipelineService({
-      analyze: (analysis, names, damage) =>
-        this.matchCoachingService.analyzeMatch(analysis, names, damage),
+    this.coachingPipeline = CoachingPipelineService.withDefaults({
+      fightContextBuilder: new FightContextBuilderService(),
+      decisionEngine: new CoachingDecisionEngineService(),
       narrate: (insights) => this.coachingNarrator.narrate(insights),
     });
     this.setupEventHandlers();

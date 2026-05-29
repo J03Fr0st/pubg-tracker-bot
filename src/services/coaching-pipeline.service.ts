@@ -5,6 +5,8 @@ import type {
   CoachingNarration,
 } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
+import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
+import { FightContextBuilderService } from './fight-context-builder.service';
 
 export interface CoachingAnalyzer {
   analyze(
@@ -53,4 +55,22 @@ export class CoachingPipelineService {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+export interface CoachingPipelineDefaults {
+  fightContextBuilder: FightContextBuilderService;
+  decisionEngine: CoachingDecisionEngineService;
+  narrate: CoachingNarrator['narrate'];
+}
+
+export namespace CoachingPipelineService {
+  export function withDefaults(deps: CoachingPipelineDefaults): CoachingPipelineService {
+    return new CoachingPipelineService({
+      analyze: (analysis, names, damage) => {
+        const contexts = deps.fightContextBuilder.buildFightContexts(analysis, names, damage);
+        return deps.decisionEngine.createInsights(contexts);
+      },
+      narrate: deps.narrate,
+    });
+  }
 }

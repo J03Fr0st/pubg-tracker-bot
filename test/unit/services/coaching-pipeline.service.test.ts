@@ -4,6 +4,8 @@ import type {
 } from '../../../src/types/coaching.types';
 import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
+import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
+import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 
 describe('CoachingPipelineService', () => {
   const fakeMatchAnalysis = {
@@ -74,5 +76,15 @@ describe('CoachingPipelineService', () => {
     const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
 
     expect(result).toEqual({ kind: 'failed', reason: 'llm down', stage: 'narrate' });
+  });
+
+  it('factory wires the two real coaching services', async () => {
+    const pipeline = CoachingPipelineService.withDefaults({
+      fightContextBuilder: new FightContextBuilderService(),
+      decisionEngine: new CoachingDecisionEngineService(),
+      narrate: async () => ({ sections: [] }),
+    });
+    const result = await pipeline.run(fakeMatchAnalysis, [], []);
+    expect(result.kind).toBe('empty');
   });
 });
