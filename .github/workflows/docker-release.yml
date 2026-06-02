@@ -6,7 +6,6 @@ on:
       - main
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: docker.io
   IMAGE_NAME: joevreug/pubg-tracker-bot
 
@@ -42,7 +41,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
