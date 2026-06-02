@@ -186,7 +186,7 @@ describe('CoachingDecisionEngineService', () => {
       makeContext({ timestamp: new Date('2024-01-01T10:18:42.000Z'), matchTimeSeconds: 1122 }),
     ]);
 
-    expect(insights).toHaveLength(2);
+    expect(insights).toHaveLength(3);
     expect(insights[1]).toMatchObject({
       category: 'pattern',
       kind: 'pattern',
@@ -206,7 +206,7 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights.map((insight) => insight.playerName)).toEqual(['Alpha', 'Bravo', 'Charlie']);
   });
 
-  it('returns at most two insights per player', () => {
+  it('returns at most three insights per player', () => {
     const service = new CoachingDecisionEngineService();
     const insights = service.createInsights([
       makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
@@ -214,8 +214,56 @@ describe('CoachingDecisionEngineService', () => {
       makeContext({ playerName: 'Alpha', matchTimeSeconds: 800 }),
     ]);
 
-    expect(insights).toHaveLength(2);
+    expect(insights).toHaveLength(3);
     expect(insights.every((insight) => insight.playerName === 'Alpha')).toBe(true);
+  });
+
+  it('adds a player fingerprint insight for repeated re-peek behavior', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 700 }),
+    ]);
+
+    const fingerprint = insights.find((insight) => insight.kind === 'player-fingerprint');
+
+    expect(fingerprint).toMatchObject({
+      playerName: 'Alpha',
+      category: 'player-fingerprint',
+      title: 'Player fingerprint',
+      severity: 'medium',
+      confidence: 'high',
+    });
+    expect(fingerprint?.evidence.join(' ')).toContain('Aggressive re-peeker');
+    expect(fingerprint?.evidence.join(' ')).toContain('2 of 2 reviewed fights');
+    expect(fingerprint?.recommendation).toContain('Treat first damage as a reset trigger');
+  });
+
+  it('adds a player fingerprint insight for zone-forced fighting', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        playerName: 'Bravo',
+        matchTimeSeconds: 900,
+        blueZoneDamage: {
+          damage: 38,
+          events: [
+            {
+              timestamp: new Date('2024-01-01T10:14:20.000Z'),
+              matchTimeSeconds: 860,
+              victimName: 'Bravo',
+              damage: 38,
+            },
+          ],
+          windowSeconds: 60,
+        },
+      }),
+    ]);
+
+    const fingerprint = insights.find((insight) => insight.kind === 'player-fingerprint');
+
+    expect(fingerprint?.evidence.join(' ')).toContain('Late-rotate fighter');
+    expect(fingerprint?.recommendation).toContain('move before blue-zone damage');
   });
 });
 

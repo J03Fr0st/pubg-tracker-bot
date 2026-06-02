@@ -135,10 +135,20 @@ describe('CoachingNarratorService', () => {
         title: 'Pattern to fix',
         recommendation: 'Stop giving the same enemy a second clean fight.',
       },
+      {
+        ...insight,
+        category: 'player-fingerprint',
+        kind: 'player-fingerprint',
+        title: 'Player fingerprint',
+        evidence: ['Aggressive re-peeker: 2 of 2 reviewed fights matched this telemetry pattern.'],
+        recommendation: 'Treat first damage as a reset trigger.',
+      },
     ]);
 
     expect(narration.sections[0].title).toBe('Decisive mistake');
     expect(narration.sections[1].title).toBe('Pattern to fix');
+    expect(narration.sections[2].title).toBe('Player fingerprint');
+    expect(narration.sections[2].lines[0]).toContain('Player fingerprint');
   });
 
   it('formats enriched death-review and zone-pressure evidence in template narration', async () => {

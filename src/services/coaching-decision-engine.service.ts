@@ -11,7 +11,7 @@ import type {
 
 const HEAVY_DAMAGE_THRESHOLD = 60;
 const PATTERN_MIN_COUNT = 2;
-const MAX_INSIGHTS_PER_PLAYER = 2;
+const MAX_INSIGHTS_PER_PLAYER = 3;
 const TRADE_RANGE_METERS = 60;
 const STACKED_ANGLE_DEGREES = 25;
 const MATERIAL_BLUE_ZONE_DAMAGE = 25;
@@ -25,7 +25,8 @@ export class CoachingDecisionEngineService {
     return [...this.groupContextsByPlayer(contexts).values()].flatMap((playerContexts) => {
       const decisive = this.createDecisiveInsight(playerContexts);
       const pattern = this.createPatternInsight(playerContexts);
-      return [decisive, pattern]
+      const fingerprint = this.createFingerprintInsight(playerContexts);
+      return [decisive, pattern, fingerprint]
         .filter((insight): insight is CoachingInsight => Boolean(insight))
         .slice(0, MAX_INSIGHTS_PER_PLAYER);
     });
@@ -118,6 +119,92 @@ export class CoachingDecisionEngineService {
           evidence: badResetContexts.map(
             (context) => `${context.playerName} at ${context.matchTimeSeconds}s`
           ),
+        },
+      ],
+    };
+  }
+
+  private createFingerprintInsight(contexts: FightContext[]): CoachingInsight | null {
+    const reviewedFightCount = contexts.length;
+    if (reviewedFightCount === 0) {
+      return null;
+    }
+
+    const badResetCount = contexts.filter((context) => this.isBadReset(context)).length;
+    const zonePressureCount = contexts.filter((context) =>
+      this.hasMaterialZonePressure(context)
+    ).length;
+    const isolatedTradeCount = contexts.filter((context) => this.hasIsolatedTrade(context)).length;
+    const lowDamageConversionCount = contexts.filter((context) =>
+      this.hasLowDamageConversion(context)
+    ).length;
+
+    const profile = [
+      {
+        name: 'Aggressive re-peeker',
+        count: badResetCount,
+        minimumCount: 2,
+        recommendation:
+          'Treat first damage as a reset trigger: break line of sight, heal, then force a new angle.',
+        betterPlay: ['break line of sight', 'heal before re-engaging', 'force a new angle'],
+      },
+      {
+        name: 'Late-rotate fighter',
+        count: zonePressureCount,
+        minimumCount: 1,
+        recommendation:
+          'Choose the next position earlier and move before blue-zone damage turns the fight into a forced duel.',
+        betterPlay: ['rotate earlier before taking optional fights', 'move before blue-zone damage'],
+      },
+      {
+        name: 'Isolated entry',
+        count: isolatedTradeCount,
+        minimumCount: 2,
+        recommendation:
+          'Start fights where the nearest teammate can trade damage, not merely stand nearby.',
+        betterPlay: ['wait for teammate trade pressure', 'force a crossfire angle'],
+      },
+      {
+        name: 'Low-conversion trader',
+        count: lowDamageConversionCount,
+        minimumCount: 2,
+        recommendation:
+          'Do not extend damage-negative trades; reset or reposition when return damage is not landing.',
+        betterPlay: ['stop damage-negative trades', 'reposition before re-engaging'],
+      },
+    ]
+      .filter((entry) => entry.count >= entry.minimumCount)
+      .sort((left, right) => right.count - left.count)[0];
+
+    if (!profile) {
+      return null;
+    }
+
+    const latest = [...contexts].sort(
+      (left, right) => right.matchTimeSeconds - left.matchTimeSeconds
+    )[0];
+
+    return {
+      playerName: latest.playerName,
+      category: 'player-fingerprint',
+      kind: 'player-fingerprint',
+      title: 'Player fingerprint',
+      timestamp: latest.timestamp,
+      matchTimeSeconds: latest.matchTimeSeconds,
+      severity: 'medium',
+      confidence: profile.count >= 2 ? 'high' : 'medium',
+      evidence: [
+        `${profile.name}: ${profile.count} of ${reviewedFightCount} reviewed fights matched this telemetry pattern.`,
+      ],
+      recommendation: profile.recommendation,
+      betterPlay: profile.betterPlay,
+      claims: [
+        {
+          text: `${profile.name}: ${profile.count} of ${reviewedFightCount} reviewed fights matched this telemetry pattern.`,
+          confidence: profile.count >= 2 ? 'high' : 'medium',
+          evidence: contexts
+            .filter((context) => this.contextMatchesProfile(context, profile.name))
+            .map((context) => `${context.playerName} at ${context.matchTimeSeconds}s`),
         },
       ],
     };
@@ -235,6 +322,28 @@ export class CoachingDecisionEngineService {
     const noMeaningfulReposition =
       context.repositionDistanceMeters === undefined || context.repositionDistanceMeters < 15;
     return Boolean(heavyDamage && context.repeatedSameEnemy && noMeaningfulReposition);
+  }
+
+  private hasIsolatedTrade(context: FightContext): boolean {
+    return (
+      context.tradeRangeConfidence !== 'low' &&
+      context.closestTeammateName !== undefined &&
+      context.closestTeammateDamageToEnemy.length === 0
+    );
+  }
+
+  private hasLowDamageConversion(context: FightContext): boolean {
+    const damageTaken = context.damageTaken.reduce((sum, event) => sum + event.damage, 0);
+    const damageDealt = context.damageDealt.reduce((sum, event) => sum + event.damage, 0);
+    return damageTaken >= HEAVY_DAMAGE_THRESHOLD && damageDealt < damageTaken / 2;
+  }
+
+  private contextMatchesProfile(context: FightContext, profileName: string): boolean {
+    if (profileName === 'Aggressive re-peeker') return this.isBadReset(context);
+    if (profileName === 'Late-rotate fighter') return this.hasMaterialZonePressure(context);
+    if (profileName === 'Isolated entry') return this.hasIsolatedTrade(context);
+    if (profileName === 'Low-conversion trader') return this.hasLowDamageConversion(context);
+    return false;
   }
 
   private hasMaterialZonePressure(context: FightContext): boolean {

@@ -1,5 +1,6 @@
 export type CoachingCategory =
   | 'decisive-mistake'
+  | 'player-fingerprint'
   | 'pattern'
   | 'fight-reset'
   | 'team-spacing'
@@ -10,7 +11,7 @@ export type CoachingCategory =
 
 export type CoachingRating = 'low' | 'medium' | 'high';
 
-export type CoachingInsightKind = 'decisive-mistake' | 'pattern';
+export type CoachingInsightKind = 'decisive-mistake' | 'pattern' | 'player-fingerprint';
 
 export type FightOutcome = 'knock' | 'death';
 
@@ -85,7 +86,7 @@ export interface CoachingInsight {
   playerName: string;
   category: CoachingCategory;
   kind?: CoachingInsightKind;
-  title?: 'Decisive mistake' | 'Pattern to fix';
+  title?: 'Decisive mistake' | 'Pattern to fix' | 'Player fingerprint';
   timestamp: Date;
   matchTimeSeconds: number;
   severity: CoachingRating;
@@ -98,7 +99,7 @@ export interface CoachingInsight {
 
 export interface CoachingNarrationSection {
   playerName: string;
-  title?: 'Decisive mistake' | 'Pattern to fix';
+  title?: 'Decisive mistake' | 'Pattern to fix' | 'Player fingerprint';
   lines: string[];
 }
 
