@@ -1,10 +1,19 @@
-import type { LogPlayerKillV2, LogPlayerMakeGroggy, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
+import {
+  DamageInfoUtils,
+  type LogHeal,
+  type LogItemUse,
+  type LogPlayerKillV2,
+  type LogPlayerMakeGroggy,
+  type LogPlayerTakeDamage,
+} from '@j03fr0st/pubg-ts';
 import type { MatchAnalysis, PlayerTelemetry } from '../types/analytics-results.types';
 import type {
   FightContext,
   FightDamageEvent,
   FightOutcome,
+  FightResetEvent,
   TelemetryPosition,
+  ZonePressureEvidence,
 } from '../types/coaching.types';
 import { TelemetryGeometry } from '../utils/telemetry-geometry';
 
@@ -13,6 +22,7 @@ const TRADE_RANGE_METERS = 60;
 const MEANINGFUL_REPOSITION_METERS = 15;
 const HEIGHT_ADVANTAGE_METERS = 10;
 const TRADE_DAMAGE_WINDOW_SECONDS = 10;
+const ZONE_PRESSURE_WINDOW_SECONDS = 60;
 
 type DecisiveEvent = LogPlayerKillV2 | LogPlayerMakeGroggy;
 type ActorWithPosition = { name?: string; location?: TelemetryPosition };
@@ -21,7 +31,8 @@ export class FightContextBuilderService {
   public buildFightContexts(
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[] = []
+    damageEvents: LogPlayerTakeDamage[] = [],
+    resetEvents: Array<LogHeal | LogItemUse> = []
   ): FightContext[] {
     const contexts: FightContext[] = [];
 
@@ -37,7 +48,8 @@ export class FightContextBuilderService {
           decisiveEvent,
           matchAnalysis,
           trackedPlayerNames,
-          damageEvents
+          damageEvents,
+          resetEvents
         );
         if (context) {
           contexts.push(context);
@@ -53,7 +65,8 @@ export class FightContextBuilderService {
     decisiveEvent: DecisiveEvent,
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[]
+    damageEvents: LogPlayerTakeDamage[],
+    resetEvents: Array<LogHeal | LogItemUse>
   ): FightContext | null {
     const timestamp = this.getEventTime(decisiveEvent);
     if (!timestamp) {
@@ -70,6 +83,18 @@ export class FightContextBuilderService {
       analysis.matchStartTime
     );
     const damageDealt = this.getDamageDealt(
+      analysis.playerName,
+      timestamp,
+      damageEvents,
+      analysis.matchStartTime
+    );
+    const recentResetEvents = this.getResetEvents(
+      analysis.playerName,
+      timestamp,
+      resetEvents,
+      analysis.matchStartTime
+    );
+    const blueZoneDamage = this.getBlueZoneDamage(
       analysis.playerName,
       timestamp,
       damageEvents,
@@ -118,8 +143,21 @@ export class FightContextBuilderService {
       outcome,
       timestamp,
       matchTimeSeconds,
+      decisiveWeapon: this.getDecisiveWeapon(decisiveEvent),
+      decisiveDamageTypeCategory: this.getDecisiveDamageTypeCategory(decisiveEvent),
+      decisiveDamageReason: this.getDecisiveDamageReason(decisiveEvent),
+      killerName:
+        decisiveEvent._T === 'LogPlayerKillV2'
+          ? this.getActorName(decisiveEvent.killer)
+          : undefined,
+      finisherName:
+        decisiveEvent._T === 'LogPlayerKillV2'
+          ? this.getActorName(decisiveEvent.finisher)
+          : undefined,
       damageTaken,
       damageDealt,
+      resetEvents: recentResetEvents,
+      blueZoneDamage,
       playerPosition,
       enemyPosition,
       closestTeammateName: closestTeammate?.name,
@@ -198,6 +236,59 @@ export class FightContextBuilderService {
       victimName: this.getActorName(event.victim),
       damage: Math.round(event.damage),
       position: this.getActorPosition(event.victim),
+    };
+  }
+
+  private getResetEvents(
+    playerName: string,
+    decisiveTime: Date,
+    resetEvents: Array<LogHeal | LogItemUse>,
+    matchStartTime: Date
+  ): FightResetEvent[] {
+    return resetEvents
+      .filter((event) => this.getActorName(event.character) === playerName)
+      .map((event) => {
+        const timestamp = this.getEventTime(event);
+        if (!timestamp) return null;
+        const resetEvent: FightResetEvent = {
+          timestamp,
+          matchTimeSeconds: TelemetryGeometry.secondsBetween(matchStartTime, timestamp),
+          itemId: event.item?.itemId,
+          healAmount: event._T === 'LogHeal' ? event.healAmount : undefined,
+        };
+        return resetEvent;
+      })
+      .filter((event): event is FightResetEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= CONTEXT_WINDOW_SECONDS;
+      })
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  }
+
+  private getBlueZoneDamage(
+    playerName: string,
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): ZonePressureEvidence {
+    const events = damageEvents
+      .filter(
+        (event) =>
+          this.getActorName(event.victim) === playerName &&
+          event.damageTypeCategory === 'Damage_BlueZone'
+      )
+      .map((event) => this.toFightDamageEvent(event, matchStartTime))
+      .filter((event): event is FightDamageEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= ZONE_PRESSURE_WINDOW_SECONDS;
+      });
+
+    return {
+      damage: events.reduce((sum, event) => sum + event.damage, 0),
+      events,
+      windowSeconds: ZONE_PRESSURE_WINDOW_SECONDS,
     };
   }
 
@@ -323,6 +414,45 @@ export class FightContextBuilderService {
     return event._T === 'LogPlayerMakeGroggy'
       ? this.getActorName(event.attacker)
       : this.getActorName(event.killer);
+  }
+
+  private getDecisiveWeapon(event: DecisiveEvent): string | undefined {
+    return event._T === 'LogPlayerMakeGroggy'
+      ? event.damageCauserName
+      : this.getKillDamageCauserName(event);
+  }
+
+  private getDecisiveDamageTypeCategory(event: DecisiveEvent): string | undefined {
+    return event._T === 'LogPlayerMakeGroggy'
+      ? event.damageTypeCategory
+      : this.getKillDamageInfo(event)?.damageTypeCategory;
+  }
+
+  private getDecisiveDamageReason(event: DecisiveEvent): string | undefined {
+    return event._T === 'LogPlayerMakeGroggy'
+      ? event.damageReason
+      : this.getKillDamageInfo(event)?.damageReason;
+  }
+
+  private getKillDamageCauserName(kill: LogPlayerKillV2): string | undefined {
+    return (
+      this.getKillDamageInfo(kill)?.damageCauserName ??
+      (kill as LogPlayerKillV2 & { damageCauserName?: string }).damageCauserName
+    );
+  }
+
+  private getKillDamageInfo(kill: LogPlayerKillV2) {
+    const finishDamage = DamageInfoUtils.getFirst(kill.finishDamageInfo);
+    if (finishDamage?.damageCauserName && finishDamage.damageCauserName !== 'None') {
+      return finishDamage;
+    }
+
+    const killerDamage = DamageInfoUtils.getFirst(kill.killerDamageInfo);
+    if (killerDamage?.damageCauserName && killerDamage.damageCauserName !== 'None') {
+      return killerDamage;
+    }
+
+    return null;
   }
 
   private getVictimPosition(event: DecisiveEvent): TelemetryPosition | undefined {

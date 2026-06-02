@@ -1,0 +1,120 @@
+{
+  "feature": "Telemetry-Backed Coaching Enhancements",
+  "created": "2026-06-02",
+  "designPath": "docs/design/2026-06-02-telemetry-backed-coaching-enhancements/design.md",
+  "specPath": "docs/specs/2026-06-02-telemetry-backed-coaching-enhancements",
+  "requirementsPath": "docs/specs/2026-06-02-telemetry-backed-coaching-enhancements/requirements.md",
+  "actionRequiredPath": "docs/specs/2026-06-02-telemetry-backed-coaching-enhancements/action-required.md",
+  "implementationLogPath": "docs/specs/2026-06-02-telemetry-backed-coaching-enhancements/implementation-log.md",
+  "allowedTaskStatuses": [
+    "pending",
+    "in-progress",
+    "blocked",
+    "needs-context",
+    "done-with-concerns",
+    "review-failed",
+    "complete"
+  ],
+  "tasks": [
+    {
+      "id": "task-01-kill-weapon-extraction",
+      "title": "Fix Kill Weapon Extraction",
+      "file": "tasks/task-01-kill-weapon-extraction.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [
+        "task-03-zone-pressure-insight"
+      ],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/services/telemetry-processor.service.ts",
+          "test/unit/services/telemetry-processor.test.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx jest test/unit/services/telemetry-processor.test.ts --runInBand",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-02-fight-context-enrichment",
+      "title": "Enrich Fight Context",
+      "file": "tasks/task-02-fight-context-enrichment.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [
+        "task-03-zone-pressure-insight",
+        "task-04-narration-and-guardrails"
+      ],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/types/coaching.types.ts",
+          "src/services/fight-context-builder.service.ts",
+          "test/unit/services/fight-context-builder.service.test.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx jest test/unit/services/fight-context-builder.service.test.ts --runInBand",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-03-zone-pressure-insight",
+      "title": "Add Zone Pressure Insight",
+      "file": "tasks/task-03-zone-pressure-insight.md",
+      "wave": 2,
+      "status": "complete",
+      "dependsOn": [
+        "task-01-kill-weapon-extraction",
+        "task-02-fight-context-enrichment"
+      ],
+      "blocks": [
+        "task-04-narration-and-guardrails"
+      ],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/services/coaching-decision-engine.service.ts",
+          "src/config/coaching-weights.ts",
+          "src/types/coaching.types.ts",
+          "test/unit/services/coaching-decision-engine.service.test.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx jest test/unit/services/coaching-decision-engine.service.test.ts --runInBand",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-04-narration-and-guardrails",
+      "title": "Polish Narration And Guardrails",
+      "file": "tasks/task-04-narration-and-guardrails.md",
+      "wave": 3,
+      "status": "complete",
+      "dependsOn": [
+        "task-02-fight-context-enrichment",
+        "task-03-zone-pressure-insight"
+      ],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/services/coaching-narrator.service.ts",
+          "src/services/openrouter-coaching-llm-client.service.ts",
+          "src/services/coaching-llm-guardrail.ts",
+          "test/unit/services/coaching-narrator.service.test.ts",
+          "test/unit/services/openrouter-coaching-llm-client.service.test.ts",
+          "test/unit/services/coaching-llm-guardrail.test.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx jest test/unit/services/coaching-narrator.service.test.ts test/unit/services/openrouter-coaching-llm-client.service.test.ts test/unit/services/coaching-llm-guardrail.test.ts --runInBand",
+        "npm run typecheck"
+      ]
+    }
+  ]
+}

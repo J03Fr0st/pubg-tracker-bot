@@ -14,6 +14,7 @@ const PATTERN_MIN_COUNT = 2;
 const MAX_INSIGHTS = 2;
 const TRADE_RANGE_METERS = 60;
 const STACKED_ANGLE_DEGREES = 25;
+const MATERIAL_BLUE_ZONE_DAMAGE = 25;
 
 export class CoachingDecisionEngineService {
   public constructor(
@@ -44,6 +45,8 @@ export class CoachingDecisionEngineService {
       return null;
     }
 
+    const hasZonePressure = this.hasMaterialZonePressure(selected);
+
     return {
       playerName: selected.playerName,
       category: 'decisive-mistake',
@@ -54,9 +57,11 @@ export class CoachingDecisionEngineService {
       severity: 'high',
       confidence: this.lowestClaimConfidence(claims),
       evidence: claims.map((claim) => claim.text),
-      recommendation:
-        'Break line of sight, heal, then re-engage from a new angle or with teammate pressure.',
+      recommendation: hasZonePressure
+        ? 'Rotate earlier, break line of sight, heal, then re-engage from a new angle or with teammate pressure.'
+        : 'Break line of sight, heal, then re-engage from a new angle or with teammate pressure.',
       betterPlay: [
+        ...(hasZonePressure ? ['rotate earlier before taking optional fights'] : []),
         'break line of sight',
         'heal before re-engaging',
         'wait for teammate trade pressure or force a new angle',
@@ -183,7 +188,25 @@ export class CoachingDecisionEngineService {
       });
     }
 
+    const zonePressureClaim = this.buildZonePressureClaim(context);
+    if (zonePressureClaim) {
+      claims.push(zonePressureClaim);
+    }
+
     return claims;
+  }
+
+  private buildZonePressureClaim(context: FightContext): FightContextClaim | null {
+    if (!this.hasMaterialZonePressure(context)) {
+      return null;
+    }
+
+    const damage = Math.round(context.blueZoneDamage.damage);
+    return {
+      text: `You took ${damage} blue-zone damage in the ${context.blueZoneDamage.windowSeconds}s before this fight, so the rotate was already costing health before the duel.`,
+      confidence: 'high',
+      evidence: [`Blue-zone damage before decisive event: ${damage}`],
+    };
   }
 
   private scoreContext(context: FightContext): number {
@@ -200,6 +223,10 @@ export class CoachingDecisionEngineService {
     const noMeaningfulReposition =
       context.repositionDistanceMeters === undefined || context.repositionDistanceMeters < 15;
     return Boolean(heavyDamage && context.repeatedSameEnemy && noMeaningfulReposition);
+  }
+
+  private hasMaterialZonePressure(context: FightContext): boolean {
+    return context.blueZoneDamage.damage >= MATERIAL_BLUE_ZONE_DAMAGE;
   }
 
   private getHeavyDamage(context: FightContext) {

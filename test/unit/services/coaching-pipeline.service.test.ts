@@ -30,14 +30,23 @@ describe('CoachingPipelineService', () => {
   };
 
   it('returns kind:ok with insights and narration on the happy path', async () => {
+    const analyze = jest.fn().mockReturnValue([insight]);
     const pipeline = new CoachingPipelineService({
-      analyze: jest.fn().mockReturnValue([insight]),
+      analyze,
       narrate: jest.fn().mockResolvedValue(narration),
     });
+    const resetEvents = [
+      {
+        _T: 'LogHeal',
+        _D: '2024-01-01T00:01:00.000Z',
+        character: { name: 'Alice' },
+      },
+    ];
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], [], resetEvents as never);
 
     expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
+    expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, ['Alice'], [], resetEvents);
   });
 
   it('returns kind:empty when analyze yields no insights', async () => {

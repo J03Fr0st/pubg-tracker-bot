@@ -1,4 +1,4 @@
-import type { LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
+import type { LogHeal, LogItemUse, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
 import type { MatchAnalysis } from '../types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
@@ -9,7 +9,8 @@ export interface CoachingAnalyzer {
   analyze(
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[]
+    damageEvents: LogPlayerTakeDamage[],
+    resetEvents?: Array<LogHeal | LogItemUse>
   ): CoachingInsight[];
 }
 
@@ -28,11 +29,12 @@ export class CoachingPipelineService {
   public async run(
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[]
+    damageEvents: LogPlayerTakeDamage[],
+    resetEvents: Array<LogHeal | LogItemUse> = []
   ): Promise<CoachingPipelineResult> {
     let insights: CoachingInsight[];
     try {
-      insights = this.deps.analyze(matchAnalysis, trackedPlayerNames, damageEvents);
+      insights = this.deps.analyze(matchAnalysis, trackedPlayerNames, damageEvents, resetEvents);
     } catch (err) {
       return { kind: 'failed', reason: messageOf(err), stage: 'analyze' };
     }
@@ -63,8 +65,13 @@ export interface CoachingPipelineDefaults {
 export namespace CoachingPipelineService {
   export function withDefaults(deps: CoachingPipelineDefaults): CoachingPipelineService {
     return new CoachingPipelineService({
-      analyze: (analysis, names, damage) => {
-        const contexts = deps.fightContextBuilder.buildFightContexts(analysis, names, damage);
+      analyze: (analysis, names, damage, resetEvents) => {
+        const contexts = deps.fightContextBuilder.buildFightContexts(
+          analysis,
+          names,
+          damage,
+          resetEvents
+        );
         return deps.decisionEngine.createInsights(contexts);
       },
       narrate: deps.narrate,

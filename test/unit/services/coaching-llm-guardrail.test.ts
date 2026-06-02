@@ -58,4 +58,37 @@ describe('WhitelistCoachingLlmGuardrail', () => {
     const result = shortGuardrail.verify(narration, [insight]);
     expect(result.ok).toBe(false);
   });
+
+  it('accepts supported weapon, zone, rotate, and damage evidence', () => {
+    const enrichedInsight: CoachingInsight = {
+      ...insight,
+      playerName: 'Aculite',
+      evidence: [
+        'You took 67 damage from EnemyOne, healed zero, moved 8m, then died to the same player with M416.',
+        'You took 31 blue-zone damage in the 60s before this fight.',
+      ],
+      recommendation:
+        'Rotate earlier, break line of sight, heal, then re-engage only from a new angle.',
+      betterPlay: [
+        'rotate earlier before taking optional fights',
+        'break line of sight',
+        'heal before re-engaging',
+        'force a new angle',
+      ],
+    };
+    const narration: CoachingNarration = {
+      sections: [
+        {
+          playerName: 'Aculite',
+          title: 'Decisive mistake',
+          lines: [
+            'You took 31 blue-zone damage, then died with M416 in the fight. Rotate earlier before taking optional fights.',
+          ],
+        },
+      ],
+    };
+
+    const result = guardrail.verify(narration, [enrichedInsight]);
+    expect(result).toEqual({ ok: true });
+  });
 });

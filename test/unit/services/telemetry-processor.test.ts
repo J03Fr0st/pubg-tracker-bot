@@ -158,6 +158,69 @@ describe('TelemetryProcessorService', () => {
       expect(ak47Stats.accuracy).toBe(10); // 1 hit / 10 shots * 100
       expect(ak47Stats.efficiency).toBe(10); // 1 kill / 10 shots * 100
     });
+
+    it('should extract kill weapon stats from nested finish damage info', async () => {
+      const killEvent = {
+        _D: '2024-01-01T10:00:00.000Z',
+        _T: 'LogPlayerKillV2',
+        killer: { name: 'TestPlayer1' },
+        victim: { name: 'Enemy1' },
+        finishDamageInfo: {
+          damageCauserName: 'WeapKar98k_C',
+        },
+        distance: 20000,
+      } as LogPlayerKillV2;
+
+      const result = await telemetryProcessor.processMatchTelemetry(
+        [killEvent],
+        'nested-finish-damage-match',
+        new Date(),
+        ['TestPlayer1']
+      );
+
+      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      expect(playerAnalysis!.weaponStats).toHaveLength(1);
+      expect(playerAnalysis!.weaponStats[0]).toMatchObject({
+        weaponName: 'Kar98k',
+        kills: 1,
+        longestKill: 200,
+      });
+    });
+
+    it('should fallback to nested killer damage info and legacy kill weapon fields', async () => {
+      const killerDamageKill = {
+        _D: '2024-01-01T10:00:00.000Z',
+        _T: 'LogPlayerKillV2',
+        killer: { name: 'TestPlayer1' },
+        victim: { name: 'Enemy1' },
+        finishDamageInfo: null,
+        killerDamageInfo: [
+          {
+            damageCauserName: 'WeapM24_C',
+          },
+        ],
+        distance: 10000,
+      } as LogPlayerKillV2;
+      const legacyKill = {
+        _D: '2024-01-01T10:00:15.000Z',
+        _T: 'LogPlayerKillV2',
+        killer: { name: 'TestPlayer1' },
+        victim: { name: 'Enemy2' },
+        damageCauserName: 'WeapAK47_C',
+        distance: 12000,
+      } as LogPlayerKillV2;
+
+      const result = await telemetryProcessor.processMatchTelemetry(
+        [killerDamageKill, legacyKill],
+        'fallback-kill-weapon-match',
+        new Date(),
+        ['TestPlayer1']
+      );
+
+      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      expect(playerAnalysis!.weaponStats.map((stats) => stats.weaponName)).toEqual(['M24', 'AKM']);
+      expect(playerAnalysis!.killChains[0].weaponsUsed).toEqual(['M24', 'AKM']);
+    });
   });
 
   describe('kill chain analysis', () => {

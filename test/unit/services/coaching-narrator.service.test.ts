@@ -13,6 +13,29 @@ const insight: CoachingInsight = {
     'Break line of sight, heal, or force a new angle before challenging the same player again.',
 };
 
+const enrichedInsight: CoachingInsight = {
+  playerName: 'Aculite',
+  category: 'decisive-mistake',
+  kind: 'decisive-mistake',
+  title: 'Decisive mistake',
+  timestamp: new Date('2026-05-25T16:27:19.510Z'),
+  matchTimeSeconds: 841,
+  severity: 'high',
+  confidence: 'high',
+  evidence: [
+    'You took 67 damage from EnemyOne, healed zero, moved 8m, then died to the same player with M416.',
+    'You took 31 blue-zone damage in the 60s before this fight.',
+  ],
+  recommendation:
+    'Rotate earlier, break line of sight, heal, then re-engage only from a new angle.',
+  betterPlay: [
+    'rotate earlier before taking optional fights',
+    'break line of sight',
+    'heal before re-engaging',
+    'force a new angle',
+  ],
+};
+
 describe('CoachingNarratorService', () => {
   it('formats deterministic template narration when LLM is disabled', async () => {
     const service = new CoachingNarratorService(undefined, {
@@ -116,6 +139,22 @@ describe('CoachingNarratorService', () => {
 
     expect(narration.sections[0].title).toBe('Decisive mistake');
     expect(narration.sections[1].title).toBe('Pattern to fix');
+  });
+
+  it('formats enriched death-review and zone-pressure evidence in template narration', async () => {
+    const service = new CoachingNarratorService(undefined, {
+      enabled: false,
+      maxLineLength: 240,
+    });
+
+    const narration = await service.narrate([enrichedInsight]);
+    const text = narration.sections[0].lines.join('\n');
+
+    expect(text).toContain('14:01 - Decisive mistake');
+    expect(text).toContain('died to the same player with M416');
+    expect(text).toContain('31 blue-zone damage in the 60s before this fight');
+    expect(text).toContain('Do this: Rotate earlier');
+    expect(narration.sections[0].lines.every((line) => line.length <= 240)).toBe(true);
   });
 
   it('rejects LLM narration that invents a new distance', async () => {

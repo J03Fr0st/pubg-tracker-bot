@@ -22,6 +22,12 @@ function makeContext(overrides: Partial<FightContext>): FightContext {
       },
     ],
     damageDealt: [],
+    resetEvents: [],
+    blueZoneDamage: {
+      damage: 0,
+      events: [],
+      windowSeconds: 60,
+    },
     closestTeammateName: 'TeamMate',
     closestTeammateDistanceMeters: 78,
     closestTeammateDamageToEnemy: [],
@@ -121,6 +127,56 @@ describe('CoachingDecisionEngineService', () => {
 
     expect(insights[0].evidence.join(' ')).not.toContain('teammate');
     expect(insights[0].evidence.join(' ')).not.toContain('height');
+  });
+
+  it('adds zone-pressure evidence for recent material blue-zone damage', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        blueZoneDamage: {
+          damage: 31,
+          windowSeconds: 60,
+          events: [
+            {
+              timestamp: new Date('2024-01-01T10:18:10.000Z'),
+              matchTimeSeconds: 1090,
+              attackerName: 'TestPlayer',
+              victimName: 'TestPlayer',
+              damage: 31,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).toContain(
+      'You took 31 blue-zone damage in the 60s before this fight'
+    );
+    expect(insights[0].betterPlay).toContain('rotate earlier before taking optional fights');
+    expect(insights[0].recommendation).toContain('Rotate earlier');
+  });
+
+  it('omits zone-pressure evidence for tiny blue-zone damage', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        blueZoneDamage: {
+          damage: 8,
+          windowSeconds: 60,
+          events: [
+            {
+              timestamp: new Date('2024-01-01T10:18:10.000Z'),
+              matchTimeSeconds: 1090,
+              attackerName: 'TestPlayer',
+              victimName: 'TestPlayer',
+              damage: 8,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).not.toContain('blue-zone damage');
   });
 
   it('adds a pattern insight only when repeated evidence exists', () => {

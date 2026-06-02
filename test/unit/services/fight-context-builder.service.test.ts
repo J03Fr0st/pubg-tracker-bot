@@ -1,4 +1,4 @@
-import type { LogPlayerKillV2, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
+import type { LogHeal, LogItemUse, LogPlayerKillV2, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
 import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
 import type { MatchAnalysis, PlayerAnalysis } from '../../../src/types/analytics-results.types';
 
@@ -193,5 +193,80 @@ describe('FightContextBuilderService', () => {
     expect(contexts[0].repositionDistanceMeters).toBeUndefined();
     expect(contexts[0].heightDeltaMeters).toBeUndefined();
     expect(contexts[0].heightConfidence).toBe('low');
+  });
+
+  it('adds decisive event source, recent reset events, and blue-zone damage evidence', () => {
+    const gunDamage = makeDamage({
+      _D: '2024-01-01T10:18:20.000Z',
+      damage: 67,
+      damageCauserName: 'WeapHK416_C',
+      damageTypeCategory: 'Damage_Gun',
+      damageReason: 'TorsoShot',
+    });
+    const blueZoneDamage = makeDamage({
+      _D: '2024-01-01T10:18:10.000Z',
+      attacker: { name: 'TestPlayer' },
+      victim: { name: 'TestPlayer', location: { x: 25, y: 0, z: 0 } },
+      damage: 31,
+      damageCauserName: 'TslGameModeBase_BattleRoyaleBP_C',
+      damageTypeCategory: 'Damage_BlueZone',
+      damageReason: 'NonSpecific',
+    });
+    const heal = {
+      _D: '2024-01-01T10:18:30.000Z',
+      _T: 'LogHeal',
+      character: { name: 'TestPlayer' },
+      item: { itemId: 'Item_Heal_FirstAid_C' },
+      healAmount: 40,
+    } as LogHeal;
+    const itemUse = {
+      _D: '2024-01-01T10:18:34.000Z',
+      _T: 'LogItemUse',
+      character: { name: 'TestPlayer' },
+      item: { itemId: 'Item_Boost_EnergyDrink_C' },
+    } as LogItemUse;
+    const death = makeDeath({
+      killer: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+      finisher: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+      finishDamageInfo: {
+        damageCauserName: 'WeapHK416_C',
+        damageTypeCategory: 'Damage_Gun',
+        damageReason: 'TorsoShot',
+      },
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
+      ['TestPlayer'],
+      [gunDamage, blueZoneDamage],
+      [heal, itemUse]
+    );
+
+    expect(contexts[0]).toMatchObject({
+      decisiveWeapon: 'WeapHK416_C',
+      decisiveDamageTypeCategory: 'Damage_Gun',
+      decisiveDamageReason: 'TorsoShot',
+      killerName: 'EnemyOne',
+      finisherName: 'EnemyOne',
+    });
+    expect(contexts[0].resetEvents).toEqual([
+      expect.objectContaining({
+        itemId: 'Item_Heal_FirstAid_C',
+        healAmount: 40,
+      }),
+      expect.objectContaining({
+        itemId: 'Item_Boost_EnergyDrink_C',
+      }),
+    ]);
+    expect(contexts[0].blueZoneDamage).toMatchObject({
+      damage: 31,
+      windowSeconds: 60,
+    });
+    expect(contexts[0].blueZoneDamage.events[0]).toMatchObject({
+      damage: 31,
+      attackerName: 'TestPlayer',
+      victimName: 'TestPlayer',
+    });
   });
 });
