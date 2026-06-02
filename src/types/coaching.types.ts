@@ -35,14 +35,34 @@ export interface FightDamageEvent {
   position?: TelemetryPosition;
 }
 
+export interface FightResetEvent {
+  timestamp: Date;
+  matchTimeSeconds: number;
+  itemId?: string;
+  healAmount?: number;
+}
+
+export interface ZonePressureEvidence {
+  damage: number;
+  events: FightDamageEvent[];
+  windowSeconds: number;
+}
+
 export interface FightContext {
   playerName: string;
   enemyName?: string;
   outcome: FightOutcome;
   timestamp: Date;
   matchTimeSeconds: number;
+  decisiveWeapon?: string;
+  decisiveDamageTypeCategory?: string;
+  decisiveDamageReason?: string;
+  killerName?: string;
+  finisherName?: string;
   damageTaken: FightDamageEvent[];
   damageDealt: FightDamageEvent[];
+  resetEvents: FightResetEvent[];
+  blueZoneDamage: ZonePressureEvidence;
   playerPosition?: TelemetryPosition;
   enemyPosition?: TelemetryPosition;
   closestTeammateName?: string;

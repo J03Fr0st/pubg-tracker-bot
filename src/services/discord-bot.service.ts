@@ -3,6 +3,8 @@ import {
   assetManager,
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
+  type LogHeal,
+  type LogItemUse,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
@@ -1023,8 +1025,16 @@ export class DiscordBotService {
     const damageEvents = telemetryData.filter(
       (event) => event._T === 'LogPlayerTakeDamage'
     ) as LogPlayerTakeDamage[];
+    const resetEvents = telemetryData.filter(
+      (event) => event._T === 'LogHeal' || event._T === 'LogItemUse'
+    ) as Array<LogHeal | LogItemUse>;
 
-    const result = await this.coachingPipeline.run(matchAnalysis, trackedPlayerNames, damageEvents);
+    const result = await this.coachingPipeline.run(
+      matchAnalysis,
+      trackedPlayerNames,
+      damageEvents,
+      resetEvents
+    );
 
     if (result.kind === 'empty') {
       return [];

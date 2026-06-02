@@ -79,7 +79,59 @@ describe('OpenRouterCoachingLlmClient', () => {
     expect(body.messages[1].content).toContain('strict_blunt');
     expect(body.messages[1].content).toContain('EnemyOne');
     expect(body.messages[1].content).toContain('Took 83 damage from EnemyOne');
+    expect(body.messages[1].content).not.toContain('LogPlayerTakeDamage');
+    expect(body.messages[1].content).not.toContain('LogPlayerKillV2');
     expect(result.sections[0].playerName).toBe('TestPlayer');
+  });
+
+  it('includes richer evidence and better plays without raw telemetry events', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                sections: [{ playerName: 'TestPlayer', lines: ['ok'] }],
+              }),
+            },
+          },
+        ],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OpenRouterCoachingLlmClient({
+      apiKey: 'key-123',
+      model: 'anthropic/claude-sonnet-4',
+      timeoutMs: 8000,
+    });
+
+    await client.narrate([
+      {
+        ...insight,
+        evidence: [
+          'You took 67 damage from EnemyOne, healed zero, moved 8m, then died to the same player with M416.',
+          'You took 31 blue-zone damage in the 60s before this fight.',
+        ],
+        recommendation:
+          'Rotate earlier, break line of sight, heal, then re-engage only from a new angle.',
+        betterPlay: [
+          'rotate earlier before taking optional fights',
+          'break line of sight',
+          'heal before re-engaging',
+          'force a new angle',
+        ],
+      },
+    ]);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const userContent = body.messages[1].content;
+    expect(userContent).toContain('M416');
+    expect(userContent).toContain('31 blue-zone damage');
+    expect(userContent).toContain('rotate earlier before taking optional fights');
+    expect(userContent).not.toContain('LogPlayerTakeDamage');
+    expect(userContent).not.toContain('LogPlayerPosition');
   });
 
   it('throws on non-2xx OpenRouter responses', async () => {

@@ -22,6 +22,12 @@ function makeContext(overrides: Partial<FightContext>): FightContext {
       },
     ],
     damageDealt: [],
+    resetEvents: [],
+    blueZoneDamage: {
+      damage: 0,
+      events: [],
+      windowSeconds: 60,
+    },
     closestTeammateName: 'TeamMate',
     closestTeammateDistanceMeters: 78,
     closestTeammateDamageToEnemy: [],
@@ -123,6 +129,56 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights[0].evidence.join(' ')).not.toContain('height');
   });
 
+  it('adds zone-pressure evidence for recent material blue-zone damage', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        blueZoneDamage: {
+          damage: 31,
+          windowSeconds: 60,
+          events: [
+            {
+              timestamp: new Date('2024-01-01T10:18:10.000Z'),
+              matchTimeSeconds: 1090,
+              attackerName: 'TestPlayer',
+              victimName: 'TestPlayer',
+              damage: 31,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).toContain(
+      'You took 31 blue-zone damage in the 60s before this fight'
+    );
+    expect(insights[0].betterPlay).toContain('rotate earlier before taking optional fights');
+    expect(insights[0].recommendation).toContain('Rotate earlier');
+  });
+
+  it('omits zone-pressure evidence for tiny blue-zone damage', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        blueZoneDamage: {
+          damage: 8,
+          windowSeconds: 60,
+          events: [
+            {
+              timestamp: new Date('2024-01-01T10:18:10.000Z'),
+              matchTimeSeconds: 1090,
+              attackerName: 'TestPlayer',
+              victimName: 'TestPlayer',
+              damage: 8,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(insights[0].evidence.join(' ')).not.toContain('blue-zone damage');
+  });
+
   it('adds a pattern insight only when repeated evidence exists', () => {
     const service = new CoachingDecisionEngineService();
     const insights = service.createInsights([
@@ -139,7 +195,7 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights[1].recommendation).toContain('Stop giving the same enemy');
   });
 
-  it('returns at most two insights', () => {
+  it('creates a decisive insight for each player with supported context', () => {
     const service = new CoachingDecisionEngineService();
     const insights = service.createInsights([
       makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
@@ -147,7 +203,56 @@ describe('CoachingDecisionEngineService', () => {
       makeContext({ playerName: 'Charlie', matchTimeSeconds: 800 }),
     ]);
 
+    expect(insights.map((insight) => insight.playerName)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+  });
+
+  it('returns at most two insights per player', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 700 }),
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 800 }),
+    ]);
+
     expect(insights).toHaveLength(2);
+    expect(insights.every((insight) => insight.playerName === 'Alpha')).toBe(true);
+  });
+});
+
+describe('CoachingDecisionEngineService — scoring weights', () => {
+  it('exposes default weights matching legacy magic numbers', () => {
+    expect(DEFAULT_COACHING_SCORING_WEIGHTS).toEqual<CoachingScoringWeights>({
+      deathOutcome: 50,
+      knockOutcome: 40,
+      badReset: 30,
+      tradeRangeKnown: 10,
+      noTeammateDamage: 5,
+      heightKnown: 5,
+    });
+  });
+
+  it('accepts injected weights and uses them in scoring', () => {
+    const deathCtx = makeContext({ playerName: 'DeathPlayer', outcome: 'death' });
+    const knockCtx = makeContext({
+      playerName: 'KnockPlayer',
+      outcome: 'knock',
+      closestTeammateDistanceMeters: undefined,
+      closestTeammateName: undefined,
+      tradeRangeConfidence: 'low',
+      heightDeltaMeters: undefined,
+      heightConfidence: 'low',
+    });
+    const engine = new CoachingDecisionEngineService({
+      ...DEFAULT_COACHING_SCORING_WEIGHTS,
+      deathOutcome: 1000,
+      knockOutcome: 0,
+      badReset: 0,
+      tradeRangeKnown: 0,
+      noTeammateDamage: 0,
+      heightKnown: 0,
+    });
+
+    expect(engine.createInsights([deathCtx, knockCtx])[0].playerName).toBe(deathCtx.playerName);
   });
 });
 

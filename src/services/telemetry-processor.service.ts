@@ -1,5 +1,6 @@
 import {
   DAMAGE_CAUSER_NAME,
+  DamageInfoUtils,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
@@ -188,7 +189,7 @@ export class TelemetryProcessorService {
           victim: k.victim?.name,
           killer: k.killer?.name,
           timestamp: k._D,
-          weapon: k.damageCauserName,
+          weapon: this.getKillDamageCauserName(k),
         }))
       );
     }
@@ -281,7 +282,7 @@ export class TelemetryProcessorService {
 
     // Process kills
     for (const kill of kills) {
-      const weaponName = this.getReadableWeaponName(kill.damageCauserName);
+      const weaponName = this.getReadableWeaponName(this.getKillDamageCauserName(kill));
       const stats = weaponMap.get(weaponName) || {
         weaponName,
         kills: 0,
@@ -443,7 +444,7 @@ export class TelemetryProcessorService {
     const duration = endTime.getTime() - startTime.getTime();
     const averageTimeBetweenKills = duration / (kills.length - 1);
     const weaponsUsed = [
-      ...new Set(kills.map((k) => this.getReadableWeaponName(k.damageCauserName))),
+      ...new Set(kills.map((k) => this.getReadableWeaponName(this.getKillDamageCauserName(k)))),
     ];
 
     return {
@@ -576,5 +577,19 @@ export class TelemetryProcessorService {
       .replace(/_C$/, '')
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .trim();
+  }
+
+  private getKillDamageCauserName(kill: LogPlayerKillV2): string {
+    const finishDamage = DamageInfoUtils.getFirst(kill.finishDamageInfo)?.damageCauserName;
+    if (finishDamage && finishDamage !== 'None') {
+      return finishDamage;
+    }
+
+    const killerDamage = DamageInfoUtils.getFirst(kill.killerDamageInfo)?.damageCauserName;
+    if (killerDamage && killerDamage !== 'None') {
+      return killerDamage;
+    }
+
+    return (kill as LogPlayerKillV2 & { damageCauserName?: string }).damageCauserName ?? '';
   }
 }
