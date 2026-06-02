@@ -195,7 +195,7 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights[1].recommendation).toContain('Stop giving the same enemy');
   });
 
-  it('returns at most two insights', () => {
+  it('creates a decisive insight for each player with supported context', () => {
     const service = new CoachingDecisionEngineService();
     const insights = service.createInsights([
       makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
@@ -203,7 +203,19 @@ describe('CoachingDecisionEngineService', () => {
       makeContext({ playerName: 'Charlie', matchTimeSeconds: 800 }),
     ]);
 
+    expect(insights.map((insight) => insight.playerName)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+  });
+
+  it('returns at most two insights per player', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 700 }),
+      makeContext({ playerName: 'Alpha', matchTimeSeconds: 800 }),
+    ]);
+
     expect(insights).toHaveLength(2);
+    expect(insights.every((insight) => insight.playerName === 'Alpha')).toBe(true);
   });
 });
 

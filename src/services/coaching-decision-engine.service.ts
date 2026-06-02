@@ -11,7 +11,7 @@ import type {
 
 const HEAVY_DAMAGE_THRESHOLD = 60;
 const PATTERN_MIN_COUNT = 2;
-const MAX_INSIGHTS = 2;
+const MAX_INSIGHTS_PER_PLAYER = 2;
 const TRADE_RANGE_METERS = 60;
 const STACKED_ANGLE_DEGREES = 25;
 const MATERIAL_BLUE_ZONE_DAMAGE = 25;
@@ -22,11 +22,23 @@ export class CoachingDecisionEngineService {
   ) {}
 
   public createInsights(contexts: FightContext[]): CoachingInsight[] {
-    const decisive = this.createDecisiveInsight(contexts);
-    const pattern = this.createPatternInsight(contexts);
-    return [decisive, pattern]
-      .filter((insight): insight is CoachingInsight => Boolean(insight))
-      .slice(0, MAX_INSIGHTS);
+    return [...this.groupContextsByPlayer(contexts).values()].flatMap((playerContexts) => {
+      const decisive = this.createDecisiveInsight(playerContexts);
+      const pattern = this.createPatternInsight(playerContexts);
+      return [decisive, pattern]
+        .filter((insight): insight is CoachingInsight => Boolean(insight))
+        .slice(0, MAX_INSIGHTS_PER_PLAYER);
+    });
+  }
+
+  private groupContextsByPlayer(contexts: FightContext[]): Map<string, FightContext[]> {
+    const grouped = new Map<string, FightContext[]>();
+    for (const context of contexts) {
+      const playerContexts = grouped.get(context.playerName) ?? [];
+      playerContexts.push(context);
+      grouped.set(context.playerName, playerContexts);
+    }
+    return grouped;
   }
 
   private createDecisiveInsight(contexts: FightContext[]): CoachingInsight | null {
