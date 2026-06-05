@@ -10,6 +10,11 @@ import type {
 } from '../types/coaching.types';
 
 const HEAVY_DAMAGE_THRESHOLD = 60;
+// Minimum gap between the first heavy hit and the decisive event for a "reset" to
+// have been physically possible. After heavy damage a bandage (4s, caps at 75%)
+// is not enough to re-engage, so the floor is one First Aid Kit (6s). Below this
+// the player was bursted down with no real chance to heal up, not a missed reset.
+const MIN_RESET_WINDOW_SECONDS = 6;
 const PATTERN_MIN_COUNT = 2;
 const MAX_INSIGHTS_PER_PLAYER = 3;
 const TRADE_RANGE_METERS = 60;
@@ -213,11 +218,15 @@ export class CoachingDecisionEngineService {
   private buildClaims(context: FightContext): FightContextClaim[] {
     const claims: FightContextClaim[] = [];
     const heavyDamage = this.getHeavyDamage(context);
-    const seconds = heavyDamage
-      ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds
-      : undefined;
+    const seconds = this.getResetWindowSeconds(context);
 
-    if (context.repeatedSameEnemy && heavyDamage && context.enemyName && seconds !== undefined) {
+    if (
+      context.repeatedSameEnemy &&
+      heavyDamage &&
+      context.enemyName &&
+      seconds !== undefined &&
+      seconds >= MIN_RESET_WINDOW_SECONDS
+    ) {
       claims.push({
         text: `${context.enemyName} hit you for ${heavyDamage.damage} damage, then ${seconds}s later you ${context.outcome === 'death' ? 'died' : 'got knocked'} to the same player before creating a reset.`,
         confidence: 'high',
@@ -319,9 +328,18 @@ export class CoachingDecisionEngineService {
 
   private isBadReset(context: FightContext): boolean {
     const heavyDamage = this.getHeavyDamage(context);
+    const resetWindow = this.getResetWindowSeconds(context);
+    const hadTimeToReset = resetWindow !== undefined && resetWindow >= MIN_RESET_WINDOW_SECONDS;
     const noMeaningfulReposition =
       context.repositionDistanceMeters === undefined || context.repositionDistanceMeters < 15;
-    return Boolean(heavyDamage && context.repeatedSameEnemy && noMeaningfulReposition);
+    return Boolean(
+      heavyDamage && hadTimeToReset && context.repeatedSameEnemy && noMeaningfulReposition
+    );
+  }
+
+  private getResetWindowSeconds(context: FightContext): number | undefined {
+    const heavyDamage = this.getHeavyDamage(context);
+    return heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
   }
 
   private hasIsolatedTrade(context: FightContext): boolean {

@@ -6,16 +6,19 @@ import { CoachingDecisionEngineService } from '../../../src/services/coaching-de
 import type { FightContext } from '../../../src/types/coaching.types';
 
 function makeContext(overrides: Partial<FightContext>): FightContext {
+  // Keep the heavy hit a consistent 6s before the decisive event so callers that
+  // only override matchTimeSeconds still describe a realistic, resettable window.
+  const matchTimeSeconds = overrides.matchTimeSeconds ?? 1122;
   return {
     playerName: 'TestPlayer',
     enemyName: 'EnemyOne',
     outcome: 'death',
     timestamp: new Date('2024-01-01T10:18:42.000Z'),
-    matchTimeSeconds: 1122,
+    matchTimeSeconds,
     damageTaken: [
       {
         timestamp: new Date('2024-01-01T10:18:36.000Z'),
-        matchTimeSeconds: 1116,
+        matchTimeSeconds: matchTimeSeconds - 6,
         attackerName: 'EnemyOne',
         victimName: 'TestPlayer',
         damage: 83,
@@ -61,6 +64,50 @@ describe('CoachingDecisionEngineService', () => {
     );
     expect(insights[0].evidence.join(' ')).toContain('appears to have been too far to trade');
     expect(insights[0].recommendation).toContain('Break line of sight');
+  });
+
+  it('does not call an instant burst a missed reset when there was no time to reset', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        // Heavy hit lands on the same tick as the death: 0s window to reset.
+        matchTimeSeconds: 1116,
+        damageTaken: [
+          {
+            timestamp: new Date('2024-01-01T10:18:36.000Z'),
+            matchTimeSeconds: 1116,
+            attackerName: 'EnemyOne',
+            victimName: 'TestPlayer',
+            damage: 83,
+          },
+        ],
+      }),
+    ]);
+
+    const evidence = insights[0]?.evidence.join(' ') ?? '';
+    expect(evidence).not.toContain('before creating a reset');
+    expect(evidence).not.toContain('0s later');
+  });
+
+  it('does not call a sub-kit window a missed reset (bandage is not enough)', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        // 5s between the heavy hit and death: too short to use a First Aid Kit.
+        matchTimeSeconds: 1121,
+        damageTaken: [
+          {
+            timestamp: new Date('2024-01-01T10:18:36.000Z'),
+            matchTimeSeconds: 1116,
+            attackerName: 'EnemyOne',
+            victimName: 'TestPlayer',
+            damage: 83,
+          },
+        ],
+      }),
+    ]);
+
+    expect(insights[0]?.evidence.join(' ') ?? '').not.toContain('before creating a reset');
   });
 
   it('calls out close spacing that does not become trade damage', () => {
