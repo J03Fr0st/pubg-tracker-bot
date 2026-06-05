@@ -11,9 +11,10 @@ import type {
 
 const HEAVY_DAMAGE_THRESHOLD = 60;
 // Minimum gap between the first heavy hit and the decisive event for a "reset" to
-// have been physically possible. Below this the player was bursted down with no
-// realistic window to break line of sight and heal, so it is not a missed reset.
-const MIN_RESET_WINDOW_SECONDS = 4;
+// have been physically possible. After heavy damage a bandage (4s, caps at 75%)
+// is not enough to re-engage, so the floor is one First Aid Kit (6s). Below this
+// the player was bursted down with no real chance to heal up, not a missed reset.
+const MIN_RESET_WINDOW_SECONDS = 6;
 const PATTERN_MIN_COUNT = 2;
 const MAX_INSIGHTS_PER_PLAYER = 3;
 const TRADE_RANGE_METERS = 60;

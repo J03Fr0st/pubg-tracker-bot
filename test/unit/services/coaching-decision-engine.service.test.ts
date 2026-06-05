@@ -89,6 +89,27 @@ describe('CoachingDecisionEngineService', () => {
     expect(evidence).not.toContain('0s later');
   });
 
+  it('does not call a sub-kit window a missed reset (bandage is not enough)', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        // 5s between the heavy hit and death: too short to use a First Aid Kit.
+        matchTimeSeconds: 1121,
+        damageTaken: [
+          {
+            timestamp: new Date('2024-01-01T10:18:36.000Z'),
+            matchTimeSeconds: 1116,
+            attackerName: 'EnemyOne',
+            victimName: 'TestPlayer',
+            damage: 83,
+          },
+        ],
+      }),
+    ]);
+
+    expect(insights[0]?.evidence.join(' ') ?? '').not.toContain('before creating a reset');
+  });
+
   it('calls out close spacing that does not become trade damage', () => {
     const service = new CoachingDecisionEngineService();
     const insights = service.createInsights([
