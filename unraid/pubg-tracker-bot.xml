@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>pubg-tracker-bot</Name>
+  <Repository>joevreug/pubg-tracker-bot:latest</Repository>
+  <Registry>https://hub.docker.com/r/joevreug/pubg-tracker-bot</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/J03Fr0st/pubg-tracker-bot/issues</Support>
+  <Project>https://github.com/J03Fr0st/pubg-tracker-bot</Project>
+  <Overview>Discord bot that monitors PUBG matches, analyzes telemetry, and posts match summaries and coaching insights.</Overview>
+  <Category>Tools:</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/J03Fr0st/pubg-tracker-bot/main/unraid/pubg-tracker-bot.xml</TemplateURL>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <Date>2026-06-14</Date>
+  <Requires>Requires an existing PostgreSQL database reachable from this container.</Requires>
+  <Config Name="Discord Token" Target="DISCORD_TOKEN" Default="" Mode="" Description="Discord bot token from the Discord Developer Portal." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Discord Client ID" Target="DISCORD_CLIENT_ID" Default="" Mode="" Description="Discord application client ID." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Discord Channel ID" Target="DISCORD_CHANNEL_ID" Default="" Mode="" Description="Discord channel ID where match summaries are posted." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="PUBG API Key" Target="PUBG_API_KEY" Default="" Mode="" Description="PUBG Developer API key." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="PUBG Shard" Target="PUBG_SHARD" Default="steam" Mode="" Description="PUBG platform shard, such as steam, kakao, psn, or xbox." Type="Variable" Display="always" Required="true" Mask="false">steam</Config>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="" Mode="" Description="PostgreSQL connection string for your existing database, for example postgresql://user:password@postgres:5432/pubg_tracker." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Check Interval MS" Target="CHECK_INTERVAL_MS" Default="90000" Mode="" Description="How often to check for new matches, in milliseconds." Type="Variable" Display="advanced" Required="false" Mask="false">90000</Config>
+  <Config Name="Max Matches To Process" Target="MAX_MATCHES_TO_PROCESS" Default="3" Mode="" Description="Maximum number of new matches processed per polling cycle." Type="Variable" Display="advanced" Required="false" Mask="false">3</Config>
+  <Config Name="LLM Coaching Enabled" Target="LLM_COACHING_ENABLED" Default="false" Mode="" Description="Set to true to enable OpenRouter-backed coaching narration." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="OpenRouter API Key" Target="OPENROUTER_API_KEY" Default="" Mode="" Description="Optional OpenRouter API key used when LLM coaching is enabled." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="OpenRouter Model" Target="OPENROUTER_MODEL" Default="anthropic/claude-sonnet-4" Mode="" Description="OpenRouter model name used for coaching narration." Type="Variable" Display="advanced" Required="false" Mask="false">anthropic/claude-sonnet-4</Config>
+  <Config Name="LLM Timeout MS" Target="LLM_TIMEOUT_MS" Default="8000" Mode="" Description="OpenRouter request timeout in milliseconds." Type="Variable" Display="advanced" Required="false" Mask="false">8000</Config>
+</Container>
