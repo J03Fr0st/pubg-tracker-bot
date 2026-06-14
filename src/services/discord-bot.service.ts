@@ -757,6 +757,7 @@ export class DiscordBotService {
             if (!playerStats.some((p) => p.name === rosterParticipant.attributes.stats.name)) {
               playerStats.push({
                 name: rosterParticipant.attributes.stats.name,
+                pubgId: rosterParticipant.attributes.stats.playerId,
                 stats: rosterParticipant.attributes.stats,
               });
             }
@@ -765,6 +766,7 @@ export class DiscordBotService {
           // If no roster found, just add the current player
           playerStats.push({
             name: participant.attributes.stats.name,
+            pubgId: participant.attributes.stats.playerId,
             stats: participant.attributes.stats,
           });
         }
