@@ -51,6 +51,10 @@ import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
+import {
+  calculateOpponentDifficulty,
+  type OpponentDifficultyResult,
+} from '../utils/match-difficulty.util';
 import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
 import { CoachingNarratorService } from './coaching-narrator.service';
 import { CoachingPipelineService } from './coaching-pipeline.service';
@@ -815,23 +819,23 @@ export class DiscordBotService {
     const totalKills = players.reduce((acc, player) => acc + (player.stats?.kills || 0), 0);
     const totalDBNOs = players.reduce((acc, player) => acc + (player.stats?.DBNOs || 0), 0);
 
+    const mainDescriptionLines = [
+      `⏰ **${dateString}**`,
+      `🗺️ **${this.formatMapName(mapName)}** • ${this.formatGameMode(gameMode)}`,
+      '',
+      '**Team Performance**',
+      `🏆 Placement: **${teamRankText}**`,
+      `👥 Squad Size: **${players.length} players**`,
+      '',
+      '**Combat Summary**',
+      `⚔️ Total Kills: **${totalKills}**`,
+      `🔻 Total Knocks: **${totalDBNOs}**`,
+      `💥 Total Damage: **${Math.round(totalDamage)}**`,
+    ];
+
     const mainEmbed = new EmbedBuilder()
       .setTitle('🎮 PUBG Match Summary')
-      .setDescription(
-        [
-          `⏰ **${dateString}**`,
-          `🗺️ **${this.formatMapName(mapName)}** • ${this.formatGameMode(gameMode)}`,
-          '',
-          '**Team Performance**',
-          `🏆 Placement: **${teamRankText}**`,
-          `👥 Squad Size: **${players.length} players**`,
-          '',
-          '**Combat Summary**',
-          `⚔️ Total Kills: **${totalKills}**`,
-          `🔻 Total Knocks: **${totalDBNOs}**`,
-          `💥 Total Damage: **${Math.round(totalDamage)}**`,
-        ].join('\n')
-      )
+      .setDescription(mainDescriptionLines.join('\n'))
       .setColor(matchColor)
       .setFooter({ text: `PUBG Match Tracker - ${matchId}` })
       .setTimestamp(matchDate);
@@ -869,36 +873,13 @@ export class DiscordBotService {
             }
           }
 
-          // Collect unique accountIds from kill/death events for season stats
-          const relevantAccountIds = new Set<string>();
-          for (const player of players) {
-            const analysis = matchAnalysis.playerAnalyses.get(player.name);
-            if (!analysis) continue;
-            for (const k of analysis.killEvents) {
-              if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
-            }
-            for (const k of analysis.deathEvents) {
-              if (k.killer?.accountId) relevantAccountIds.add(k.killer.accountId);
-            }
-            for (const k of analysis.knockdownEvents) {
-              if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
-            }
-            for (const k of analysis.knockedDownEvents) {
-              if (k.attacker?.accountId) relevantAccountIds.add(k.attacker.accountId);
-            }
-          }
-
-          let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
-          if (relevantAccountIds.size > 0) {
-            try {
-              seasonStats = await this.playerStatsService.getSeasonStats(
-                Array.from(relevantAccountIds),
-                summary.gameMode
-              );
-            } catch (err) {
-              debug(`Failed to fetch season stats: ${err}`);
-            }
-          }
+          const seasonStats = await this.applyOpponentDifficulty(
+            mainEmbed,
+            mainDescriptionLines,
+            matchAnalysis,
+            players,
+            summary.gameMode
+          );
 
           const enhancedPlayerEmbeds = players.map((player) => {
             const analysis = matchAnalysis.playerAnalyses.get(player.name);
@@ -954,36 +935,13 @@ export class DiscordBotService {
         }
       }
 
-      // Collect unique accountIds from kill/death events for season stats
-      const relevantAccountIds = new Set<string>();
-      for (const player of players) {
-        const analysis = matchAnalysis.playerAnalyses.get(player.name);
-        if (!analysis) continue;
-        for (const k of analysis.killEvents) {
-          if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
-        }
-        for (const k of analysis.deathEvents) {
-          if (k.killer?.accountId) relevantAccountIds.add(k.killer.accountId);
-        }
-        for (const k of analysis.knockdownEvents) {
-          if (k.victim?.accountId) relevantAccountIds.add(k.victim.accountId);
-        }
-        for (const k of analysis.knockedDownEvents) {
-          if (k.attacker?.accountId) relevantAccountIds.add(k.attacker.accountId);
-        }
-      }
-
-      let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
-      if (relevantAccountIds.size > 0) {
-        try {
-          seasonStats = await this.playerStatsService.getSeasonStats(
-            Array.from(relevantAccountIds),
-            summary.gameMode
-          );
-        } catch (err) {
-          debug(`Failed to fetch season stats: ${err}`);
-        }
-      }
+      const seasonStats = await this.applyOpponentDifficulty(
+        mainEmbed,
+        mainDescriptionLines,
+        matchAnalysis,
+        players,
+        summary.gameMode
+      );
 
       // Create enhanced embeds
       const enhancedPlayerEmbeds = players.map((player) => {
@@ -1230,6 +1188,80 @@ export class DiscordBotService {
       .setTitle(this.formatPlayerTitle(player))
       .setDescription(basicStats)
       .setColor(matchColor);
+  }
+
+  /**
+   * Collects encountered opponents, fetches their season stats, and appends
+   * the opponent-difficulty line to the main embed when usable. Returns the
+   * season-stats map (or undefined) for downstream per-player enrichment.
+   */
+  private async applyOpponentDifficulty(
+    mainEmbed: EmbedBuilder,
+    mainDescriptionLines: string[],
+    matchAnalysis: MatchAnalysis,
+    players: DiscordPlayerMatchStats[],
+    gameMode: string
+  ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
+    const opponentAccountIds = this.collectOpponentAccountIds(matchAnalysis, players);
+    if (opponentAccountIds.length === 0) return undefined;
+
+    let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
+    try {
+      seasonStats = await this.playerStatsService.getSeasonStats(opponentAccountIds, gameMode);
+    } catch (err) {
+      debug(`Failed to fetch season stats: ${err}`);
+    }
+
+    if (seasonStats) {
+      const difficulty = calculateOpponentDifficulty(opponentAccountIds, seasonStats);
+      if (difficulty) {
+        mainDescriptionLines.push(this.formatOpponentDifficulty(difficulty));
+        mainEmbed.setDescription(mainDescriptionLines.join('\n'));
+      }
+    }
+
+    return seasonStats;
+  }
+
+  /**
+   * Collects unique opponent accountIds encountered by the tracked squad.
+   *
+   * Walks the per-player telemetry analyses (kills, deaths, knockdowns,
+   * knocked-down events) and gathers the opposing players' accountIds while
+   * excluding any accountId that belongs to a tracked squad member.
+   */
+  private collectOpponentAccountIds(
+    matchAnalysis: MatchAnalysis,
+    players: DiscordPlayerMatchStats[]
+  ): string[] {
+    const trackedAccountIds = new Set(
+      players.map((player) => player.pubgId).filter((id): id is string => Boolean(id))
+    );
+    const opponentAccountIds = new Set<string>();
+
+    const addOpponent = (accountId?: string) => {
+      if (!accountId || trackedAccountIds.has(accountId)) return;
+      opponentAccountIds.add(accountId);
+    };
+
+    for (const player of players) {
+      const analysis = matchAnalysis.playerAnalyses.get(player.name);
+      if (!analysis) continue;
+      for (const event of analysis.killEvents) addOpponent(event.victim?.accountId);
+      for (const event of analysis.deathEvents) addOpponent(event.killer?.accountId);
+      for (const event of analysis.knockdownEvents) addOpponent(event.victim?.accountId);
+      for (const event of analysis.knockedDownEvents) addOpponent(event.attacker?.accountId);
+    }
+
+    return Array.from(opponentAccountIds);
+  }
+
+  /**
+   * Formats an opponent difficulty result into a main-summary description line.
+   */
+  private formatOpponentDifficulty(difficulty: OpponentDifficultyResult): string {
+    const opponentWord = difficulty.opponentCount === 1 ? 'opponent' : 'opponents';
+    return `Opponent Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.opponentCount} ${opponentWord})`;
   }
 
   /**
