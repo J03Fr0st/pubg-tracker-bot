@@ -1238,7 +1238,15 @@ export class DiscordBotService {
 
       const difficulty = calculateOpponentDifficulty(opponentAccountIds, seasonStats);
       if (difficulty) {
-        mainDescriptionLines.push(this.formatOpponentDifficulty(difficulty));
+        const difficultyLine = this.formatOpponentDifficulty(difficulty);
+        const existingDifficultyLineIndex = mainDescriptionLines.findIndex((line) =>
+          line.startsWith('Opponent Difficulty:')
+        );
+        if (existingDifficultyLineIndex >= 0) {
+          mainDescriptionLines[existingDifficultyLineIndex] = difficultyLine;
+        } else {
+          mainDescriptionLines.push(difficultyLine);
+        }
         mainEmbed.setDescription(mainDescriptionLines.join('\n'));
         info('Opponent difficulty rendered', {
           matchId: matchAnalysis.matchId,

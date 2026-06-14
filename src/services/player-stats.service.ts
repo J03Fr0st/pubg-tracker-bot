@@ -12,6 +12,19 @@ export interface SeasonStatsResult {
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+interface PubgModeStats {
+  kills?: number;
+  losses?: number;
+  roundsPlayed?: number;
+  damageDealt?: number;
+  wins?: number;
+}
+
+interface ModeStatsLookupResult {
+  modeStats?: PubgModeStats;
+  availableGameModes: string[];
+}
+
 export class PlayerStatsService {
   private readonly repository: SeasonCacheRepository;
   private readonly pubgClient: PubgClient;
@@ -89,26 +102,26 @@ export class PlayerStatsService {
 
     for (const accountId of toFetch) {
       try {
-        const response = await this.pubgClient.players.getPlayerSeasonStats({
-          playerId: accountId,
+        const { modeStats, availableGameModes } = await this.fetchModeStats(
+          accountId,
           seasonId,
-        });
-
-        const gameModeStats = response.data[0]?.attributes?.gameModeStats;
-        const modeStats = gameModeStats?.[gameMode as keyof typeof gameModeStats];
+          gameMode
+        );
         if (!modeStats) {
           warn('Season stats missing game mode stats for account', {
             accountId,
             gameMode,
-            availableGameModes: gameModeStats ? Object.keys(gameModeStats) : [],
+            availableGameModes,
           });
           continue;
         }
 
+        const kills = modeStats.kills ?? 0;
+        const damageDealt = modeStats.damageDealt ?? 0;
         const deaths = modeStats.losses ?? 0;
-        const kd = deaths > 0 ? modeStats.kills / deaths : modeStats.kills;
+        const kd = deaths > 0 ? kills / deaths : kills;
         const roundsPlayed = modeStats.roundsPlayed ?? 0;
-        const adr = roundsPlayed > 0 ? modeStats.damageDealt / roundsPlayed : 0;
+        const adr = roundsPlayed > 0 ? damageDealt / roundsPlayed : 0;
 
         const rounded = {
           kd: Math.round(kd * 100) / 100,
@@ -154,5 +167,26 @@ export class PlayerStatsService {
     }
 
     return results;
+  }
+
+  private async fetchModeStats(
+    accountId: string,
+    seasonId: string,
+    gameMode: string
+  ): Promise<ModeStatsLookupResult> {
+    const response = await this.pubgClient.players.getPlayerSeasonStats({
+      playerId: accountId,
+      seasonId,
+    });
+
+    const data = Array.isArray(response.data) ? response.data[0] : response.data;
+    const gameModeStats = data?.attributes?.gameModeStats as
+      | Record<string, PubgModeStats>
+      | undefined;
+
+    return {
+      modeStats: gameModeStats?.[gameMode],
+      availableGameModes: gameModeStats ? Object.keys(gameModeStats) : [],
+    };
   }
 }
