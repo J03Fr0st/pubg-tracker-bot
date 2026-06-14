@@ -746,6 +746,71 @@ describe('Telemetry Discord Flow Integration', () => {
         'Opponent Difficulty: **Hard** (75/100, 1 opponent)'
       );
     });
+
+    it('includes lobby difficulty with bots on the main summary when participants are saved', async () => {
+      const mockSummary: DiscordMatchGroupSummary = {
+        matchId: 'test-lobby-difficulty',
+        mapName: 'Erangel',
+        gameMode: 'squad',
+        playedAt: '2024-01-01T10:00:00.000Z',
+        teamRank: 5,
+        telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-lobby-difficulty',
+        players: [
+          {
+            name: 'TestPlayer1',
+            pubgId: 'tracked-1',
+            stats: createPlayerStats({
+              kills: 0,
+              DBNOs: 0,
+              damageDealt: 0,
+              timeSurvived: 1122,
+              winPlace: 5,
+              name: 'TestPlayer1',
+            }),
+          },
+        ],
+      };
+
+      const mockPubgClient = (discordBotService as any).pubgClient;
+      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue([]);
+
+      (discordBotService as any).telemetryRepository = {
+        getCachedAnalyses: jest.fn().mockResolvedValue(null),
+        saveTelemetry: jest.fn().mockResolvedValue(undefined),
+      };
+      (discordBotService as any).matchRepository = {
+        findMatch: jest.fn().mockResolvedValue({
+          participants: [
+            { pubgId: 'tracked-1', kills: 0, damageDealt: 0, winPlace: 5 },
+            { pubgId: 'enemy-1', kills: 0, damageDealt: 0, winPlace: 5 },
+            { pubgId: 'enemy-1', kills: 0, damageDealt: 0, winPlace: 5 },
+            { pubgId: 'ai.1', kills: 0, damageDealt: 0, winPlace: 5 },
+            { pubgId: 'ai.1', kills: 0, damageDealt: 0, winPlace: 5 },
+          ],
+        }),
+      };
+      (discordBotService as any).playerStatsService = {
+        getSeasonStats: jest.fn().mockResolvedValue(
+          new Map([
+            ['tracked-1', { kd: 1.0, adr: 150 }],
+            ['enemy-1', { kd: 2.0, adr: 300 }],
+          ])
+        ),
+      };
+
+      const mockChannel = createMockTextChannel();
+      const mockClient = (discordBotService as any).client;
+      mockClient.channels.fetch.mockResolvedValue(mockChannel);
+
+      await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
+
+      const firstCall = mockChannel.send.mock.calls[0][0];
+      const mainEmbed = firstCall.embeds[0].toJSON();
+
+      expect(mainEmbed.description).toContain(
+        'Lobby Difficulty: **Standard** (50/100, 3 players: 2 humans, 1 bot)'
+      );
+    });
   });
 
   describe('telemetry processor integration', () => {

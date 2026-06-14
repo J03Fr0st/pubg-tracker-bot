@@ -1,6 +1,8 @@
 import {
+  type LobbyDifficultyResult,
   type OpponentDifficultyResult,
   type OpponentSeasonStats,
+  calculateLobbyDifficulty,
   calculateOpponentDifficulty,
 } from '../../../src/utils/match-difficulty.util';
 
@@ -327,5 +329,60 @@ describe('calculateOpponentDifficulty', () => {
         opponentCount: 1,
       });
     });
+  });
+});
+
+describe('calculateLobbyDifficulty', () => {
+  const stats = (kd: number, adr: number): OpponentSeasonStats => ({ kd, adr });
+
+  it('scores humans and bots together, counting bots as zero-score players', () => {
+    const result = calculateLobbyDifficulty(
+      ['account.1', 'account.2', 'ai.1', 'ai.2'],
+      new Map([
+        ['account.1', stats(1.0, 150)],
+        ['account.2', stats(2.0, 300)],
+      ])
+    );
+
+    expect(result).toEqual<LobbyDifficultyResult>({
+      score: 38,
+      label: 'Standard',
+      playerCount: 4,
+      humanCount: 2,
+      botCount: 2,
+    });
+  });
+
+  it('dedupes duplicate human and bot account IDs', () => {
+    const result = calculateLobbyDifficulty(
+      ['account.1', 'account.1', 'ai.1', 'ai.1'],
+      new Map([['account.1', stats(1.0, 150)]])
+    );
+
+    expect(result).toEqual<LobbyDifficultyResult>({
+      score: 25,
+      label: 'Easy',
+      playerCount: 2,
+      humanCount: 1,
+      botCount: 1,
+    });
+  });
+
+  it('can score a bot-only lobby as Easy', () => {
+    const result = calculateLobbyDifficulty(['ai.1', 'ai.2'], new Map());
+
+    expect(result).toEqual<LobbyDifficultyResult>({
+      score: 0,
+      label: 'Easy',
+      playerCount: 2,
+      humanCount: 0,
+      botCount: 2,
+    });
+  });
+
+  it('returns null when only human participants are missing stats', () => {
+    const result = calculateLobbyDifficulty(['account.1'], new Map());
+
+    expect(result).toBeNull();
   });
 });

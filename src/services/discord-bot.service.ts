@@ -52,7 +52,10 @@ import { debug, error, info, success, warn } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import {
+  calculateLobbyDifficulty,
   calculateOpponentDifficulty,
+  isBotAccountId,
+  type LobbyDifficultyResult,
   type OpponentDifficultyResult,
 } from '../utils/match-difficulty.util';
 import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
@@ -67,6 +70,10 @@ interface ParticipantMatchStats {
   kills: number;
   damageDealt: number;
   winPlace: number;
+}
+
+interface LobbyParticipant {
+  pubgId: string;
 }
 
 type SendableTextChannel = TextBasedChannel & {
@@ -875,12 +882,20 @@ export class DiscordBotService {
             }
           }
 
-          const seasonStats = await this.applyOpponentDifficulty(
+          let seasonStats = await this.applyOpponentDifficulty(
             mainEmbed,
             mainDescriptionLines,
             matchAnalysis,
             players,
             summary.gameMode
+          );
+          seasonStats = await this.applyLobbyDifficulty(
+            mainEmbed,
+            mainDescriptionLines,
+            matchId,
+            matchData?.participants ?? [],
+            summary.gameMode,
+            seasonStats
           );
 
           const enhancedPlayerEmbeds = players.map((player) => {
@@ -937,12 +952,20 @@ export class DiscordBotService {
         }
       }
 
-      const seasonStats = await this.applyOpponentDifficulty(
+      let seasonStats = await this.applyOpponentDifficulty(
         mainEmbed,
         mainDescriptionLines,
         matchAnalysis,
         players,
         summary.gameMode
+      );
+      seasonStats = await this.applyLobbyDifficulty(
+        mainEmbed,
+        mainDescriptionLines,
+        matchId,
+        matchData?.participants ?? [],
+        summary.gameMode,
+        seasonStats
       );
 
       // Create enhanced embeds
@@ -1239,14 +1262,7 @@ export class DiscordBotService {
       const difficulty = calculateOpponentDifficulty(opponentAccountIds, seasonStats);
       if (difficulty) {
         const difficultyLine = this.formatOpponentDifficulty(difficulty);
-        const existingDifficultyLineIndex = mainDescriptionLines.findIndex((line) =>
-          line.startsWith('Opponent Difficulty:')
-        );
-        if (existingDifficultyLineIndex >= 0) {
-          mainDescriptionLines[existingDifficultyLineIndex] = difficultyLine;
-        } else {
-          mainDescriptionLines.push(difficultyLine);
-        }
+        this.upsertMainDescriptionLine(mainDescriptionLines, 'Opponent Difficulty:', difficultyLine);
         mainEmbed.setDescription(mainDescriptionLines.join('\n'));
         info('Opponent difficulty rendered', {
           matchId: matchAnalysis.matchId,
@@ -1262,6 +1278,86 @@ export class DiscordBotService {
         });
       }
     }
+
+    return seasonStats;
+  }
+
+  /**
+   * Scores the full saved lobby. Human players use season stats; bots count as
+   * zero-score lobby participants so bot-heavy lobbies reduce difficulty.
+   */
+  private async applyLobbyDifficulty(
+    mainEmbed: EmbedBuilder,
+    mainDescriptionLines: string[],
+    matchId: string,
+    participants: LobbyParticipant[],
+    gameMode: string,
+    existingSeasonStats?: Map<string, { kd: number; adr: number }>
+  ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
+    const lobbyAccountIds = this.collectLobbyAccountIds(participants);
+    if (lobbyAccountIds.length === 0) {
+      info('Lobby difficulty skipped: no participant account IDs found', {
+        matchId,
+        gameMode,
+      });
+      return existingSeasonStats;
+    }
+
+    const seasonStats = new Map(existingSeasonStats ?? []);
+    const humanAccountIds = lobbyAccountIds.filter((id) => !isBotAccountId(id));
+    const missingHumanAccountIds = humanAccountIds.filter((id) => !seasonStats.has(id));
+
+    if (missingHumanAccountIds.length > 0) {
+      try {
+        const fetchedStats = await this.playerStatsService.getSeasonStats(
+          missingHumanAccountIds,
+          gameMode
+        );
+        for (const [accountId, stats] of fetchedStats) {
+          seasonStats.set(accountId, stats);
+        }
+      } catch (err) {
+        warn(`Lobby difficulty failed to fetch season stats: ${err}`);
+      }
+    }
+
+    info('Lobby difficulty collected participants', {
+      matchId,
+      gameMode,
+      participantCount: lobbyAccountIds.length,
+      humanCount: humanAccountIds.length,
+      botCount: lobbyAccountIds.length - humanAccountIds.length,
+      seasonStatsCount: seasonStats.size,
+      missingHumanAccountIds: humanAccountIds.filter((id) => !seasonStats.has(id)),
+    });
+
+    const difficulty = calculateLobbyDifficulty(lobbyAccountIds, seasonStats);
+    if (!difficulty) {
+      warn('Lobby difficulty skipped: no usable lobby participants', {
+        matchId,
+        participantCount: lobbyAccountIds.length,
+        seasonStatsCount: seasonStats.size,
+      });
+      return seasonStats;
+    }
+
+    const difficultyLine = this.formatLobbyDifficulty(difficulty);
+    this.upsertMainDescriptionLine(
+      mainDescriptionLines,
+      'Lobby Difficulty:',
+      difficultyLine,
+      'Opponent Difficulty:'
+    );
+    mainEmbed.setDescription(mainDescriptionLines.join('\n'));
+
+    info('Lobby difficulty rendered', {
+      matchId,
+      score: difficulty.score,
+      label: difficulty.label,
+      playerCount: difficulty.playerCount,
+      humanCount: difficulty.humanCount,
+      botCount: difficulty.botCount,
+    });
 
     return seasonStats;
   }
@@ -1299,12 +1395,57 @@ export class DiscordBotService {
     return Array.from(opponentAccountIds);
   }
 
+  private collectLobbyAccountIds(participants: LobbyParticipant[]): string[] {
+    const accountIds = new Set<string>();
+
+    for (const participant of participants) {
+      if (!participant.pubgId) continue;
+      accountIds.add(participant.pubgId);
+    }
+
+    return Array.from(accountIds);
+  }
+
+  private upsertMainDescriptionLine(
+    mainDescriptionLines: string[],
+    prefix: string,
+    line: string,
+    beforePrefix?: string
+  ): void {
+    const existingLineIndex = mainDescriptionLines.findIndex((existing) =>
+      existing.startsWith(prefix)
+    );
+    if (existingLineIndex >= 0) {
+      mainDescriptionLines[existingLineIndex] = line;
+      return;
+    }
+
+    if (beforePrefix) {
+      const beforeIndex = mainDescriptionLines.findIndex((existing) =>
+        existing.startsWith(beforePrefix)
+      );
+      if (beforeIndex >= 0) {
+        mainDescriptionLines.splice(beforeIndex, 0, line);
+        return;
+      }
+    }
+
+    mainDescriptionLines.push(line);
+  }
+
   /**
    * Formats an opponent difficulty result into a main-summary description line.
    */
   private formatOpponentDifficulty(difficulty: OpponentDifficultyResult): string {
     const opponentWord = difficulty.opponentCount === 1 ? 'opponent' : 'opponents';
     return `Opponent Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.opponentCount} ${opponentWord})`;
+  }
+
+  private formatLobbyDifficulty(difficulty: LobbyDifficultyResult): string {
+    const playerWord = difficulty.playerCount === 1 ? 'player' : 'players';
+    const humanWord = difficulty.humanCount === 1 ? 'human' : 'humans';
+    const botWord = difficulty.botCount === 1 ? 'bot' : 'bots';
+    return `Lobby Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.playerCount} ${playerWord}: ${difficulty.humanCount} ${humanWord}, ${difficulty.botCount} ${botWord})`;
   }
 
   /**
