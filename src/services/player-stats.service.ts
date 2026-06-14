@@ -3,7 +3,7 @@ import {
   SeasonCacheRepository,
   type UpsertSeasonCacheData,
 } from '../data/repositories/season-cache.repository';
-import { debug, warn } from '../utils/logger';
+import { debug, info, warn } from '../utils/logger';
 
 export interface SeasonStatsResult {
   kd: number;
@@ -43,6 +43,14 @@ export class PlayerStatsService {
     const seasonId = await this.ensureSeasonId();
     const now = Date.now();
 
+    info('Season stats lookup started', {
+      platform: this.platform,
+      gameMode,
+      seasonId,
+      accountCount: accountIds.length,
+      accountIds,
+    });
+
     // Check cache
     const cached = await this.repository.findByAccountIds(
       accountIds,
@@ -62,7 +70,19 @@ export class PlayerStatsService {
 
     // Fetch missing/stale from API
     const toFetch = accountIds.filter((id) => !freshIds.has(id));
-    if (toFetch.length === 0) return results;
+    info('Season stats cache check complete', {
+      requestedCount: accountIds.length,
+      cachedCount: cached.length,
+      freshCount: freshIds.size,
+      apiFetchCount: toFetch.length,
+    });
+
+    if (toFetch.length === 0) {
+      info('Season stats lookup complete from cache', {
+        resultCount: results.size,
+      });
+      return results;
+    }
 
     debug(`Fetching season stats for ${toFetch.length} players from API`);
     const upserts: UpsertSeasonCacheData[] = [];
@@ -76,7 +96,14 @@ export class PlayerStatsService {
 
         const gameModeStats = response.data[0]?.attributes?.gameModeStats;
         const modeStats = gameModeStats?.[gameMode as keyof typeof gameModeStats];
-        if (!modeStats) continue;
+        if (!modeStats) {
+          warn('Season stats missing game mode stats for account', {
+            accountId,
+            gameMode,
+            availableGameModes: gameModeStats ? Object.keys(gameModeStats) : [],
+          });
+          continue;
+        }
 
         const deaths = modeStats.losses ?? 0;
         const kd = deaths > 0 ? modeStats.kills / deaths : modeStats.kills;
@@ -89,6 +116,13 @@ export class PlayerStatsService {
         };
 
         results.set(accountId, rounded);
+        info('Season stats fetched for account', {
+          accountId,
+          gameMode,
+          kd: rounded.kd,
+          adr: rounded.adr,
+          roundsPlayed,
+        });
         upserts.push({
           platform: this.platform,
           accountId,
@@ -103,6 +137,14 @@ export class PlayerStatsService {
         warn(`Failed to fetch season stats for ${accountId}: ${err}`);
       }
     }
+
+    info('Season stats lookup complete', {
+      requestedCount: accountIds.length,
+      resultCount: results.size,
+      apiFetchCount: toFetch.length,
+      apiResultCount: upserts.length,
+      missingAccountIds: accountIds.filter((id) => !results.has(id)),
+    });
 
     // Cache results
     if (upserts.length > 0) {

@@ -48,7 +48,7 @@ import type {
   DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
 import { DamageInfoUtils } from '../utils/damage-info.util';
-import { debug, error, success } from '../utils/logger';
+import { debug, error, info, success, warn } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import {
@@ -1203,20 +1203,53 @@ export class DiscordBotService {
     gameMode: string
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const opponentAccountIds = this.collectOpponentAccountIds(matchAnalysis, players);
-    if (opponentAccountIds.length === 0) return undefined;
+    if (opponentAccountIds.length === 0) {
+      info('Opponent difficulty skipped: no opponent account IDs found', {
+        matchId: matchAnalysis.matchId,
+        gameMode,
+        trackedPlayers: players.map((player) => player.name),
+      });
+      return undefined;
+    }
+
+    info('Opponent difficulty found opponent account IDs', {
+      matchId: matchAnalysis.matchId,
+      gameMode,
+      opponentCount: opponentAccountIds.length,
+      opponentAccountIds,
+    });
 
     let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
     try {
       seasonStats = await this.playerStatsService.getSeasonStats(opponentAccountIds, gameMode);
     } catch (err) {
-      debug(`Failed to fetch season stats: ${err}`);
+      warn(`Opponent difficulty failed to fetch season stats: ${err}`);
     }
 
     if (seasonStats) {
+      info('Opponent difficulty received season stats', {
+        matchId: matchAnalysis.matchId,
+        requestedOpponents: opponentAccountIds.length,
+        seasonStatsCount: seasonStats.size,
+        missingAccountIds: opponentAccountIds.filter((id) => !seasonStats.has(id)),
+      });
+
       const difficulty = calculateOpponentDifficulty(opponentAccountIds, seasonStats);
       if (difficulty) {
         mainDescriptionLines.push(this.formatOpponentDifficulty(difficulty));
         mainEmbed.setDescription(mainDescriptionLines.join('\n'));
+        info('Opponent difficulty rendered', {
+          matchId: matchAnalysis.matchId,
+          score: difficulty.score,
+          label: difficulty.label,
+          opponentCount: difficulty.opponentCount,
+        });
+      } else {
+        warn('Opponent difficulty skipped: no usable season stats', {
+          matchId: matchAnalysis.matchId,
+          requestedOpponents: opponentAccountIds.length,
+          seasonStatsCount: seasonStats.size,
+        });
       }
     }
 
