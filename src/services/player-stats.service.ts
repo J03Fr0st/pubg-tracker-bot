@@ -1,4 +1,4 @@
-import type { PubgClient } from '@j03fr0st/pubg-ts';
+import type { GameMode, PubgClient } from '@j03fr0st/pubg-ts';
 import {
   SeasonCacheRepository,
   type UpsertSeasonCacheData,
@@ -11,6 +11,7 @@ export interface SeasonStatsResult {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SEASON_STATS_BATCH_SIZE = 10;
 
 interface PubgModeStats {
   kills?: number;
@@ -21,6 +22,7 @@ interface PubgModeStats {
 }
 
 interface ModeStatsLookupResult {
+  accountId: string;
   modeStats?: PubgModeStats;
   availableGameModes: string[];
 }
@@ -100,20 +102,50 @@ export class PlayerStatsService {
     debug(`Fetching season stats for ${toFetch.length} players from API`);
     const upserts: UpsertSeasonCacheData[] = [];
 
-    for (const accountId of toFetch) {
+    const batches = this.chunk(toFetch, SEASON_STATS_BATCH_SIZE);
+    await Promise.all(
+      batches.map((batch) =>
+        this.fetchAndStoreBatchStats(batch, seasonId, gameMode, results, upserts)
+      )
+    );
+
+    info('Season stats lookup complete', {
+      requestedCount: accountIds.length,
+      resultCount: results.size,
+      apiFetchCount: toFetch.length,
+      apiBatchCount: batches.length,
+      apiResultCount: upserts.length,
+      missingAccountIds: accountIds.filter((id) => !results.has(id)),
+    });
+
+    // Cache results
+    if (upserts.length > 0) {
+      this.repository
+        .upsertStats(upserts)
+        .catch((err) => warn(`Failed to cache season stats: ${err}`));
+    }
+
+    return results;
+  }
+
+  private async fetchAndStoreBatchStats(
+    accountIds: string[],
+    seasonId: string,
+    gameMode: string,
+    results: Map<string, SeasonStatsResult>,
+    upserts: UpsertSeasonCacheData[]
+  ): Promise<void> {
+    try {
+      const statsResults = await this.fetchBatchModeStats(accountIds, seasonId, gameMode);
+      for (const { accountId, modeStats, availableGameModes } of statsResults) {
       try {
-        const { modeStats, availableGameModes } = await this.fetchModeStats(
-          accountId,
-          seasonId,
-          gameMode
-        );
         if (!modeStats) {
           warn('Season stats missing game mode stats for account', {
             accountId,
             gameMode,
             availableGameModes,
           });
-          continue;
+          return;
         }
 
         const kills = modeStats.kills ?? 0;
@@ -147,46 +179,44 @@ export class PlayerStatsService {
           games: roundsPlayed,
         });
       } catch (err) {
-        warn(`Failed to fetch season stats for ${accountId}: ${err}`);
+        warn(`Failed to process season stats for ${accountId}: ${err}`);
       }
     }
-
-    info('Season stats lookup complete', {
-      requestedCount: accountIds.length,
-      resultCount: results.size,
-      apiFetchCount: toFetch.length,
-      apiResultCount: upserts.length,
-      missingAccountIds: accountIds.filter((id) => !results.has(id)),
-    });
-
-    // Cache results
-    if (upserts.length > 0) {
-      this.repository
-        .upsertStats(upserts)
-        .catch((err) => warn(`Failed to cache season stats: ${err}`));
+    } catch (err) {
+      warn(`Failed to fetch season stats batch for ${accountIds.join(', ')}: ${err}`);
     }
-
-    return results;
   }
 
-  private async fetchModeStats(
-    accountId: string,
+  private async fetchBatchModeStats(
+    accountIds: string[],
     seasonId: string,
     gameMode: string
-  ): Promise<ModeStatsLookupResult> {
-    const response = await this.pubgClient.players.getPlayerSeasonStats({
-      playerId: accountId,
+  ): Promise<ModeStatsLookupResult[]> {
+    const response = await this.pubgClient.players.getPlayerSeasonStatsBatch({
+      playerIds: accountIds,
       seasonId,
+      gameMode: gameMode as GameMode,
     });
 
-    const data = Array.isArray(response.data) ? response.data[0] : response.data;
-    const gameModeStats = data?.attributes?.gameModeStats as
-      | Record<string, PubgModeStats>
-      | undefined;
+    const playerSeasons = Array.isArray(response.data) ? response.data : [response.data];
 
-    return {
-      modeStats: gameModeStats?.[gameMode],
-      availableGameModes: gameModeStats ? Object.keys(gameModeStats) : [],
-    };
+    return playerSeasons.map((playerSeason) => {
+      const gameModeStats = playerSeason?.attributes?.gameModeStats as
+        | Record<string, PubgModeStats>
+        | undefined;
+      return {
+        accountId: playerSeason?.relationships?.player?.data?.id ?? playerSeason?.id ?? '',
+        modeStats: gameModeStats?.[gameMode],
+        availableGameModes: gameModeStats ? Object.keys(gameModeStats) : [],
+      };
+    });
+  }
+
+  private chunk<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
   }
 }

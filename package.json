@@ -30,7 +30,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@j03fr0st/pubg-ts": "^1.0.7-beta",
+    "@j03fr0st/pubg-ts": "^1.1.0",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "discord.js": "^14.16.3",
