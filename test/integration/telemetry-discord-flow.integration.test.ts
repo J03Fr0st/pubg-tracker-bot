@@ -743,7 +743,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const mainEmbed = firstCall.embeds[0].toJSON();
 
       expect(mainEmbed.description).toContain(
-        'Opponent Difficulty: **Hard** (75/100, 1 opponent)'
+        '⚔️ Opponent Difficulty: **Hard** (75/100, 1 opponent)'
       );
     });
 
@@ -808,7 +808,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const mainEmbed = firstCall.embeds[0].toJSON();
 
       expect(mainEmbed.description).toContain(
-        'Lobby Difficulty: **Standard** (50/100, 3 players: 2 humans, 1 bot)'
+        '🏟️ Lobby Difficulty: **Standard** (50/100, 3 players: 2 humans, 1 bot)'
       );
     });
   });

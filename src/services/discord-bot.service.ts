@@ -48,7 +48,7 @@ import type {
   DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
 import { DamageInfoUtils } from '../utils/damage-info.util';
-import { debug, error, info, success, warn } from '../utils/logger';
+import { debug, error, success, warn } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
 import { MatchColorUtil } from '../utils/match-colors.util';
 import {
@@ -1229,7 +1229,7 @@ export class DiscordBotService {
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const opponentAccountIds = this.collectOpponentAccountIds(matchAnalysis, players);
     if (opponentAccountIds.length === 0) {
-      info('Opponent difficulty skipped: no opponent account IDs found', {
+      debug('Opponent difficulty skipped: no opponent account IDs found', {
         matchId: matchAnalysis.matchId,
         gameMode,
         trackedPlayers: players.map((player) => player.name),
@@ -1237,11 +1237,10 @@ export class DiscordBotService {
       return undefined;
     }
 
-    info('Opponent difficulty found opponent account IDs', {
+    debug('Opponent difficulty found opponent account IDs', {
       matchId: matchAnalysis.matchId,
       gameMode,
       opponentCount: opponentAccountIds.length,
-      opponentAccountIds,
     });
 
     let seasonStats: Map<string, { kd: number; adr: number }> | undefined;
@@ -1252,7 +1251,7 @@ export class DiscordBotService {
     }
 
     if (seasonStats) {
-      info('Opponent difficulty received season stats', {
+      debug('Opponent difficulty received season stats', {
         matchId: matchAnalysis.matchId,
         requestedOpponents: opponentAccountIds.length,
         seasonStatsCount: seasonStats.size,
@@ -1264,14 +1263,14 @@ export class DiscordBotService {
         const difficultyLine = this.formatOpponentDifficulty(difficulty);
         this.upsertMainDescriptionLine(mainDescriptionLines, 'Opponent Difficulty:', difficultyLine);
         mainEmbed.setDescription(mainDescriptionLines.join('\n'));
-        info('Opponent difficulty rendered', {
+        debug('Opponent difficulty rendered', {
           matchId: matchAnalysis.matchId,
           score: difficulty.score,
           label: difficulty.label,
           opponentCount: difficulty.opponentCount,
         });
       } else {
-        warn('Opponent difficulty skipped: no usable season stats', {
+        debug('Opponent difficulty skipped: no usable season stats', {
           matchId: matchAnalysis.matchId,
           requestedOpponents: opponentAccountIds.length,
           seasonStatsCount: seasonStats.size,
@@ -1296,7 +1295,7 @@ export class DiscordBotService {
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const lobbyAccountIds = this.collectLobbyAccountIds(participants);
     if (lobbyAccountIds.length === 0) {
-      info('Lobby difficulty skipped: no participant account IDs found', {
+      debug('Lobby difficulty skipped: no participant account IDs found', {
         matchId,
         gameMode,
       });
@@ -1321,7 +1320,7 @@ export class DiscordBotService {
       }
     }
 
-    info('Lobby difficulty collected participants', {
+    debug('Lobby difficulty collected participants', {
       matchId,
       gameMode,
       participantCount: lobbyAccountIds.length,
@@ -1333,7 +1332,7 @@ export class DiscordBotService {
 
     const difficulty = calculateLobbyDifficulty(lobbyAccountIds, seasonStats);
     if (!difficulty) {
-      warn('Lobby difficulty skipped: no usable lobby participants', {
+      debug('Lobby difficulty skipped: no usable lobby participants', {
         matchId,
         participantCount: lobbyAccountIds.length,
         seasonStatsCount: seasonStats.size,
@@ -1350,7 +1349,7 @@ export class DiscordBotService {
     );
     mainEmbed.setDescription(mainDescriptionLines.join('\n'));
 
-    info('Lobby difficulty rendered', {
+    debug('Lobby difficulty rendered', {
       matchId,
       score: difficulty.score,
       label: difficulty.label,
@@ -1413,7 +1412,7 @@ export class DiscordBotService {
     beforePrefix?: string
   ): void {
     const existingLineIndex = mainDescriptionLines.findIndex((existing) =>
-      existing.startsWith(prefix)
+      existing.includes(prefix)
     );
     if (existingLineIndex >= 0) {
       mainDescriptionLines[existingLineIndex] = line;
@@ -1422,7 +1421,7 @@ export class DiscordBotService {
 
     if (beforePrefix) {
       const beforeIndex = mainDescriptionLines.findIndex((existing) =>
-        existing.startsWith(beforePrefix)
+        existing.includes(beforePrefix)
       );
       if (beforeIndex >= 0) {
         mainDescriptionLines.splice(beforeIndex, 0, line);
@@ -1438,14 +1437,14 @@ export class DiscordBotService {
    */
   private formatOpponentDifficulty(difficulty: OpponentDifficultyResult): string {
     const opponentWord = difficulty.opponentCount === 1 ? 'opponent' : 'opponents';
-    return `Opponent Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.opponentCount} ${opponentWord})`;
+    return `⚔️ Opponent Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.opponentCount} ${opponentWord})`;
   }
 
   private formatLobbyDifficulty(difficulty: LobbyDifficultyResult): string {
     const playerWord = difficulty.playerCount === 1 ? 'player' : 'players';
     const humanWord = difficulty.humanCount === 1 ? 'human' : 'humans';
     const botWord = difficulty.botCount === 1 ? 'bot' : 'bots';
-    return `Lobby Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.playerCount} ${playerWord}: ${difficulty.humanCount} ${humanWord}, ${difficulty.botCount} ${botWord})`;
+    return `🏟️ Lobby Difficulty: **${difficulty.label}** (${difficulty.score}/100, ${difficulty.playerCount} ${playerWord}: ${difficulty.humanCount} ${humanWord}, ${difficulty.botCount} ${botWord})`;
   }
 
   /**

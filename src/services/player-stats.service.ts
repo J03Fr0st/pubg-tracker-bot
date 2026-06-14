@@ -3,7 +3,7 @@ import {
   SeasonCacheRepository,
   type UpsertSeasonCacheData,
 } from '../data/repositories/season-cache.repository';
-import { debug, info, warn } from '../utils/logger';
+import { debug, warn } from '../utils/logger';
 
 export interface SeasonStatsResult {
   kd: number;
@@ -58,7 +58,7 @@ export class PlayerStatsService {
     const seasonId = await this.ensureSeasonId();
     const now = Date.now();
 
-    info('Season stats lookup started', {
+    debug('Season stats lookup started', {
       platform: this.platform,
       gameMode,
       seasonId,
@@ -85,7 +85,7 @@ export class PlayerStatsService {
 
     // Fetch missing/stale from API
     const toFetch = accountIds.filter((id) => !freshIds.has(id));
-    info('Season stats cache check complete', {
+    debug('Season stats cache check complete', {
       requestedCount: accountIds.length,
       cachedCount: cached.length,
       freshCount: freshIds.size,
@@ -93,7 +93,7 @@ export class PlayerStatsService {
     });
 
     if (toFetch.length === 0) {
-      info('Season stats lookup complete from cache', {
+      debug('Season stats lookup complete from cache', {
         resultCount: results.size,
       });
       return results;
@@ -109,7 +109,7 @@ export class PlayerStatsService {
       )
     );
 
-    info('Season stats lookup complete', {
+    debug('Season stats lookup complete', {
       requestedCount: accountIds.length,
       resultCount: results.size,
       apiFetchCount: toFetch.length,
@@ -138,50 +138,43 @@ export class PlayerStatsService {
     try {
       const statsResults = await this.fetchBatchModeStats(accountIds, seasonId, gameMode);
       for (const { accountId, modeStats, availableGameModes } of statsResults) {
-      try {
-        if (!modeStats) {
-          warn('Season stats missing game mode stats for account', {
+        try {
+          if (!modeStats) {
+            debug('Season stats missing game mode stats for account', {
+              accountId,
+              gameMode,
+              availableGameModes,
+            });
+            continue;
+          }
+
+          const kills = modeStats.kills ?? 0;
+          const damageDealt = modeStats.damageDealt ?? 0;
+          const deaths = modeStats.losses ?? 0;
+          const kd = deaths > 0 ? kills / deaths : kills;
+          const roundsPlayed = modeStats.roundsPlayed ?? 0;
+          const adr = roundsPlayed > 0 ? damageDealt / roundsPlayed : 0;
+
+          const rounded = {
+            kd: Math.round(kd * 100) / 100,
+            adr: Math.round(adr),
+          };
+
+          results.set(accountId, rounded);
+          upserts.push({
+            platform: this.platform,
             accountId,
+            seasonId,
             gameMode,
-            availableGameModes,
+            kd: rounded.kd,
+            adr: rounded.adr,
+            wins: modeStats.wins ?? 0,
+            games: roundsPlayed,
           });
-          return;
+        } catch (err) {
+          warn(`Failed to process season stats for ${accountId}: ${err}`);
         }
-
-        const kills = modeStats.kills ?? 0;
-        const damageDealt = modeStats.damageDealt ?? 0;
-        const deaths = modeStats.losses ?? 0;
-        const kd = deaths > 0 ? kills / deaths : kills;
-        const roundsPlayed = modeStats.roundsPlayed ?? 0;
-        const adr = roundsPlayed > 0 ? damageDealt / roundsPlayed : 0;
-
-        const rounded = {
-          kd: Math.round(kd * 100) / 100,
-          adr: Math.round(adr),
-        };
-
-        results.set(accountId, rounded);
-        info('Season stats fetched for account', {
-          accountId,
-          gameMode,
-          kd: rounded.kd,
-          adr: rounded.adr,
-          roundsPlayed,
-        });
-        upserts.push({
-          platform: this.platform,
-          accountId,
-          seasonId,
-          gameMode,
-          kd: rounded.kd,
-          adr: rounded.adr,
-          wins: modeStats.wins ?? 0,
-          games: roundsPlayed,
-        });
-      } catch (err) {
-        warn(`Failed to process season stats for ${accountId}: ${err}`);
       }
-    }
     } catch (err) {
       warn(`Failed to fetch season stats batch for ${accountIds.join(', ')}: ${err}`);
     }
