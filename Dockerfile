@@ -58,9 +58,6 @@ COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/prisma.config.ts ./
 
-# Copy generated prisma client from builder (output path matches schema.prisma: ../src/generated/prisma)
-COPY --from=builder /usr/src/app/src/generated ./src/generated
-
 # Copy prisma CLI from builder for migrate deploy
 COPY --from=builder /usr/src/app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /usr/src/app/node_modules/@prisma ./node_modules/@prisma
@@ -76,4 +73,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Run migrations then start the bot
-CMD npx prisma migrate deploy && node dist/index.js
+CMD npx prisma migrate deploy && node dist/src/index.js

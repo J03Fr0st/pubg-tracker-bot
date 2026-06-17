@@ -159,6 +159,7 @@ Thumbs.db
 .worktrees/
 
 /src/generated/prisma
+/generated/prisma
 
 # Local telemetry exploration output
 telemetry-analysis/

@@ -1,0 +1,156 @@
+{
+  "feature": "Repo Simplification",
+  "created": "2026-06-17",
+  "designPath": "docs/design/2026-06-17-repo-simplification/design.md",
+  "specPath": "docs/specs/2026-06-17-repo-simplification",
+  "requirementsPath": "docs/specs/2026-06-17-repo-simplification/requirements.md",
+  "actionRequiredPath": "docs/specs/2026-06-17-repo-simplification/action-required.md",
+  "implementationLogPath": "docs/specs/2026-06-17-repo-simplification/implementation-log.md",
+  "allowedTaskStatuses": [
+    "pending",
+    "in-progress",
+    "blocked",
+    "needs-context",
+    "done-with-concerns",
+    "review-failed",
+    "complete"
+  ],
+  "tasks": [
+    {
+      "id": "task-01-remove-stale-match-flow-runner",
+      "title": "Remove Stale Match Flow Runner",
+      "file": "tasks/task-01-remove-stale-match-flow-runner.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [
+        "task-06-remove-eslint-and-unused-deps"
+      ],
+      "files": {
+        "create": [],
+        "modify": [
+          "scripts/test-match-flow.ts",
+          "scripts/test-match-flow.js",
+          "scripts/run-test.js",
+          "scripts/README-test-match-flow.md",
+          "scripts/example-test-usage.sh",
+          "scripts/example-test-usage.bat",
+          "README.md",
+          "package.json"
+        ]
+      },
+      "verificationCommands": [
+        "rg \"test-match-flow|test:match-flow|run-test|PubgStorageService|mongoose\" package.json README.md scripts src test -g \"!node_modules\" -g \"!dist\"",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-02-move-prisma-generated-output",
+      "title": "Move Prisma Generated Output",
+      "file": "tasks/task-02-move-prisma-generated-output.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          "prisma/schema.prisma",
+          ".gitignore",
+          "src/data/prisma.client.ts",
+          "src/data/repositories/telemetry.repository.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx prisma generate",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-03-delete-scratch-files",
+      "title": "Delete Scratch Files",
+      "file": "tasks/task-03-delete-scratch-files.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          "test-file.txt",
+          "implement/plan.md",
+          "implement/state.json"
+        ]
+      },
+      "verificationCommands": [
+        "git ls-files test-file.txt implement/plan.md implement/state.json",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "task-04-shrink-logger",
+      "title": "Shrink Logger",
+      "file": "tasks/task-04-shrink-logger.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/utils/logger.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npm run typecheck",
+        "npm test -- --runInBand"
+      ]
+    },
+    {
+      "id": "task-05-simplify-coaching-pipeline",
+      "title": "Simplify Coaching Pipeline",
+      "file": "tasks/task-05-simplify-coaching-pipeline.md",
+      "wave": 1,
+      "status": "complete",
+      "dependsOn": [],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          "src/services/coaching-pipeline.service.ts",
+          "src/services/discord-bot.service.ts",
+          "test/unit/services/coaching-pipeline.service.test.ts"
+        ]
+      },
+      "verificationCommands": [
+        "npx jest test/unit/services/coaching-pipeline.service.test.ts --runInBand",
+        "npm run typecheck"
+      ]
+    },
+    {
+      "id": "task-06-remove-eslint-and-unused-deps",
+      "title": "Remove ESLint And Unused Deps",
+      "file": "tasks/task-06-remove-eslint-and-unused-deps.md",
+      "wave": 2,
+      "status": "complete",
+      "dependsOn": [
+        "task-01-remove-stale-match-flow-runner"
+      ],
+      "blocks": [],
+      "files": {
+        "create": [],
+        "modify": [
+          ".eslintrc.js",
+          "package.json",
+          "package-lock.json",
+          "README.md"
+        ]
+      },
+      "verificationCommands": [
+        "npm install",
+        "npm run format:imports",
+        "npm run typecheck"
+      ]
+    }
+  ]
+}

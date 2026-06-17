@@ -1,6 +1,4 @@
-import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
-import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
 import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../../../src/types/coaching.types';
 
@@ -84,10 +82,9 @@ describe('CoachingPipelineService', () => {
     expect(result).toEqual({ kind: 'failed', reason: 'llm down', stage: 'narrate' });
   });
 
-  it('factory wires the two real coaching services', async () => {
-    const pipeline = CoachingPipelineService.withDefaults({
-      fightContextBuilder: new FightContextBuilderService(),
-      decisionEngine: new CoachingDecisionEngineService(),
+  it('supports direct wiring of coaching analysis and narration', async () => {
+    const pipeline = new CoachingPipelineService({
+      analyze: jest.fn().mockReturnValue([]),
       narrate: async () => ({ sections: [] }),
     });
     const result = await pipeline.run(fakeMatchAnalysis, [], []);

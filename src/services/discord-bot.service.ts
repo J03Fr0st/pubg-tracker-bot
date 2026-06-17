@@ -173,9 +173,18 @@ export class DiscordBotService {
       enabled: Boolean(llmClient),
       maxLineLength: 240,
     });
-    this.coachingPipeline = CoachingPipelineService.withDefaults({
-      fightContextBuilder: new FightContextBuilderService(),
-      decisionEngine: new CoachingDecisionEngineService(),
+    const fightContextBuilder = new FightContextBuilderService();
+    const coachingDecisionEngine = new CoachingDecisionEngineService();
+    this.coachingPipeline = new CoachingPipelineService({
+      analyze: (analysis, names, damage, resetEvents) => {
+        const contexts = fightContextBuilder.buildFightContexts(
+          analysis,
+          names,
+          damage,
+          resetEvents
+        );
+        return coachingDecisionEngine.createInsights(contexts);
+      },
       narrate: (insights) => this.coachingNarrator.narrate(insights),
     });
     this.setupEventHandlers();
@@ -1261,7 +1270,11 @@ export class DiscordBotService {
       const difficulty = calculateOpponentDifficulty(opponentAccountIds, seasonStats);
       if (difficulty) {
         const difficultyLine = this.formatOpponentDifficulty(difficulty);
-        this.upsertMainDescriptionLine(mainDescriptionLines, 'Opponent Difficulty:', difficultyLine);
+        this.upsertMainDescriptionLine(
+          mainDescriptionLines,
+          'Opponent Difficulty:',
+          difficultyLine
+        );
         mainEmbed.setDescription(mainDescriptionLines.join('\n'));
         debug('Opponent difficulty rendered', {
           matchId: matchAnalysis.matchId,

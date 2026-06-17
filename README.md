@@ -216,8 +216,6 @@ pubg-tracker-bot/
 ## 🔧 Key Dependencies
 
 - **discord.js** (v14.16.3) - Discord bot framework with slash command support
-- **axios** (v1.8.2) - HTTP client for PUBG API requests
-- **mongoose** (v8.15.1) - MongoDB object modeling and database operations
 - **typescript** (v5.6.3) - Programming language with strong typing
 - **jest** (v29.7.0) - Testing framework for unit and integration tests
 - **nodemon** (v3.1.7) - Development auto-reload for faster iteration
@@ -236,8 +234,8 @@ npm run test:integration
 # Run tests in watch mode
 npm run test:watch
 
-# Run linting
-npm run lint
+# Run formatting/import checks and typechecking
+npm run check:all
 ```
 
 ### Testing Guidelines
@@ -245,23 +243,6 @@ npm run lint
 - **Integration Tests**: Use Given-When-Then approach
 - **Coverage**: Aim for comprehensive test coverage of core functionality
 - **Test Data**: Use realistic PUBG match data for accurate testing
-
-### Match Flow Testing
-
-Test the complete pipeline from match ID and player names to Discord posting:
-
-```bash
-# Dry run test (no Discord posting - recommended first)
-npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1,player2" --dryRun
-
-# Full test with Discord posting
-npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1,player2"
-
-# Test with different shard
-npx ts-node scripts/test-match-flow.ts --matchId "your-match-id" --players "player1" --shard "pc-na"
-```
-
-**📖 Comprehensive Documentation**: See [scripts/README-test-match-flow.md](scripts/README-test-match-flow.md) for detailed usage, examples, and troubleshooting.
 
 ## 📈 Analysis Output Examples
 

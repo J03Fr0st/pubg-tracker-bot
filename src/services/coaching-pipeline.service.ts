@@ -2,29 +2,19 @@ import type { LogHeal, LogItemUse, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts
 import type { MatchAnalysis } from '../types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
-import type { CoachingDecisionEngineService } from './coaching-decision-engine.service';
-import type { FightContextBuilderService } from './fight-context-builder.service';
 
-export interface CoachingAnalyzer {
-  analyze(
+type CoachingPipelineDeps = {
+  analyze: (
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
     damageEvents: LogPlayerTakeDamage[],
-    resetEvents?: Array<LogHeal | LogItemUse>
-  ): CoachingInsight[];
-}
-
-export interface CoachingNarrator {
-  narrate(insights: CoachingInsight[]): Promise<CoachingNarration>;
-}
+    resetEvents: Array<LogHeal | LogItemUse>
+  ) => CoachingInsight[];
+  narrate: (insights: CoachingInsight[]) => Promise<CoachingNarration>;
+};
 
 export class CoachingPipelineService {
-  public constructor(
-    private readonly deps: {
-      analyze: CoachingAnalyzer['analyze'];
-      narrate: CoachingNarrator['narrate'];
-    }
-  ) {}
+  public constructor(private readonly deps: CoachingPipelineDeps) {}
 
   public async run(
     matchAnalysis: MatchAnalysis,
@@ -54,27 +44,4 @@ export class CoachingPipelineService {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-export interface CoachingPipelineDefaults {
-  fightContextBuilder: FightContextBuilderService;
-  decisionEngine: CoachingDecisionEngineService;
-  narrate: CoachingNarrator['narrate'];
-}
-
-export namespace CoachingPipelineService {
-  export function withDefaults(deps: CoachingPipelineDefaults): CoachingPipelineService {
-    return new CoachingPipelineService({
-      analyze: (analysis, names, damage, resetEvents) => {
-        const contexts = deps.fightContextBuilder.buildFightContexts(
-          analysis,
-          names,
-          damage,
-          resetEvents
-        );
-        return deps.decisionEngine.createInsights(contexts);
-      },
-      narrate: deps.narrate,
-    });
-  }
 }
