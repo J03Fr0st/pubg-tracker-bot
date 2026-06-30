@@ -747,6 +747,74 @@ describe('Telemetry Discord Flow Integration', () => {
       );
     });
 
+    it('excludes bot opponents from the season stats lookup', async () => {
+      const mockSummary: DiscordMatchGroupSummary = {
+        matchId: 'test-bot-opponent',
+        mapName: 'Erangel',
+        gameMode: 'squad',
+        playedAt: '2024-01-01T10:00:00.000Z',
+        teamRank: 5,
+        telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-bot-opponent',
+        players: [
+          {
+            name: 'TestPlayer1',
+            pubgId: 'tracked-1',
+            stats: createPlayerStats({
+              kills: 1,
+              DBNOs: 0,
+              damageDealt: 100,
+              timeSurvived: 1122,
+              winPlace: 5,
+              name: 'TestPlayer1',
+            }),
+          },
+        ],
+      };
+
+      const telemetry = [
+        {
+          _D: '2024-01-01T10:01:00.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'TestPlayer1', accountId: 'tracked-1' },
+          victim: { name: 'BotEnemy', accountId: 'ai.1' },
+          damageCauserName: 'WeapBerylM762_C',
+        } as LogPlayerKillV2,
+        {
+          _D: '2024-01-01T10:02:00.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'EnemyOne', accountId: 'enemy-1' },
+          victim: { name: 'TestPlayer1', accountId: 'tracked-1' },
+          damageCauserName: 'WeapBerylM762_C',
+        } as LogPlayerKillV2,
+      ];
+
+      const mockPubgClient = (discordBotService as any).pubgClient;
+      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(telemetry);
+
+      (discordBotService as any).telemetryRepository = {
+        getCachedAnalyses: jest.fn().mockResolvedValue(null),
+        saveTelemetry: jest.fn().mockResolvedValue(undefined),
+      };
+      (discordBotService as any).matchRepository = {
+        findMatch: jest.fn().mockResolvedValue(null),
+      };
+      const getSeasonStats = jest
+        .fn()
+        .mockResolvedValue(new Map([['enemy-1', { kd: 1.5, adr: 225 }]]));
+      (discordBotService as any).playerStatsService = { getSeasonStats };
+
+      const mockChannel = createMockTextChannel();
+      const mockClient = (discordBotService as any).client;
+      mockClient.channels.fetch.mockResolvedValue(mockChannel);
+
+      await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
+
+      expect(getSeasonStats).toHaveBeenCalled();
+      const requestedAccountIds = getSeasonStats.mock.calls[0][0];
+      expect(requestedAccountIds).not.toContain('ai.1');
+      expect(requestedAccountIds).toContain('enemy-1');
+    });
+
     it('includes lobby difficulty with bots on the main summary when participants are saved', async () => {
       const mockSummary: DiscordMatchGroupSummary = {
         matchId: 'test-lobby-difficulty',

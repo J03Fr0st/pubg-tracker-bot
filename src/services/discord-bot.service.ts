@@ -1391,7 +1391,7 @@ export class DiscordBotService {
     const opponentAccountIds = new Set<string>();
 
     const addOpponent = (accountId?: string) => {
-      if (!accountId || trackedAccountIds.has(accountId)) return;
+      if (!accountId || trackedAccountIds.has(accountId) || isBotAccountId(accountId)) return;
       opponentAccountIds.add(accountId);
     };
 
