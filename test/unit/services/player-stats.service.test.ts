@@ -133,6 +133,27 @@ describe('PlayerStatsService', () => {
       });
     });
 
+    it('skips players with no rounds played in the requested game mode', async () => {
+      mockRepo.findByAccountIds.mockResolvedValue([]);
+
+      mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
+        data: [
+          seasonStatsResponse('acc-1', {
+            kills: 0,
+            losses: 0,
+            roundsPlayed: 0,
+            damageDealt: 0,
+            wins: 0,
+          }),
+        ],
+      });
+
+      const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');
+
+      expect(results.has('acc-1')).toBe(false);
+      expect(mockRepo.upsertStats).not.toHaveBeenCalled();
+    });
+
     it('skips players whose API call fails', async () => {
       mockRepo.findByAccountIds.mockResolvedValue([]);
 

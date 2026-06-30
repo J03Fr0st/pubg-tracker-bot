@@ -148,12 +148,22 @@ export class PlayerStatsService {
             continue;
           }
 
+          const roundsPlayed = modeStats.roundsPlayed ?? 0;
+          if (roundsPlayed === 0) {
+            // No games played in this exact mode this season - kd/adr would
+            // read as 0, which looks like a weak opponent rather than "no data".
+            debug('Season stats has no rounds played for account/gameMode', {
+              accountId,
+              gameMode,
+            });
+            continue;
+          }
+
           const kills = modeStats.kills ?? 0;
           const damageDealt = modeStats.damageDealt ?? 0;
           const deaths = modeStats.losses ?? 0;
           const kd = deaths > 0 ? kills / deaths : kills;
-          const roundsPlayed = modeStats.roundsPlayed ?? 0;
-          const adr = roundsPlayed > 0 ? damageDealt / roundsPlayed : 0;
+          const adr = damageDealt / roundsPlayed;
 
           const rounded = {
             kd: Math.round(kd * 100) / 100,
