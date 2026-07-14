@@ -1,85 +1,72 @@
+import type { InterpretedMatch } from '../../types/match.types';
 import prisma from '../prisma.client';
 
 export class MatchRepository {
-  public async saveMatch(matchDetails: any): Promise<void> {
-    const { data, included } = matchDetails;
-
-    const rosters = included.filter(
-      (item: any) =>
-        item.type === 'roster' &&
-        'relationships' in item &&
-        !!item.relationships?.participants?.data
-    );
-
-    const participants = included.filter(
-      (item: any) =>
-        item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
-    );
-
-    const telemetryAsset = included.find((item: any) => item.type === 'asset');
-    const telemetryUrl = telemetryAsset?.attributes.URL || '';
-
+  public async saveMatch(match: InterpretedMatch): Promise<void> {
     await prisma.$transaction(async (tx) => {
       await tx.match.upsert({
-        where: { matchId: data.id },
+        where: { matchId: match.matchId },
         update: {},
         create: {
-          matchId: data.id,
-          gameMode: data.attributes.gameMode,
-          mapName: data.attributes.mapName,
-          duration: data.attributes.duration,
-          isCustomMatch: data.attributes.isCustomMatch ?? false,
-          seasonState: data.attributes.seasonState ?? '',
-          shardId: data.attributes.shardId,
-          telemetryUrl,
-          playedAt: new Date(data.attributes.createdAt),
+          matchId: match.matchId,
+          gameMode: match.gameMode,
+          mapName: match.mapName,
+          duration: match.duration,
+          isCustomMatch: match.isCustomMatch,
+          seasonState: match.seasonState,
+          shardId: match.shardId,
+          telemetryUrl: match.telemetryUrl ?? '',
+          playedAt: match.playedAt,
         },
       });
 
-      for (const roster of rosters) {
+      await tx.participant.deleteMany({ where: { matchId: match.matchId } });
+      await tx.roster.deleteMany({ where: { matchId: match.matchId } });
+
+      const participantsById = new Map(
+        match.participants.map((participant) => [participant.participantId, participant])
+      );
+
+      for (const roster of match.rosters) {
         const createdRoster = await tx.roster.create({
           data: {
-            matchId: data.id,
-            rank: roster.attributes?.stats?.rank ?? 0,
-            won: roster.attributes?.won === 'true',
+            matchId: match.matchId,
+            rank: roster.rank,
+            won: roster.won,
           },
         });
 
-        const rosterParticipantIds: string[] =
-          roster.relationships?.participants?.data?.map((p: { id: string }) => p.id) ?? [];
-
-        for (const pid of rosterParticipantIds) {
-          const p = participants.find((x: any) => x.id === pid);
-          if (!p?.attributes?.stats) continue;
-          const s = p.attributes.stats;
+        for (const participantId of roster.participantIds) {
+          const participant = participantsById.get(participantId);
+          if (!participant) continue;
 
           await tx.participant.create({
             data: {
-              matchId: data.id,
+              matchId: match.matchId,
               rosterId: createdRoster.id,
-              pubgId: s.playerId ?? '',
-              name: s.name,
-              kills: s.kills ?? 0,
-              DBNOs: s.DBNOs ?? 0,
-              damageDealt: s.damageDealt ?? 0,
-              headshotKills: s.headshotKills ?? 0,
-              assists: s.assists ?? 0,
-              revives: s.revives ?? 0,
-              timeSurvived: s.timeSurvived ?? 0,
-              walkDistance: s.walkDistance ?? 0,
-              longestKill: s.longestKill ?? 0,
-              winPlace: s.winPlace ?? 0,
-              killPlace: s.killPlace ?? 0,
-              killStreaks: s.killStreaks ?? 0,
-              boosts: s.boosts ?? 0,
-              heals: s.heals ?? 0,
-              rideDistance: s.rideDistance ?? 0,
-              swimDistance: s.swimDistance ?? 0,
-              roadKills: s.roadKills ?? 0,
-              teamKills: s.teamKills ?? 0,
-              vehicleDestroys: s.vehicleDestroys ?? 0,
-              weaponsAcquired: s.weaponsAcquired ?? 0,
-              deathType: s.deathType ?? '',
+              pubgId: participant.pubgId,
+              name: participant.name,
+              kills: participant.stats.kills,
+              DBNOs: participant.stats.DBNOs,
+              damageDealt: participant.stats.damageDealt,
+              headshotKills: participant.stats.headshotKills,
+              assists: participant.stats.assists,
+              revives: participant.stats.revives,
+              timeSurvived: participant.stats.timeSurvived,
+              walkDistance: participant.stats.walkDistance,
+              longestKill: participant.stats.longestKill,
+              winPlace: participant.stats.winPlace,
+              killPlace: participant.stats.killPlace,
+              killStreaks: participant.stats.killStreaks,
+              boosts: participant.stats.boosts,
+              heals: participant.stats.heals,
+              rideDistance: participant.stats.rideDistance,
+              swimDistance: participant.stats.swimDistance,
+              roadKills: participant.stats.roadKills,
+              teamKills: participant.stats.teamKills,
+              vehicleDestroys: participant.stats.vehicleDestroys,
+              weaponsAcquired: participant.stats.weaponsAcquired,
+              deathType: participant.stats.deathType,
             },
           });
         }
