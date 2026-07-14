@@ -14,8 +14,9 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "format:imports": "biome check --write src test scripts",
+    "lint": "biome lint src test scripts --diagnostic-level=error --max-diagnostics=50",
     "typecheck": "tsc --noEmit",
-    "check:all": "npm run format:imports && npm run typecheck",
+    "check:all": "npm run lint && npm run typecheck",
     "test:integration": "jest --config jest.integration.config.js",
     "update-commands": "node scripts/update-discord-commands.js",
     "version:build": "node scripts/increment-build.js",
@@ -28,10 +29,9 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@j03fr0st/pubg-ts": "^1.1.0",
+    "@j03fr0st/pubg-ts": "^2.0.0",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
-    "debug": "^4.4.3",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5"
   },

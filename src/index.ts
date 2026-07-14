@@ -1,88 +1,55 @@
-import type { Shard } from '@j03fr0st/pubg-ts';
-
-import { appConfig, validateConfig } from './config/config';
-import prisma from './data/prisma.client';
-import { DiscordBotService } from './services/discord-bot.service';
-import { MatchMonitorService } from './services/match-monitor.service';
+import { config } from 'dotenv';
+import { type Application, createApplication } from './app';
+import { loadConfig } from './config/config';
 import { database, discord, error, monitor, shutdown, startup } from './utils/logger';
 
-/**
- * Main application entry point
- */
 async function main(): Promise<void> {
   try {
-    // Validate configuration
-    validateConfig();
+    config();
+    const appConfig = loadConfig(process.env);
+    const app = createApplication(appConfig);
+
     startup('Starting PUBG Tracker Bot...');
 
-    // Connect to PostgreSQL
     database('Connecting to PostgreSQL...');
-    await prisma.$connect();
+    await app.prisma.$connect();
     database('Connected to PostgreSQL successfully');
 
-    // Initialize services
-    startup('Initializing services...');
-    const discordBot = new DiscordBotService(appConfig.pubg.apiKey, appConfig.pubg.shard as Shard);
-
-    // Initialize Discord bot
     discord('Initializing Discord bot...');
-    await discordBot.initialize();
+    await app.discordBot.initialize();
 
-    // Start match monitoring
+    setupGracefulShutdown(app);
+
     monitor('Starting match monitoring...');
-    const matchMonitor = new MatchMonitorService(
-      discordBot,
-      appConfig.pubg.apiKey,
-      appConfig.pubg.shard as Shard
-    );
-
-    // Handle graceful shutdown
-    setupGracefulShutdown(matchMonitor);
-
-    // Start monitoring
-    await matchMonitor.startMonitoring();
+    await app.matchMonitor.startMonitoring();
   } catch (err) {
     error('Fatal error during startup:', err as Error);
     process.exit(1);
   }
 }
 
-/**
- * Sets up handlers for graceful shutdown
- * @param matchMonitor The match monitor service to stop on shutdown
- */
-function setupGracefulShutdown(matchMonitor: MatchMonitorService): void {
-  // Handle process termination signals
-  process.on('SIGINT', () => handleShutdown(matchMonitor));
-  process.on('SIGTERM', () => handleShutdown(matchMonitor));
+function setupGracefulShutdown(app: Application): void {
+  process.on('SIGINT', () => handleShutdown(app));
+  process.on('SIGTERM', () => handleShutdown(app));
 
-  // Handle uncaught exceptions and unhandled rejections
   process.on('uncaughtException', (err) => {
     error('Uncaught exception:', err);
-    handleShutdown(matchMonitor);
+    handleShutdown(app);
   });
 
   process.on('unhandledRejection', (reason) => {
     error('Unhandled rejection:', reason as Error);
-    handleShutdown(matchMonitor);
+    handleShutdown(app);
   });
 }
 
-/**
- * Handles graceful shutdown of the application
- * @param matchMonitor The match monitor service to stop
- */
-async function handleShutdown(matchMonitor: MatchMonitorService): Promise<void> {
+async function handleShutdown(app: Application): Promise<void> {
   shutdown('Shutting down gracefully...');
 
   try {
-    // Stop match monitoring
-    matchMonitor.stopMonitoring();
-
-    // Allow some time for cleanup
+    app.matchMonitor.stopMonitoring();
     await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    await prisma.$disconnect();
+    await app.prisma.$disconnect();
     shutdown('Shutdown complete');
     process.exit(0);
   } catch (err) {
@@ -91,7 +58,6 @@ async function handleShutdown(matchMonitor: MatchMonitorService): Promise<void> 
   }
 }
 
-// Start the application
 main().catch((err) => {
   error('Unhandled error in main:', err as Error);
   process.exit(1);

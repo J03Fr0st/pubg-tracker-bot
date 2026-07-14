@@ -1,9 +1,11 @@
 import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
-import prisma from '../prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
 
 export class PlayerRepository {
+  public constructor(private readonly prisma: PrismaClient) {}
+
   public async savePlayer(playerData: PlayerData) {
-    return prisma.player.upsert({
+    return this.prisma.player.upsert({
       where: { pubgId: playerData.id },
       update: {
         name: playerData.attributes.name,
@@ -31,17 +33,17 @@ export class PlayerRepository {
   }
 
   public async removePlayer(playerName: string): Promise<void> {
-    await prisma.player.delete({ where: { name: playerName } });
+    await this.prisma.player.delete({ where: { name: playerName } });
   }
 
   public async updatePlayerLastMatch(playerName: string, _matchId: string): Promise<void> {
-    await prisma.player.update({
+    await this.prisma.player.update({
       where: { name: playerName },
       data: { lastMatchAt: new Date() },
     });
   }
 
   public async getAllPlayers() {
-    return prisma.player.findMany();
+    return this.prisma.player.findMany();
   }
 }

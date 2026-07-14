@@ -7,10 +7,16 @@ jest.mock('../../../src/data/repositories/season-cache.repository');
 describe('PlayerStatsService', () => {
   let service: PlayerStatsService;
   let mockRepo: jest.Mocked<SeasonCacheRepository>;
-  let mockPubgClient: any;
+  let mockPubgClient: {
+    seasons: { getCurrentSeason: jest.Mock };
+    players: {
+      getPlayerSeasonStats: jest.Mock;
+      getPlayerSeasonStatsBatch: jest.Mock;
+    };
+  };
 
   beforeEach(() => {
-    mockRepo = new SeasonCacheRepository() as jest.Mocked<SeasonCacheRepository>;
+    mockRepo = new SeasonCacheRepository({} as never) as jest.Mocked<SeasonCacheRepository>;
     mockRepo.findByAccountIds = jest.fn().mockResolvedValue([]);
     mockRepo.upsertStats = jest.fn().mockResolvedValue(undefined);
 
@@ -26,7 +32,7 @@ describe('PlayerStatsService', () => {
       },
     };
 
-    service = new PlayerStatsService(mockPubgClient as PubgClient, 'steam', mockRepo);
+    service = new PlayerStatsService(mockPubgClient as unknown as PubgClient, 'steam', mockRepo);
   });
 
   describe('getSeasonStats', () => {

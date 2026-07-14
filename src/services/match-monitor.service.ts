@@ -1,51 +1,47 @@
-import {
-  type Asset,
-  type Participant,
-  type Player,
-  PubgClient,
-  type Roster,
-  type Shard,
-} from '@j03fr0st/pubg-ts';
-import { appConfig } from '../config/config';
-import { MatchRepository } from '../data/repositories/match.repository';
-import { PlayerRepository } from '../data/repositories/player.repository';
-import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
-import type {
-  DiscordMatchGroupSummary,
-  DiscordPlayerMatchStats,
-} from '../types/discord-match-summary.types';
+import type { Player, PubgClient } from '@j03fr0st/pubg-ts';
+import type { MatchRepository } from '../data/repositories/match.repository';
+import type { PlayerRepository } from '../data/repositories/player.repository';
+import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
+import type { MatchInterpreter } from './match-interpreter.service';
+
+export interface MatchMonitorOptions {
+  checkIntervalMs: number;
+  channelId: string;
+  maxMatchesToProcess: number;
+}
+
+export interface MatchMonitorDependencies {
+  discordBot: DiscordBotService;
+  pubgClient: PubgClient;
+  playerRepository: PlayerRepository;
+  processedMatchRepository: ProcessedMatchRepository;
+  matchRepository: MatchRepository;
+  matchInterpreter: MatchInterpreter;
+  options: MatchMonitorOptions;
+}
 
 export class MatchMonitorService {
-  private readonly checkInterval: number;
-  private readonly channelId: string;
-  private readonly maxMatchesToProcess: number;
+  private readonly deps: MatchMonitorDependencies;
   private isRunning = false;
   private shouldStop = false;
-  private readonly pubgClient: PubgClient;
 
-  private readonly playerRepository = new PlayerRepository();
-  private readonly processedMatchRepository = new ProcessedMatchRepository();
-  private readonly matchRepository = new MatchRepository();
+  public constructor(dependencies: MatchMonitorDependencies) {
+    this.deps = dependencies;
 
-  constructor(
-    private readonly discordBot: DiscordBotService,
-    apiKey: string,
-    shard: Shard = 'steam'
-  ) {
-    this.checkInterval = appConfig.monitoring.checkIntervalMs;
-    this.channelId = appConfig.discord.channelId;
-    this.maxMatchesToProcess = appConfig.monitoring.maxMatchesToProcess;
-
-    this.pubgClient = new PubgClient({
-      apiKey,
-      shard: shard,
-    });
+    const { maxMatchesToProcess } = this.deps.options;
+    if (
+      !Number.isFinite(maxMatchesToProcess) ||
+      !Number.isInteger(maxMatchesToProcess) ||
+      maxMatchesToProcess <= 0
+    ) {
+      throw new Error('maxMatchesToProcess must be a positive finite integer');
+    }
 
     monitor(
-      `Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`
+      `Match monitor configured with: checkInterval=${this.deps.options.checkIntervalMs}ms, maxMatches=${this.deps.options.maxMatchesToProcess}`
     );
   }
 
@@ -55,13 +51,13 @@ export class MatchMonitorService {
       return;
     }
 
-    if (this.channelId === '') {
+    if (this.deps.options.channelId === '') {
       error('DISCORD_CHANNEL_ID is not set');
       return;
     }
 
     try {
-      await this.discordBot.validateChannelAccess(this.channelId);
+      await this.deps.discordBot.validateChannelAccess(this.deps.options.channelId);
     } catch (err) {
       error(
         'Discord channel access validation failed. Match monitoring will not start:',
@@ -79,7 +75,7 @@ export class MatchMonitorService {
         const startTime = Date.now();
 
         try {
-          await this.checkNewMatches();
+          await this.checkNow();
         } catch (err) {
           error('Error during match check:', err as Error);
           // Add a short delay after errors to prevent rapid retries
@@ -88,7 +84,7 @@ export class MatchMonitorService {
 
         // Calculate time spent and adjust delay to maintain consistent interval
         const elapsedTime = Date.now() - startTime;
-        const delayTime = Math.max(0, this.checkInterval - elapsedTime);
+        const delayTime = Math.max(0, this.deps.options.checkIntervalMs - elapsedTime);
 
         if (!this.shouldStop) {
           await this.delay(delayTime);
@@ -122,9 +118,9 @@ export class MatchMonitorService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private async checkNewMatches(): Promise<void> {
+  public async checkNow(): Promise<void> {
     const cycleStartTime = Date.now();
-    const players = await this.playerRepository.getAllPlayers();
+    const players = await this.deps.playerRepository.getAllPlayers();
 
     if (players.length === 0) {
       debug('No players to monitor, skipping check');
@@ -137,7 +133,7 @@ export class MatchMonitorService {
     const allPlayersData: Player[] = [];
     for (const playerName of playerNames) {
       try {
-        const playerResponse = await this.pubgClient.players.getPlayerByName(playerName);
+        const playerResponse = await this.deps.pubgClient.players.getPlayerByName(playerName);
         if (Array.isArray(playerResponse.data)) {
           allPlayersData.push(...playerResponse.data);
         } else {
@@ -148,7 +144,7 @@ export class MatchMonitorService {
         const playerData = Array.isArray(playerResponse.data)
           ? playerResponse.data[0]
           : (playerResponse.data as Player);
-        await this.playerRepository.savePlayer({
+        await this.deps.playerRepository.savePlayer({
           id: playerData.id,
           type: playerData.type,
           attributes: playerData.attributes,
@@ -185,12 +181,12 @@ export class MatchMonitorService {
     }
 
     // Filter out already processed matches BEFORE making API calls
-    const processedMatches = await this.processedMatchRepository.getProcessedMatches();
+    const processedMatches = await this.deps.processedMatchRepository.getProcessedMatches();
     debug(`Retrieved ${processedMatches.length} previously processed matches`);
 
-    const newMatchIds = Array.from(uniqueMatchIds.keys()).filter(
-      (matchId) => !processedMatches.includes(matchId)
-    );
+    const newMatchIds = [...uniqueMatchIds.keys()]
+      .filter((matchId) => !processedMatches.includes(matchId))
+      .slice(0, this.deps.options.maxMatchesToProcess);
 
     if (newMatchIds.length === 0) {
       debug('No new matches found');
@@ -204,20 +200,19 @@ export class MatchMonitorService {
 
     for (const matchId of newMatchIds) {
       try {
-        const matchDetails = await this.pubgClient.matches.getMatch(matchId);
-        const createdAt = new Date(matchDetails.data.attributes.createdAt);
+        const response = await this.deps.pubgClient.matches.getMatch(matchId);
+        const interpreted = this.deps.matchInterpreter.interpret(response);
 
         // Persist match data to DB
         try {
-          await this.matchRepository.saveMatch(matchDetails);
+          await this.deps.matchRepository.saveMatch(interpreted);
         } catch (saveErr) {
           warn(`Failed to save match ${matchId} to DB: ${saveErr}`);
         }
 
         newMatches.push({
-          matchId,
-          players: uniqueMatchIds.get(matchId)!,
-          createdAt,
+          match: interpreted,
+          monitoredPlayers: uniqueMatchIds.get(matchId)!,
         });
 
         // Add small delay between API calls to avoid hitting rate limits
@@ -231,32 +226,39 @@ export class MatchMonitorService {
     }
 
     // Sort matches chronologically (oldest first)
-    newMatches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    newMatches.sort(
+      (left, right) => left.match.playedAt.getTime() - right.match.playedAt.getTime()
+    );
 
     let processedCount = 0;
     let failedCount = 0;
 
-    for (const match of newMatches) {
+    for (const pending of newMatches) {
       try {
-        debug(`Processing match ${match.matchId} with ${match.players.length} monitored players`);
+        debug(
+          `Processing match ${pending.match.matchId} with ${pending.monitoredPlayers.length} monitored players`
+        );
 
-        const summary = await this.createMatchSummary(match);
+        const summary = this.deps.matchInterpreter.createSummary(
+          pending.match,
+          pending.monitoredPlayers.map((player) => player.name)
+        );
         if (summary) {
-          await this.discordBot.sendMatchSummary(this.channelId, summary);
-          await this.processedMatchRepository.addProcessedMatch(match.matchId);
+          await this.deps.discordBot.sendMatchSummary(this.deps.options.channelId, summary);
+          await this.deps.processedMatchRepository.addProcessedMatch(pending.match.matchId);
           processedCount++;
-          debug(`Match ${match.matchId} processed successfully`);
+          debug(`Match ${pending.match.matchId} processed successfully`);
         } else {
-          warn(`Failed to create summary for match ${match.matchId}`);
+          warn(`Failed to create summary for match ${pending.match.matchId}`);
           failedCount++;
         }
 
         // Add small delay between matches to spread out API calls
-        if (newMatches.indexOf(match) < newMatches.length - 1) {
+        if (newMatches.indexOf(pending) < newMatches.length - 1) {
           await this.delay(2000); // 2 second delay between match processing
         }
       } catch (matchError) {
-        error(`Error processing match ${match.matchId}:`, matchError as Error);
+        error(`Error processing match ${pending.match.matchId}:`, matchError as Error);
         failedCount++;
       }
     }
@@ -269,96 +271,6 @@ export class MatchMonitorService {
       );
     } else {
       debug(`Match cycle completed: no new matches (${cycleTime}ms)`);
-    }
-  }
-
-  private async createMatchSummary(
-    match: MatchMonitorMatchGroup
-  ): Promise<DiscordMatchGroupSummary | null> {
-    try {
-      debug(`Fetching details for match ${match.matchId}`);
-      const matchDetails = await this.pubgClient.matches.getMatch(match.matchId);
-      const playerStats: DiscordPlayerMatchStats[] = [];
-      let teamRank: number | undefined;
-
-      // Extract participants and rosters from match details
-      const participants = matchDetails.included.filter(
-        (item): item is Participant =>
-          item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
-      );
-
-      const rosters = matchDetails.included.filter(
-        (item): item is Roster =>
-          item.type === 'roster' &&
-          'relationships' in item &&
-          !!item.relationships?.participants?.data
-      );
-
-      for (const player of match.players) {
-        const participant = participants.find((p) => p.attributes.stats?.name === player.name);
-
-        if (!participant) {
-          warn(`No stats found for player ${player.name}`);
-          continue;
-        }
-
-        if (teamRank === undefined) {
-          teamRank = participant.attributes.stats.winPlace;
-        } else if (teamRank !== participant.attributes.stats.winPlace) {
-          teamRank = undefined;
-        }
-
-        // Find all players in the same roster as the current player
-        const roster = rosters.find((r) =>
-          r.relationships?.participants?.data?.some((p: { id: string }) => p.id === participant.id)
-        );
-
-        if (roster) {
-          const rosterParticipantIds =
-            roster.relationships?.participants?.data?.map((p: { id: string }) => p.id) || [];
-          const rosterParticipants = participants.filter(
-            (p) => rosterParticipantIds.includes(p.id) && p.attributes.stats
-          );
-
-          for (const rosterParticipant of rosterParticipants) {
-            if (!playerStats.some((p) => p.name === rosterParticipant.attributes.stats.name)) {
-              playerStats.push({
-                name: rosterParticipant.attributes.stats.name,
-                pubgId: rosterParticipant.attributes.stats.playerId,
-                stats: rosterParticipant.attributes.stats,
-              });
-            }
-          }
-        } else {
-          // If no roster found, just add the current player
-          playerStats.push({
-            name: participant.attributes.stats.name,
-            pubgId: participant.attributes.stats.playerId,
-            stats: participant.attributes.stats,
-          });
-        }
-      }
-
-      // Get telemetry URL from assets
-      const telemetryAsset = matchDetails.included?.find(
-        (item): item is Asset => item.type === 'asset'
-      );
-
-      // Get the telemetry URL from the asset
-      const telemetryUrl = telemetryAsset?.attributes.URL || '';
-
-      return {
-        matchId: match.matchId,
-        mapName: matchDetails.data.attributes.mapName,
-        gameMode: matchDetails.data.attributes.gameMode,
-        playedAt: matchDetails.data.attributes.createdAt,
-        players: playerStats,
-        teamRank,
-        telemetryUrl,
-      };
-    } catch (err) {
-      error('Error creating match summary:', err as Error);
-      return null;
     }
   }
 }
