@@ -939,12 +939,8 @@ export class DiscordBotService {
       );
 
       // Save to DB cache (non-blocking)
-      const analysesObj: Record<string, unknown> = {};
-      for (const [name, analysis] of matchAnalysis.playerAnalyses) {
-        analysesObj[name] = analysis;
-      }
       this.telemetryRepository
-        .saveTelemetry(matchId, telemetryData, analysesObj)
+        .saveTelemetry(telemetryData, matchAnalysis)
         .catch((err) => debug(`Failed to cache telemetry for ${matchId}: ${err}`));
 
       // Build participant stats map from DB
