@@ -264,21 +264,4 @@ describe('TelemetryRepository', () => {
     await expect(repo.getTelemetry('match-1')).resolves.toEqual({ kind: 'corrupt', reason });
   });
 
-  it('unwraps a versioned cache envelope for the legacy reader', async () => {
-    (mockPrisma.matchTelemetry.upsert as jest.Mock).mockResolvedValue({});
-    await repo.saveTelemetry([{ _T: 'LogMatchStart' } as never], makeAnalysis());
-    const storedEnvelope = (mockPrisma.matchTelemetry.upsert as jest.Mock).mock.calls[0][0].create
-      .playerAnalyses;
-    (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
-      playerAnalyses: storedEnvelope,
-    });
-
-    const result = await repo.getCachedAnalyses('match-1');
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        Player1: expect.objectContaining({ playerName: 'Player1' }),
-      })
-    );
-  });
 });

@@ -204,24 +204,4 @@ export class TelemetryRepository {
     };
   }
 
-  public async getCachedAnalyses(matchId: string): Promise<Record<string, unknown> | null> {
-    const row = await prisma.matchTelemetry.findUnique({
-      where: { matchId },
-      select: { playerAnalyses: true },
-    });
-    if (!row) return null;
-    const stored = row.playerAnalyses;
-    if (
-      typeof stored === 'object' &&
-      stored !== null &&
-      !Array.isArray(stored) &&
-      stored.version === 1 &&
-      typeof stored.players === 'object' &&
-      stored.players !== null &&
-      !Array.isArray(stored.players)
-    ) {
-      return stored.players as Record<string, unknown>;
-    }
-    return stored as Record<string, unknown>;
-  }
 }

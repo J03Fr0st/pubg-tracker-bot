@@ -119,6 +119,10 @@ Optional 1-to-1 with `matches`. Telemetry processing can fail without blocking m
 | playerAnalyses | Json | JSONB: `Record<playerName, PlayerAnalysis>` |
 | processedAt | DateTime | auto |
 
+Telemetry cache JSON is a versioned persistence format, not a domain value. `TelemetryRepository`
+serializes and validates it, hydrates all `Date` fields, supports the legacy unversioned row shape,
+and returns an explicit hit/miss/corrupt result. Callers never cast JSON to `PlayerAnalysis`.
+
 ---
 
 ## Application Layer Changes

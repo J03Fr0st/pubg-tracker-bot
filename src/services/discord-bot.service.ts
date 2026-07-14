@@ -46,6 +46,7 @@ import type {
   DiscordMatchGroupSummary,
   DiscordPlayerMatchStats,
 } from '../types/discord-match-summary.types';
+import type { TelemetryCacheReadResult } from '../types/telemetry-cache.types';
 import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success, warn } from '../utils/logger';
 // No longer need custom mappings - using pubg-ts dictionaries
@@ -864,65 +865,25 @@ export class DiscordBotService {
 
     try {
       // Check DB cache first
+      let cached: TelemetryCacheReadResult = { kind: 'miss' };
       try {
-        const cached = await this.telemetryRepository.getCachedAnalyses(matchId);
-        if (cached) {
-          debug(`Using cached telemetry analysis for match ${matchId}`);
-          const matchAnalysis: MatchAnalysis = {
-            matchId,
-            playerAnalyses: new Map(
-              Object.entries(cached).map(([name, analysis]) => [name, analysis as PlayerAnalysis])
-            ),
-            processingTimeMs: 0,
-            totalEventsProcessed: 0,
-          };
-
-          // Build participant stats map from DB
-          const matchData = await this.matchRepository.findMatch(matchId);
-          const participantStatsMap = new Map<string, ParticipantMatchStats>();
-          if (matchData?.participants) {
-            for (const p of matchData.participants) {
-              participantStatsMap.set(p.pubgId, {
-                kills: p.kills,
-                damageDealt: p.damageDealt,
-                winPlace: p.winPlace,
-              });
-            }
-          }
-
-          let seasonStats = await this.applyOpponentDifficulty(
-            mainEmbed,
-            mainDescriptionLines,
-            matchAnalysis,
-            players,
-            summary.gameMode
-          );
-          seasonStats = await this.applyLobbyDifficulty(
-            mainEmbed,
-            mainDescriptionLines,
-            matchId,
-            matchData?.participants ?? [],
-            summary.gameMode,
-            seasonStats
-          );
-
-          const enhancedPlayerEmbeds = players.map((player) => {
-            const analysis = matchAnalysis.playerAnalyses.get(player.name);
-            return analysis
-              ? this.createEnhancedPlayerEmbed(
-                  player,
-                  analysis,
-                  matchColor,
-                  matchId,
-                  participantStatsMap,
-                  seasonStats
-                )
-              : this.createBasicPlayerEmbed(player, matchColor, matchId);
-          });
-          return [mainEmbed, ...enhancedPlayerEmbeds];
-        }
+        cached = await this.telemetryRepository.getTelemetry(matchId);
       } catch (cacheErr) {
         debug(`Cache lookup failed, falling back to live fetch: ${cacheErr}`);
+      }
+      if (cached.kind === 'hit') {
+        debug(`Using cached telemetry analysis for match ${matchId}`);
+        return await this.buildEnhancedMatchEmbeds(
+          summary,
+          mainEmbed,
+          mainDescriptionLines,
+          cached.matchAnalysis,
+          cached.rawEvents,
+          matchColor
+        );
+      }
+      if (cached.kind === 'corrupt') {
+        warn(`Ignoring corrupt telemetry cache for ${matchId}: ${cached.reason}`);
       }
 
       // Fetch raw telemetry data
@@ -943,64 +904,82 @@ export class DiscordBotService {
         .saveTelemetry(telemetryData, matchAnalysis)
         .catch((err) => debug(`Failed to cache telemetry for ${matchId}: ${err}`));
 
-      // Build participant stats map from DB
-      const matchData = await this.matchRepository.findMatch(matchId);
-      const participantStatsMap = new Map<string, ParticipantMatchStats>();
-      if (matchData?.participants) {
-        for (const p of matchData.participants) {
-          participantStatsMap.set(p.pubgId, {
-            kills: p.kills,
-            damageDealt: p.damageDealt,
-            winPlace: p.winPlace,
-          });
-        }
-      }
-
-      let seasonStats = await this.applyOpponentDifficulty(
+      return await this.buildEnhancedMatchEmbeds(
+        summary,
         mainEmbed,
         mainDescriptionLines,
         matchAnalysis,
-        players,
-        summary.gameMode
-      );
-      seasonStats = await this.applyLobbyDifficulty(
-        mainEmbed,
-        mainDescriptionLines,
-        matchId,
-        matchData?.participants ?? [],
-        summary.gameMode,
-        seasonStats
-      );
-
-      // Create enhanced embeds
-      const enhancedPlayerEmbeds = players.map((player) => {
-        const analysis = matchAnalysis.playerAnalyses.get(player.name);
-        return analysis
-          ? this.createEnhancedPlayerEmbed(
-              player,
-              analysis,
-              matchColor,
-              matchId,
-              participantStatsMap,
-              seasonStats
-            )
-          : this.createBasicPlayerEmbed(player, matchColor, matchId);
-      });
-
-      const coachingEmbeds = await this.createCoachingEmbeds(
-        matchAnalysis,
-        trackedPlayerNames,
         telemetryData,
         matchColor
       );
-
-      success(`Created enhanced embeds for ${enhancedPlayerEmbeds.length} players`);
-      return [mainEmbed, ...enhancedPlayerEmbeds, ...coachingEmbeds];
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
       // Fallback to basic embeds
       return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
     }
+  }
+
+  private async buildEnhancedMatchEmbeds(
+    summary: DiscordMatchGroupSummary,
+    mainEmbed: EmbedBuilder,
+    mainDescriptionLines: string[],
+    matchAnalysis: MatchAnalysis,
+    telemetryData: TelemetryEvent[],
+    matchColor: number
+  ): Promise<EmbedBuilder[]> {
+    const matchData = await this.matchRepository.findMatch(summary.matchId);
+    const participantStatsMap = this.buildParticipantStatsMap(matchData?.participants ?? []);
+    let seasonStats = await this.applyOpponentDifficulty(
+      mainEmbed,
+      mainDescriptionLines,
+      matchAnalysis,
+      summary.players,
+      summary.gameMode
+    );
+    seasonStats = await this.applyLobbyDifficulty(
+      mainEmbed,
+      mainDescriptionLines,
+      summary.matchId,
+      matchData?.participants ?? [],
+      summary.gameMode,
+      seasonStats
+    );
+    const playerEmbeds = summary.players.map((player) => {
+      const analysis = matchAnalysis.playerAnalyses.get(player.name);
+      return analysis
+        ? this.createEnhancedPlayerEmbed(
+            player,
+            analysis,
+            matchColor,
+            summary.matchId,
+            participantStatsMap,
+            seasonStats
+          )
+        : this.createBasicPlayerEmbed(player, matchColor, summary.matchId);
+    });
+    const coachingEmbeds = await this.createCoachingEmbeds(
+      matchAnalysis,
+      summary.players.map((player) => player.name),
+      telemetryData,
+      matchColor
+    );
+    success(`Created enhanced embeds for ${playerEmbeds.length} players`);
+    return [mainEmbed, ...playerEmbeds, ...coachingEmbeds];
+  }
+
+  private buildParticipantStatsMap(
+    participants: Array<LobbyParticipant & ParticipantMatchStats>
+  ): Map<string, ParticipantMatchStats> {
+    return new Map(
+      participants.map((participant) => [
+        participant.pubgId,
+        {
+          kills: participant.kills,
+          damageDealt: participant.damageDealt,
+          winPlace: participant.winPlace,
+        },
+      ])
+    );
   }
 
   private async createCoachingEmbeds(
