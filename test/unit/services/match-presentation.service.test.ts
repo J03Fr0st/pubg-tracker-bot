@@ -479,6 +479,85 @@ describe('MatchPresentationService', () => {
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
   });
 
+  it('warns and treats a cache lookup failure as a live telemetry miss', async () => {
+    const deps = createDependencies();
+    const matchAnalysis = createMatchAnalysis('cache-error-match', 'CacheErrorPlayer');
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('CacheErrorPlayer');
+    if (!playerAnalysis) {
+      throw new Error('Expected cache error player analysis');
+    }
+    playerAnalysis.killEvents = JSON.parse(
+      JSON.stringify([
+        {
+          _D: '2026-07-14T08:01:00.000Z',
+          _T: 'LogPlayerKillV2',
+          killer: { name: 'CacheErrorPlayer', accountId: 'account.cache-error' },
+          victim: { name: 'Enemy', accountId: 'account.enemy' },
+        },
+      ])
+    );
+    const cacheRead = jest
+      .spyOn(deps.telemetryRepository, 'getTelemetry')
+      .mockRejectedValueOnce(new Error('database unavailable'))
+      .mockResolvedValueOnce({ kind: 'miss' });
+    jest.spyOn(deps.telemetryRepository, 'saveTelemetry').mockResolvedValue(undefined);
+    const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry').mockResolvedValue([]);
+    jest.spyOn(deps.telemetryProcessor, 'processMatchTelemetry').mockResolvedValue(matchAnalysis);
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(
+      new Map([
+        ['account.enemy', { kd: 1.5, adr: 225 }],
+        ['account.lobby-enemy', { kd: 2, adr: 300 }],
+      ])
+    );
+    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({
+      kind: 'ok',
+      insights: [],
+      narration: {
+        sections: [{ playerName: 'CacheErrorPlayer', lines: ['Keep the stronger angle.'] }],
+      },
+    });
+    const warning = jest.spyOn(logger, 'warn').mockImplementation();
+    const service = new MatchPresentationService(deps);
+    const summary = makeMatchSummary({
+      matchId: 'cache-error-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/cache-error-match',
+      players: [
+        {
+          name: 'CacheErrorPlayer',
+          pubgId: 'account.cache-error',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+      lobbyPlayers: [
+        {
+          name: 'LobbyEnemy',
+          pubgId: 'account.lobby-enemy',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+    });
+
+    const cacheErrorEmbeds = await service.createEmbeds(summary);
+
+    expect(cacheRead).toHaveBeenCalledTimes(1);
+    expect(liveTelemetry).toHaveBeenCalledTimes(1);
+    expect(warning).toHaveBeenCalledWith(
+      'Failed to read telemetry cache for cache-error-match: Error: database unavailable'
+    );
+    expect(cacheErrorEmbeds[0].data.description).toContain('Opponent Difficulty:');
+    expect(cacheErrorEmbeds[0].data.description).toContain('Lobby Difficulty:');
+    expect(cacheErrorEmbeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
+    expect(cacheErrorEmbeds.at(-1)?.data.description).toContain('Keep the stronger angle.');
+
+    const cacheMissEmbeds = await service.createEmbeds(summary);
+
+    expect(cacheErrorEmbeds.map((embed) => embed.toJSON())).toEqual(
+      cacheMissEmbeds.map((embed) => embed.toJSON())
+    );
+  });
+
   it('returns basic embeds when telemetry loading fails', async () => {
     const deps = createDependencies();
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({ kind: 'miss' });

@@ -12,7 +12,6 @@ import {
   SlashCommandBuilder,
   type TextBasedChannel,
 } from 'discord.js';
-import type { MatchRepository } from '../data/repositories/match.repository';
 import type { PlayerRepository } from '../data/repositories/player.repository';
 import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchSummary } from '../types/match.types';
@@ -45,7 +44,6 @@ export interface DiscordBotDependencies {
   pubgClient: PubgClient;
   playerRepository: PlayerRepository;
   processedMatchRepository: ProcessedMatchRepository;
-  matchRepository: MatchRepository;
   matchInterpreter: MatchInterpreter;
   matchPresentation: MatchPresentationService;
 }

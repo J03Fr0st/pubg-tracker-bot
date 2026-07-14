@@ -190,7 +190,6 @@ describe('createApplication', () => {
       pubgClient,
       playerRepository,
       processedMatchRepository,
-      matchRepository,
       matchInterpreter,
       matchPresentation,
     });

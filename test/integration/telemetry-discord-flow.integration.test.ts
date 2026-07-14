@@ -73,7 +73,6 @@ function createBot(presentation: MatchPresentationService): DiscordBotService {
     pubgClient,
     playerRepository: new PlayerRepository(prisma),
     processedMatchRepository: new ProcessedMatchRepository(prisma),
-    matchRepository: new MatchRepository(prisma),
     matchInterpreter: new MatchInterpreter(),
     matchPresentation: presentation,
   });
@@ -228,7 +227,6 @@ describe('Discord match presentation gateway', () => {
           pubgClient,
           playerRepository,
           processedMatchRepository,
-          matchRepository,
           matchInterpreter,
           matchPresentation: createPresentation(),
         });
@@ -278,7 +276,6 @@ describe('Discord match presentation gateway', () => {
       pubgClient,
       playerRepository: new PlayerRepository(prisma),
       processedMatchRepository: new ProcessedMatchRepository(prisma),
-      matchRepository: new MatchRepository(prisma),
       matchInterpreter: new MatchInterpreter(),
       matchPresentation: createPresentation(),
     });

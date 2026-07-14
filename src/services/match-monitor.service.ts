@@ -208,10 +208,6 @@ export class MatchMonitorService {
           await this.deps.matchRepository.saveMatch(interpreted);
         } catch (saveErr) {
           warn(`Failed to save match ${matchId} to DB: ${saveErr}`);
-          if (newMatchIds.indexOf(matchId) < newMatchIds.length - 1) {
-            await this.delay(1000);
-          }
-          continue;
         }
 
         newMatches.push({

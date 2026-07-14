@@ -167,7 +167,7 @@ describe('MatchMonitorService', () => {
     expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledTimes(2);
   });
 
-  it('skips a match that fails persistence and continues with later matches', async () => {
+  it('logs persistence failure but still sends, marks, and continues with later matches', async () => {
     jest.useFakeTimers();
     const harness = createDependencies(['match-save-failed', 'match-saved']);
     harness.pubgClient.matches.getMatch
@@ -184,12 +184,22 @@ describe('MatchMonitorService', () => {
 
     expect(harness.pubgClient.matches.getMatch).toHaveBeenCalledTimes(2);
     expect(harness.matchRepository.saveMatch).toHaveBeenCalledTimes(2);
-    expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Failed to save match match-save-failed to DB: Error: database unavailable'
+    );
+    expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledTimes(2);
+    expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledWith(
+      'channel-123',
+      expect.objectContaining({ matchId: 'match-save-failed' })
+    );
     expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledWith(
       'channel-123',
       expect.objectContaining({ matchId: 'match-saved' })
     );
-    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledTimes(1);
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledTimes(2);
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith(
+      'match-save-failed'
+    );
     expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith('match-saved');
   });
 

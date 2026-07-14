@@ -139,7 +139,13 @@ export class MatchPresentationService {
     matchAnalysis: MatchAnalysis;
     rawEvents: TelemetryEvent[];
   }> {
-    const cached = await this.deps.telemetryRepository.getTelemetry(summary.matchId);
+    let cached: Awaited<ReturnType<TelemetryRepository['getTelemetry']>>;
+    try {
+      cached = await this.deps.telemetryRepository.getTelemetry(summary.matchId);
+    } catch (err) {
+      warn(`Failed to read telemetry cache for ${summary.matchId}: ${err}`);
+      cached = { kind: 'miss' };
+    }
     if (cached.kind === 'hit') {
       return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
     }

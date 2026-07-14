@@ -91,7 +91,6 @@ export function createApplication(config: AppConfig): Application {
     pubgClient,
     playerRepository,
     processedMatchRepository,
-    matchRepository,
     matchInterpreter,
     matchPresentation,
   });
