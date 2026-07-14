@@ -75,11 +75,6 @@ jest.mock('discord.js', () => ({
 
 // Mock the PUBG client
 jest.mock('@j03fr0st/pubg-ts', () => ({
-  assetManager: {
-    getDamageCauserName: jest.fn(),
-    getGameModeName: jest.fn(),
-    getMapName: jest.fn(),
-  },
   DAMAGE_CAUSER_NAME: {},
   DamageInfoUtils: {
     getFirst: jest.fn((damageInfo) => {
@@ -90,8 +85,13 @@ jest.mock('@j03fr0st/pubg-ts', () => ({
   GAME_MODES: {},
   MAP_NAMES: {},
   PubgClient: jest.fn().mockImplementation(() => ({
-    telemetry: {
-      getTelemetryData: jest.fn(),
+    assets: {
+      getDamageCauserName: jest.fn(),
+      getGameModeName: jest.fn(),
+      getMapName: jest.fn(),
+    },
+    matches: {
+      getTelemetry: jest.fn(),
     },
   })),
 }));
@@ -248,7 +248,7 @@ describe('Telemetry Discord Flow Integration', () => {
 
       // Mock the telemetry fetch to return our test data
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(mockTelemetryData);
 
       // Mock the channel send
       const mockChannel = createMockTextChannel();
@@ -258,9 +258,7 @@ describe('Telemetry Discord Flow Integration', () => {
       await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
 
       // Verify telemetry was fetched
-      expect(mockPubgClient.telemetry.getTelemetryData).toHaveBeenCalledWith(
-        mockSummary.telemetryUrl
-      );
+      expect(mockPubgClient.matches.getTelemetry).toHaveBeenCalledWith(mockSummary.matchId);
 
       // Verify channel.send was called (should send multiple embeds)
       expect(mockChannel.send).toHaveBeenCalled();
@@ -304,7 +302,7 @@ describe('Telemetry Discord Flow Integration', () => {
 
       // Mock telemetry fetch to throw an error
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockRejectedValue(
+      mockPubgClient.matches.getTelemetry.mockRejectedValue(
         new Error('Telemetry fetch failed')
       );
 
@@ -319,9 +317,7 @@ describe('Telemetry Discord Flow Integration', () => {
       ).resolves.toBeUndefined();
 
       // Verify telemetry fetch was attempted
-      expect(mockPubgClient.telemetry.getTelemetryData).toHaveBeenCalledWith(
-        mockSummary.telemetryUrl
-      );
+      expect(mockPubgClient.matches.getTelemetry).toHaveBeenCalledWith(mockSummary.matchId);
 
       // Verify basic embeds were still sent
       expect(mockChannel.send).toHaveBeenCalled();
@@ -367,7 +363,7 @@ describe('Telemetry Discord Flow Integration', () => {
       await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
 
       // Verify telemetry was NOT fetched since no URL
-      expect(mockPubgClient.telemetry.getTelemetryData).not.toHaveBeenCalled();
+      expect(mockPubgClient.matches.getTelemetry).not.toHaveBeenCalled();
 
       // Verify basic embeds were sent
       expect(mockChannel.send).toHaveBeenCalled();
@@ -441,7 +437,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(extendedTelemetryData);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(extendedTelemetryData);
 
       const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
@@ -450,9 +446,7 @@ describe('Telemetry Discord Flow Integration', () => {
       await discordBotService.sendMatchSummary('test-channel-id', mockSummary);
 
       // Verify telemetry processing was called
-      expect(mockPubgClient.telemetry.getTelemetryData).toHaveBeenCalledWith(
-        mockSummary.telemetryUrl
-      );
+      expect(mockPubgClient.matches.getTelemetry).toHaveBeenCalledWith(mockSummary.matchId);
 
       // Verify multiple embeds were sent (main + 2 players)
       expect(mockChannel.send).toHaveBeenCalledTimes(3); // Main embed + 2 player embeds
@@ -486,7 +480,7 @@ describe('Telemetry Discord Flow Integration', () => {
 
       // Mock telemetry to return invalid data that causes processor to fail
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue([
+      mockPubgClient.matches.getTelemetry.mockResolvedValue([
         { invalid: 'data', structure: true }, // Invalid telemetry data
       ]);
 
@@ -547,7 +541,7 @@ describe('Telemetry Discord Flow Integration', () => {
       ];
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(coachingTelemetry);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(coachingTelemetry);
 
       const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
@@ -612,7 +606,7 @@ describe('Telemetry Discord Flow Integration', () => {
       ];
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(telemetry);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(telemetry);
 
       const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
@@ -652,7 +646,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue([
+      mockPubgClient.matches.getTelemetry.mockResolvedValue([
         {
           _D: '2024-01-01T10:18:36.000Z',
           _T: 'LogPlayerTakeDamage',
@@ -717,7 +711,7 @@ describe('Telemetry Discord Flow Integration', () => {
       ];
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(telemetry);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(telemetry);
 
       // Force the live telemetry path and avoid DB-backed lookups
       (discordBotService as any).telemetryRepository = {
@@ -789,7 +783,7 @@ describe('Telemetry Discord Flow Integration', () => {
       ];
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(telemetry);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(telemetry);
 
       (discordBotService as any).telemetryRepository = {
         getCachedAnalyses: jest.fn().mockResolvedValue(null),
@@ -840,7 +834,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue([]);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue([]);
 
       (discordBotService as any).telemetryRepository = {
         getCachedAnalyses: jest.fn().mockResolvedValue(null),
@@ -899,7 +893,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(mockTelemetryData);
 
       const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;
@@ -934,7 +928,7 @@ describe('Telemetry Discord Flow Integration', () => {
       };
 
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.telemetry.getTelemetryData.mockResolvedValue(mockTelemetryData);
+      mockPubgClient.matches.getTelemetry.mockResolvedValue(mockTelemetryData);
 
       const mockChannel = createMockTextChannel();
       const mockClient = (discordBotService as any).client;

@@ -4,14 +4,17 @@ import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-sum
 // Mock the @j03fr0st/pubg-ts library
 jest.mock('@j03fr0st/pubg-ts', () => ({
   PubgClient: jest.fn(() => ({
+    assets: {
+      getDamageCauserName: jest.fn(),
+      getGameModeName: jest.fn(),
+      getMapName: jest.fn(),
+    },
     players: {
       getPlayerByName: jest.fn(),
     },
     matches: {
       getMatch: jest.fn(),
-    },
-    telemetry: {
-      getTelemetryData: jest.fn().mockResolvedValue([
+      getTelemetry: jest.fn().mockResolvedValue([
         { _T: 'LogPlayerKillV2', killer: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
         { _T: 'LogPlayerMakeGroggy', attacker: { name: 'TestPlayer' }, victim: { name: 'Enemy' } },
       ]),

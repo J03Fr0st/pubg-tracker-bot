@@ -1,6 +1,5 @@
 import {
   type Asset,
-  assetManager,
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
   type LogHeal,
@@ -927,7 +926,7 @@ export class DiscordBotService {
       }
 
       // Fetch raw telemetry data
-      const telemetryData = await this.pubgClient.telemetry.getTelemetryData(summary.telemetryUrl);
+      const telemetryData = await this.pubgClient.matches.getTelemetry(matchId);
       const trackedPlayerNames = players.map((p) => p.name);
 
       debug(`Processing telemetry for ${trackedPlayerNames.length} players`);
@@ -1103,8 +1102,8 @@ export class DiscordBotService {
       return pubgDictionaryName;
     }
 
-    // Try pubg-ts asset manager
-    const assetName = assetManager?.getDamageCauserName?.(weaponCode);
+    // Try the pubg-ts asset catalog
+    const assetName = this.pubgClient.assets.getDamageCauserName(weaponCode);
     if (assetName && assetName !== weaponCode) {
       return assetName;
     }
@@ -1157,8 +1156,8 @@ export class DiscordBotService {
       return pubgDictionaryName;
     }
 
-    // Use pubg-ts asset manager as fallback
-    return assetManager?.getMapName?.(mapCode) || mapCode;
+    // Use the pubg-ts asset catalog as fallback
+    return this.pubgClient.assets.getMapName(mapCode) || mapCode;
   }
 
   private formatGameMode(gameModeCode: string): string {
@@ -1168,8 +1167,8 @@ export class DiscordBotService {
       return pubgDictionaryName;
     }
 
-    // Use pubg-ts asset manager as fallback
-    return assetManager?.getGameModeName?.(gameModeCode) || gameModeCode;
+    // Use the pubg-ts asset catalog as fallback
+    return this.pubgClient.assets.getGameModeName(gameModeCode) || gameModeCode;
   }
 
   private formatPlayerTitle(player: DiscordPlayerMatchStats): string {
