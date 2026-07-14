@@ -1,12 +1,8 @@
 import type { TelemetryEvent } from '@j03fr0st/pubg-ts';
-import type { Prisma } from '../../../generated/prisma/client';
-import type {
-  KillChain,
-  MatchAnalysis,
-  PlayerAnalysis,
-} from '../../types/analytics-results.types';
+import type { Prisma, PrismaClient } from '../../../generated/prisma/client';
+import type { KillChain, MatchAnalysis, PlayerAnalysis } from '../../types/analytics-results.types';
 import type { TelemetryCacheReadResult } from '../../types/telemetry-cache.types';
-import prisma from '../prisma.client';
+import defaultPrisma from '../prisma.client';
 
 interface StoredTelemetryAnalysisV1 {
   version: 1;
@@ -95,6 +91,8 @@ function hydratePlayer(value: unknown): PlayerAnalysis | string {
 }
 
 export class TelemetryRepository {
+  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+
   public async saveTelemetry(
     rawEvents: TelemetryEvent[],
     matchAnalysis: MatchAnalysis
@@ -120,7 +118,7 @@ export class TelemetryRepository {
       players,
     };
 
-    await prisma.matchTelemetry.upsert({
+    await this.prisma.matchTelemetry.upsert({
       where: { matchId: matchAnalysis.matchId },
       update: {
         rawEvents: rawEvents as unknown as Prisma.InputJsonValue,
@@ -135,7 +133,7 @@ export class TelemetryRepository {
   }
 
   public async getTelemetry(matchId: string): Promise<TelemetryCacheReadResult> {
-    const row = await prisma.matchTelemetry.findUnique({
+    const row = await this.prisma.matchTelemetry.findUnique({
       where: { matchId },
       select: { rawEvents: true, playerAnalyses: true },
     });
@@ -203,5 +201,4 @@ export class TelemetryRepository {
       },
     };
   }
-
 }

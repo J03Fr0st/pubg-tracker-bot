@@ -1,9 +1,12 @@
+import type { PrismaClient } from '../../../generated/prisma/client';
 import type { InterpretedMatch } from '../../types/match.types';
-import prisma from '../prisma.client';
+import defaultPrisma from '../prisma.client';
 
 export class MatchRepository {
+  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+
   public async saveMatch(match: InterpretedMatch): Promise<void> {
-    await prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await tx.match.upsert({
         where: { matchId: match.matchId },
         update: {},
@@ -75,14 +78,14 @@ export class MatchRepository {
   }
 
   public async findMatch(matchId: string) {
-    return prisma.match.findUnique({
+    return this.prisma.match.findUnique({
       where: { matchId },
       include: { participants: true, rosters: true },
     });
   }
 
   public async getAllMatchesWithRosters() {
-    return prisma.match.findMany({
+    return this.prisma.match.findMany({
       include: { participants: true, rosters: true },
       orderBy: { playedAt: 'asc' },
     });

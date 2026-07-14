@@ -1,22 +1,17 @@
-import prisma from '../../../src/data/prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
 import { ProcessedMatchRepository } from '../../../src/data/repositories/processed-match.repository';
 
-jest.mock('../../../src/data/prisma.client', () => ({
-  __esModule: true,
-  default: {
-    processedMatch: {
-      findMany: jest.fn(),
-      create: jest.fn(),
-      delete: jest.fn(),
-      findFirst: jest.fn(),
-    },
+const mockPrisma = {
+  processedMatch: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+    delete: jest.fn(),
+    findFirst: jest.fn(),
   },
-}));
-
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+} as unknown as PrismaClient;
 
 describe('ProcessedMatchRepository', () => {
-  const repo = new ProcessedMatchRepository();
+  const repo = new ProcessedMatchRepository(mockPrisma);
 
   beforeEach(() => jest.clearAllMocks());
 

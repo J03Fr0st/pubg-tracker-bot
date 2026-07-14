@@ -1,29 +1,18 @@
+import type { PrismaClient } from '../../../generated/prisma/client';
 import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
 
-jest.mock('../../../src/data/prisma.client', () => ({
-  __esModule: true,
-  default: {
-    playerSeasonCache: {
-      findMany: jest.fn(),
-      upsert: jest.fn(),
-    },
-    $transaction: jest.fn((fn: any) =>
-      fn({
-        playerSeasonCache: {
-          upsert: jest.fn(),
-        },
-      })
-    ),
+const mockPrisma = {
+  playerSeasonCache: {
+    findMany: jest.fn(),
   },
-}));
-
-import prisma from '../../../src/data/prisma.client';
+  $transaction: jest.fn(),
+} as unknown as PrismaClient;
 
 describe('SeasonCacheRepository', () => {
   let repo: SeasonCacheRepository;
 
   beforeEach(() => {
-    repo = new SeasonCacheRepository();
+    repo = new SeasonCacheRepository(mockPrisma);
     jest.clearAllMocks();
   });
 
@@ -43,7 +32,7 @@ describe('SeasonCacheRepository', () => {
           cachedAt: new Date(),
         },
       ];
-      (prisma.playerSeasonCache.findMany as jest.Mock).mockResolvedValue(mockResults);
+      (mockPrisma.playerSeasonCache.findMany as jest.Mock).mockResolvedValue(mockResults);
 
       const results = await repo.findByAccountIds(
         ['acc-1', 'acc-2'],
@@ -52,7 +41,7 @@ describe('SeasonCacheRepository', () => {
         'squad-fpp'
       );
 
-      expect(prisma.playerSeasonCache.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.playerSeasonCache.findMany).toHaveBeenCalledWith({
         where: {
           accountId: { in: ['acc-1', 'acc-2'] },
           platform: 'steam',
@@ -67,7 +56,7 @@ describe('SeasonCacheRepository', () => {
   describe('upsertStats', () => {
     it('upserts each stat entry in a transaction', async () => {
       const mockUpsert = jest.fn();
-      (prisma.$transaction as jest.Mock).mockImplementation((fn: any) =>
+      (mockPrisma.$transaction as jest.Mock).mockImplementation((fn: any) =>
         fn({ playerSeasonCache: { upsert: mockUpsert } })
       );
 
@@ -84,7 +73,7 @@ describe('SeasonCacheRepository', () => {
         },
       ]);
 
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       expect(mockUpsert).toHaveBeenCalledTimes(1);
       expect(mockUpsert).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -1,22 +1,17 @@
-import prisma from '../../../src/data/prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
 import { PlayerRepository } from '../../../src/data/repositories/player.repository';
 
-jest.mock('../../../src/data/prisma.client', () => ({
-  __esModule: true,
-  default: {
-    player: {
-      upsert: jest.fn(),
-      delete: jest.fn(),
-      findMany: jest.fn(),
-      update: jest.fn(),
-    },
+const mockPrisma = {
+  player: {
+    upsert: jest.fn(),
+    delete: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
   },
-}));
-
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+} as unknown as PrismaClient;
 
 describe('PlayerRepository', () => {
-  const repo = new PlayerRepository();
+  const repo = new PlayerRepository(mockPrisma);
 
   beforeEach(() => jest.clearAllMocks());
 

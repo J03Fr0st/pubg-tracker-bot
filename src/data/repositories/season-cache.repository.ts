@@ -1,4 +1,5 @@
-import prisma from '../prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
+import defaultPrisma from '../prisma.client';
 
 export interface UpsertSeasonCacheData {
   platform: string;
@@ -12,13 +13,15 @@ export interface UpsertSeasonCacheData {
 }
 
 export class SeasonCacheRepository {
+  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+
   public async findByAccountIds(
     accountIds: string[],
     platform: string,
     seasonId: string,
     gameMode: string
   ) {
-    return prisma.playerSeasonCache.findMany({
+    return this.prisma.playerSeasonCache.findMany({
       where: {
         accountId: { in: accountIds },
         platform,
@@ -29,7 +32,7 @@ export class SeasonCacheRepository {
   }
 
   public async upsertStats(stats: UpsertSeasonCacheData[]): Promise<void> {
-    await prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       for (const s of stats) {
         await tx.playerSeasonCache.upsert({
           where: {

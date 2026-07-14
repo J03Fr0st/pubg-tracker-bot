@@ -1,18 +1,13 @@
-import prisma from '../../../src/data/prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
 import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
 import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
 
-jest.mock('../../../src/data/prisma.client', () => ({
-  __esModule: true,
-  default: {
-    matchTelemetry: {
-      upsert: jest.fn(),
-      findUnique: jest.fn(),
-    },
+const mockPrisma = {
+  matchTelemetry: {
+    upsert: jest.fn(),
+    findUnique: jest.fn(),
   },
-}));
-
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+} as unknown as PrismaClient;
 
 const makeAnalysis = (): MatchAnalysis => ({
   matchId: 'match-1',
@@ -66,7 +61,7 @@ const serializedPlayers = () => ({
 });
 
 describe('TelemetryRepository', () => {
-  const repo = new TelemetryRepository();
+  const repo = new TelemetryRepository(mockPrisma);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -100,9 +95,7 @@ describe('TelemetryRepository', () => {
             players: {
               Player1: expect.objectContaining({
                 matchStartTime: '2026-07-14T08:00:00.000Z',
-                killChains: [
-                  expect.objectContaining({ startTime: '2026-07-14T08:05:00.000Z' }),
-                ],
+                killChains: [expect.objectContaining({ startTime: '2026-07-14T08:05:00.000Z' })],
               }),
             },
           }),
@@ -151,9 +144,9 @@ describe('TelemetryRepository', () => {
     expect([...result.matchAnalysis.playerAnalyses.keys()]).toEqual(['version']);
     expect(result.matchAnalysis.playerAnalyses.get('version')?.playerName).toBe('version');
     expect(result.matchAnalysis.playerAnalyses.get('version')?.matchStartTime).toBeInstanceOf(Date);
-    expect(result.matchAnalysis.playerAnalyses.get('version')?.killChains[0].startTime).toBeInstanceOf(
-      Date
-    );
+    expect(
+      result.matchAnalysis.playerAnalyses.get('version')?.killChains[0].startTime
+    ).toBeInstanceOf(Date);
   });
 
   it('hydrates Date fields from a version 1 row', async () => {
@@ -173,9 +166,9 @@ describe('TelemetryRepository', () => {
     expect(result.kind).toBe('hit');
     if (result.kind !== 'hit') throw new Error('expected cache hit');
     expect(result.matchAnalysis.playerAnalyses.get('Player1')?.matchStartTime).toBeInstanceOf(Date);
-    expect(result.matchAnalysis.playerAnalyses.get('Player1')?.killChains[0].startTime).toBeInstanceOf(
-      Date
-    );
+    expect(
+      result.matchAnalysis.playerAnalyses.get('Player1')?.killChains[0].startTime
+    ).toBeInstanceOf(Date);
   });
 
   it.each([
@@ -249,19 +242,21 @@ describe('TelemetryRepository', () => {
       Number.POSITIVE_INFINITY,
       'kill chain averageTimeBetweenKills must be a finite number',
     ],
-  ])('classifies an invalid %s kill-chain field as corrupt', async (field, invalidValue, reason) => {
-    const player = serializedPlayers().Player1;
-    (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
-      rawEvents: [],
-      playerAnalyses: {
-        Player1: {
-          ...player,
-          killChains: [{ ...player.killChains[0], [field]: invalidValue }],
+  ])(
+    'classifies an invalid %s kill-chain field as corrupt',
+    async (field, invalidValue, reason) => {
+      const player = serializedPlayers().Player1;
+      (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
+        rawEvents: [],
+        playerAnalyses: {
+          Player1: {
+            ...player,
+            killChains: [{ ...player.killChains[0], [field]: invalidValue }],
+          },
         },
-      },
-    });
+      });
 
-    await expect(repo.getTelemetry('match-1')).resolves.toEqual({ kind: 'corrupt', reason });
-  });
-
+      await expect(repo.getTelemetry('match-1')).resolves.toEqual({ kind: 'corrupt', reason });
+    }
+  );
 });

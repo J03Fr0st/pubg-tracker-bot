@@ -1,25 +1,21 @@
-import prisma from '../../../src/data/prisma.client';
+import type { PrismaClient } from '../../../generated/prisma/client';
 import { MatchRepository } from '../../../src/data/repositories/match.repository';
 import { MatchInterpreter } from '../../../src/services/match-interpreter.service';
 import { makeMatchResponse } from '../../fixtures/match-response.fixture';
 
-jest.mock('../../../src/data/prisma.client', () => ({
-  __esModule: true,
-  default: {
-    match: {
-      upsert: jest.fn(),
-      findUnique: jest.fn(),
-    },
-    roster: { create: jest.fn(), deleteMany: jest.fn() },
-    participant: { create: jest.fn(), deleteMany: jest.fn() },
-    $transaction: jest.fn(),
+const mockPrisma = {
+  match: {
+    upsert: jest.fn(),
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
   },
-}));
-
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+  roster: { create: jest.fn(), deleteMany: jest.fn() },
+  participant: { create: jest.fn(), deleteMany: jest.fn() },
+  $transaction: jest.fn(),
+} as unknown as PrismaClient;
 
 describe('MatchRepository', () => {
-  const repo = new MatchRepository();
+  const repo = new MatchRepository(mockPrisma);
   const interpreter = new MatchInterpreter();
 
   beforeEach(() => jest.clearAllMocks());
