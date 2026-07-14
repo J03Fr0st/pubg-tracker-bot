@@ -1,7 +1,3 @@
-npm run format
 npm run lint
-npm run test
-
-# Increment build number
-node scripts/increment-build.js > /dev/null 2>&1
-git add version.json package.json package-lock.json
+npm run typecheck
+npm test -- --runInBand --silent
