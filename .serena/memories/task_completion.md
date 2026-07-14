@@ -13,4 +13,4 @@ Before calling work complete:
 9. For Discord delivery changes, cover normal guild text channels, missing required permissions, inaccessible channels, and rejection of thread channels.
 10. Report skipped checks, Jest open-handle warnings, audit findings, and deployment impact accurately.
 
-The current pre-commit hook is not a substitute for this checklist: it runs a writing formatter and then calls a missing `lint` package script.
+The pre-commit hook runs `npm run lint`, `npm run typecheck`, and the default Jest suite in-band. It does not replace the separate integration configuration, build, dependency audit, Prisma, PUBG SDK tree, Docker, or deployment checks required by the relevant items above.

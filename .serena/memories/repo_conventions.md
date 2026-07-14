@@ -25,7 +25,7 @@
 - Jest unit tests live under `test/unit`; integration tests live under `test/integration` and use `jest.integration.config.js`.
 - Update tests for behavior changes at Discord, telemetry, repository, and PUBG SDK boundaries.
 - Biome owns formatting/import cleanup. `npm run format` and `npm run format:imports` write files; inspect their diff before staging.
-- The current Husky pre-commit script calls `npm run lint`, but `package.json` has no `lint` script. Run the documented checks manually and do not assume the hook is healthy until that mismatch is fixed.
+- The Husky pre-commit hook runs lint, typecheck, and the default Jest suite in-band. Before completing broader changes, still run the separate integration configuration plus any applicable build, audit, Prisma, SDK-tree, or Docker checks.
 
 ## Git and delivery
 

@@ -12,17 +12,18 @@
 ## Verification
 
 - Typecheck: `npm run typecheck`
+- Lint source, tests, and scripts: `npm run lint`
 - Full Jest suite: `npm test -- --runInBand`
 - Focused Jest file: `npx jest <test-file> --runInBand`
 - Integration suite: `npm run test:integration -- --runInBand`
 - Formatting check: `npm run format:check`
 - Apply source/test import and Biome fixes: `npm run format:imports`
 - Apply repo-wide formatting: `npm run format`
-- Typecheck plus source/test Biome fixes: `npm run check:all`
+- Lint plus typecheck: `npm run check:all`
 - Dependency tree: `npm ls --omit=dev @j03fr0st/pubg-ts`
 - Production dependency audit: `npm audit --omit=dev`
 
-`format`, `format:imports`, and `check:all` mutate files. Review `git diff` immediately afterward. There is no `test:match-flow` or `lint` package script.
+`format` and `format:imports` mutate files. Review `git diff` immediately afterward. `lint`, `format:check`, and `check:all` are non-writing checks. There is no `test:match-flow` package script.
 
 ## Prisma and PostgreSQL
 
