@@ -1,5 +1,4 @@
 import type { PrismaClient } from '../../../generated/prisma/client';
-import defaultPrisma from '../prisma.client';
 
 export interface UpsertSeasonCacheData {
   platform: string;
@@ -13,7 +12,7 @@ export interface UpsertSeasonCacheData {
 }
 
 export class SeasonCacheRepository {
-  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async findByAccountIds(
     accountIds: string[],

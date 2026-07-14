@@ -1,30 +1,11 @@
-import { type Player, PubgClient, type Shard } from '@j03fr0st/pubg-ts';
+import type { Player, PubgClient } from '@j03fr0st/pubg-ts';
 import type { MatchRepository } from '../data/repositories/match.repository';
 import type { PlayerRepository } from '../data/repositories/player.repository';
 import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
-import { MatchInterpreter } from './match-interpreter.service';
-
-function loadLegacyAppConfig() {
-  const { appConfig } = require('../config/config') as typeof import('../config/config');
-  return appConfig;
-}
-
-function createLegacyRepositories() {
-  const { MatchRepository } =
-    require('../data/repositories/match.repository') as typeof import('../data/repositories/match.repository');
-  const { PlayerRepository } =
-    require('../data/repositories/player.repository') as typeof import('../data/repositories/player.repository');
-  const { ProcessedMatchRepository } =
-    require('../data/repositories/processed-match.repository') as typeof import('../data/repositories/processed-match.repository');
-  return {
-    matchRepository: new MatchRepository(),
-    playerRepository: new PlayerRepository(),
-    processedMatchRepository: new ProcessedMatchRepository(),
-  };
-}
+import type { MatchInterpreter } from './match-interpreter.service';
 
 export interface MatchMonitorOptions {
   checkIntervalMs: number;
@@ -47,33 +28,8 @@ export class MatchMonitorService {
   private isRunning = false;
   private shouldStop = false;
 
-  public constructor(dependencies: MatchMonitorDependencies);
-  public constructor(discordBot: DiscordBotService, apiKey: string, shard?: Shard);
-  public constructor(
-    dependenciesOrDiscordBot: MatchMonitorDependencies | DiscordBotService,
-    apiKey?: string,
-    shard: Shard = 'steam'
-  ) {
-    if ('discordBot' in dependenciesOrDiscordBot) {
-      this.deps = dependenciesOrDiscordBot;
-    } else {
-      if (apiKey === undefined) {
-        throw new Error('PUBG API key is required by the legacy match monitor constructor');
-      }
-      const appConfig = loadLegacyAppConfig();
-      const repositories = createLegacyRepositories();
-      this.deps = {
-        discordBot: dependenciesOrDiscordBot,
-        pubgClient: new PubgClient({ apiKey, shard }),
-        ...repositories,
-        matchInterpreter: new MatchInterpreter(),
-        options: {
-          checkIntervalMs: appConfig.monitoring.checkIntervalMs,
-          channelId: appConfig.discord.channelId,
-          maxMatchesToProcess: appConfig.monitoring.maxMatchesToProcess,
-        },
-      };
-    }
+  public constructor(dependencies: MatchMonitorDependencies) {
+    this.deps = dependencies;
 
     const { maxMatchesToProcess } = this.deps.options;
     if (

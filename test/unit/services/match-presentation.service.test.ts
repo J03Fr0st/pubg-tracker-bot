@@ -1,5 +1,6 @@
 import { PubgClient, type TelemetryEvent } from '@j03fr0st/pubg-ts';
 import { EmbedBuilder } from 'discord.js';
+import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
 import {
@@ -15,11 +16,16 @@ import { makeMatchParticipantStats, makeMatchSummary } from '../../fixtures/matc
 
 function createDependencies(): MatchPresentationDependencies {
   const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+  const prisma = {} as never;
   return {
     pubgClient,
-    telemetryRepository: new TelemetryRepository(),
+    telemetryRepository: new TelemetryRepository(prisma),
     telemetryProcessor: new TelemetryProcessorService(),
-    playerStatsService: new PlayerStatsService(pubgClient, 'steam'),
+    playerStatsService: new PlayerStatsService(
+      pubgClient,
+      'steam',
+      new SeasonCacheRepository(prisma)
+    ),
     coachingPipeline: new CoachingPipelineService({
       analyze: () => [],
       narrate: async () => ({ sections: [] }),

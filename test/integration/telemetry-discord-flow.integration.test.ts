@@ -42,13 +42,19 @@ jest.mock('discord.js', () => {
   };
 });
 
+const prisma = {} as never;
+
 function createPresentation(): MatchPresentationService {
   const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
   const dependencies: MatchPresentationDependencies = {
     pubgClient,
-    telemetryRepository: new TelemetryRepository(),
+    telemetryRepository: new TelemetryRepository(prisma),
     telemetryProcessor: new TelemetryProcessorService(),
-    playerStatsService: new PlayerStatsService(pubgClient, 'steam', new SeasonCacheRepository()),
+    playerStatsService: new PlayerStatsService(
+      pubgClient,
+      'steam',
+      new SeasonCacheRepository(prisma)
+    ),
     coachingPipeline: new CoachingPipelineService({
       analyze: () => [],
       narrate: async () => ({ sections: [] }),
@@ -65,9 +71,9 @@ function createBot(presentation: MatchPresentationService): DiscordBotService {
     token: 'test-token',
     clientId: 'test-client-id',
     pubgClient,
-    playerRepository: new PlayerRepository(),
-    processedMatchRepository: new ProcessedMatchRepository(),
-    matchRepository: new MatchRepository(),
+    playerRepository: new PlayerRepository(prisma),
+    processedMatchRepository: new ProcessedMatchRepository(prisma),
+    matchRepository: new MatchRepository(prisma),
     matchInterpreter: new MatchInterpreter(),
     matchPresentation: presentation,
   });
@@ -210,9 +216,9 @@ describe('Discord match presentation gateway', () => {
           '../../src/services/player-stats.service'
         ) as typeof import('../../src/services/player-stats.service');
         const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
-        const playerRepository = new PlayerRepository();
-        const processedMatchRepository = new ProcessedMatchRepository();
-        const matchRepository = new MatchRepository();
+        const playerRepository = new PlayerRepository(prisma);
+        const processedMatchRepository = new ProcessedMatchRepository(prisma);
+        const matchRepository = new MatchRepository(prisma);
         const matchInterpreter = new MatchInterpreter();
         const discordBot = new IsolatedDiscordBotService({
           client: new Client({ intents: [] }),
@@ -244,7 +250,8 @@ describe('Discord match presentation gateway', () => {
             })
         ).not.toThrow();
         expect(
-          () => new IsolatedPlayerStatsService(pubgClient, 'steam', new SeasonCacheRepository())
+          () =>
+            new IsolatedPlayerStatsService(pubgClient, 'steam', new SeasonCacheRepository(prisma))
         ).not.toThrow();
       });
     } finally {
@@ -255,15 +262,6 @@ describe('Discord match presentation gateway', () => {
         else process.env[key] = value;
       });
     }
-  });
-
-  it('retains the legacy constructor with lazily loaded collaborators', () => {
-    jest.mocked(Client).mockClear();
-    jest.mocked(PubgClient).mockClear();
-
-    expect(() => new DiscordBotService('legacy-api-key', 'steam')).not.toThrow();
-    expect(Client).toHaveBeenCalledTimes(1);
-    expect(PubgClient).toHaveBeenCalledTimes(1);
   });
 
   it('initializes with the explicitly supplied REST and Discord credentials', async () => {
@@ -278,9 +276,9 @@ describe('Discord match presentation gateway', () => {
       token: 'explicit-token',
       clientId: 'explicit-client-id',
       pubgClient,
-      playerRepository: new PlayerRepository(),
-      processedMatchRepository: new ProcessedMatchRepository(),
-      matchRepository: new MatchRepository(),
+      playerRepository: new PlayerRepository(prisma),
+      processedMatchRepository: new ProcessedMatchRepository(prisma),
+      matchRepository: new MatchRepository(prisma),
       matchInterpreter: new MatchInterpreter(),
       matchPresentation: createPresentation(),
     });

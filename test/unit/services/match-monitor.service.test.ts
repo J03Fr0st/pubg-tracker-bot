@@ -50,6 +50,7 @@ function createDependencies(
   matchIds: string[],
   options: Partial<MatchMonitorDependencies['options']> = {}
 ) {
+  const prisma = {} as never;
   const pubgClient = {
     players: {
       getPlayerByName: jest.fn().mockResolvedValue(makePlayerResponse(matchIds)),
@@ -58,14 +59,15 @@ function createDependencies(
       getMatch: jest.fn().mockImplementation(async (matchId: string) => makeResponse(matchId)),
     },
   };
-  const playerRepository = new PlayerRepository() as jest.Mocked<PlayerRepository>;
+  const playerRepository = new PlayerRepository(prisma) as jest.Mocked<PlayerRepository>;
   playerRepository.getAllPlayers.mockResolvedValue([monitoredPlayer]);
   playerRepository.savePlayer.mockResolvedValue(monitoredPlayer);
-  const processedMatchRepository =
-    new ProcessedMatchRepository() as jest.Mocked<ProcessedMatchRepository>;
+  const processedMatchRepository = new ProcessedMatchRepository(
+    prisma
+  ) as jest.Mocked<ProcessedMatchRepository>;
   processedMatchRepository.getProcessedMatches.mockResolvedValue([]);
   processedMatchRepository.addProcessedMatch.mockResolvedValue();
-  const matchRepository = new MatchRepository() as jest.Mocked<MatchRepository>;
+  const matchRepository = new MatchRepository(prisma) as jest.Mocked<MatchRepository>;
   matchRepository.saveMatch.mockResolvedValue();
   const discordBot = {
     sendMatchSummary: jest.fn().mockResolvedValue(undefined),
@@ -113,20 +115,6 @@ describe('MatchMonitorService', () => {
     warnSpy.mockRestore();
     jest.clearAllMocks();
     jest.restoreAllMocks();
-  });
-
-  it('retains the legacy constructor with lazily loaded collaborators', () => {
-    const harness = createDependencies([]);
-    jest.mocked(PlayerRepository).mockClear();
-    jest.mocked(ProcessedMatchRepository).mockClear();
-    jest.mocked(MatchRepository).mockClear();
-
-    expect(
-      () => new MatchMonitorService(harness.dependencies.discordBot, 'legacy-api-key', 'steam')
-    ).not.toThrow();
-    expect(PlayerRepository).toHaveBeenCalledTimes(1);
-    expect(ProcessedMatchRepository).toHaveBeenCalledTimes(1);
-    expect(MatchRepository).toHaveBeenCalledTimes(1);
   });
 
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(

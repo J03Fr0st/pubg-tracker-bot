@@ -1,9 +1,8 @@
 import type { Player as PlayerData } from '@j03fr0st/pubg-ts';
 import type { PrismaClient } from '../../../generated/prisma/client';
-import defaultPrisma from '../prisma.client';
 
 export class PlayerRepository {
-  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async savePlayer(playerData: PlayerData) {
     return this.prisma.player.upsert({

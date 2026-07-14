@@ -5,12 +5,6 @@ import type {
 } from '../data/repositories/season-cache.repository';
 import { debug, warn } from '../utils/logger';
 
-function createLegacySeasonCacheRepository(): SeasonCacheRepository {
-  const { SeasonCacheRepository } =
-    require('../data/repositories/season-cache.repository') as typeof import('../data/repositories/season-cache.repository');
-  return new SeasonCacheRepository();
-}
-
 export interface SeasonStatsResult {
   kd: number;
   adr: number;
@@ -34,18 +28,13 @@ interface ModeStatsLookupResult {
 }
 
 export class PlayerStatsService {
-  private readonly repository: SeasonCacheRepository;
-  private readonly pubgClient: PubgClient;
-  private readonly platform: string;
   private currentSeasonId: string | null = null;
 
-  public constructor(pubgClient: PubgClient, platform: Shard, repository: SeasonCacheRepository);
-  public constructor(pubgClient: PubgClient, platform: string);
-  public constructor(pubgClient: PubgClient, platform: string, repository?: SeasonCacheRepository) {
-    this.pubgClient = pubgClient;
-    this.platform = platform;
-    this.repository = repository ?? createLegacySeasonCacheRepository();
-  }
+  public constructor(
+    private readonly pubgClient: PubgClient,
+    private readonly platform: Shard,
+    private readonly repository: SeasonCacheRepository
+  ) {}
 
   private async ensureSeasonId(): Promise<string> {
     if (this.currentSeasonId) return this.currentSeasonId;

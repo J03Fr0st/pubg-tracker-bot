@@ -1,9 +1,8 @@
 import type { PrismaClient } from '../../../generated/prisma/client';
 import type { InterpretedMatch } from '../../types/match.types';
-import defaultPrisma from '../prisma.client';
 
 export class MatchRepository {
-  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async saveMatch(match: InterpretedMatch): Promise<void> {
     await this.prisma.$transaction(async (tx) => {

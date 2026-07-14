@@ -1,5 +1,4 @@
 import type { Shard } from '@j03fr0st/pubg-ts';
-import { config } from 'dotenv';
 import { success, warn } from '../utils/logger';
 
 const SHARDS = new Set<Shard>([
@@ -156,7 +155,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
  * Validates the application configuration
  * @throws Error if the configuration is invalid
  */
-export function validateConfig(configValue: AppConfig = appConfig): AppConfig {
+export function validateConfig(configValue: AppConfig): AppConfig {
   // Validate Discord configuration
   if (!configValue.discord.token) {
     throw new Error('Discord token is required');
@@ -206,7 +205,3 @@ export function validateConfig(configValue: AppConfig = appConfig): AppConfig {
   success('Configuration validated successfully');
   return configValue;
 }
-
-// Temporary compatibility export until application startup owns configuration loading.
-config();
-export const appConfig = loadConfig(process.env);

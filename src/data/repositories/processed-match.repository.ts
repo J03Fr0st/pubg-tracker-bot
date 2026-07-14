@@ -1,8 +1,7 @@
 import type { PrismaClient } from '../../../generated/prisma/client';
-import defaultPrisma from '../prisma.client';
 
 export class ProcessedMatchRepository {
-  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async getProcessedMatches(): Promise<string[]> {
     const matches = await this.prisma.processedMatch.findMany({ select: { matchId: true } });

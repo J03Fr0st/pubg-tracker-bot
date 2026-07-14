@@ -2,7 +2,6 @@ import type { TelemetryEvent } from '@j03fr0st/pubg-ts';
 import type { Prisma, PrismaClient } from '../../../generated/prisma/client';
 import type { KillChain, MatchAnalysis, PlayerAnalysis } from '../../types/analytics-results.types';
 import type { TelemetryCacheReadResult } from '../../types/telemetry-cache.types';
-import defaultPrisma from '../prisma.client';
 
 interface StoredTelemetryAnalysisV1 {
   version: 1;
@@ -91,7 +90,7 @@ function hydratePlayer(value: unknown): PlayerAnalysis | string {
 }
 
 export class TelemetryRepository {
-  public constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async saveTelemetry(
     rawEvents: TelemetryEvent[],

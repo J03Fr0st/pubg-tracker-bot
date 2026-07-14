@@ -1,14 +1,13 @@
-import { type Player, PubgClient, type Shard } from '@j03fr0st/pubg-ts';
+import type { Player, PubgClient } from '@j03fr0st/pubg-ts';
 import {
   type Channel,
   ChannelType,
   type ChatInputCommandInteraction,
-  Client,
+  type Client,
   EmbedBuilder,
   Events,
-  GatewayIntentBits,
   PermissionFlagsBits,
-  REST,
+  type REST,
   Routes,
   SlashCommandBuilder,
   type TextBasedChannel,
@@ -18,7 +17,7 @@ import type { PlayerRepository } from '../data/repositories/player.repository';
 import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchSummary } from '../types/match.types';
 import { debug, error, success } from '../utils/logger';
-import { MatchInterpreter } from './match-interpreter.service';
+import type { MatchInterpreter } from './match-interpreter.service';
 import type { MatchPresentationService } from './match-presentation.service';
 
 type SendableTextChannel = TextBasedChannel & {
@@ -37,31 +36,6 @@ const DISCORD_MISSING_ACCESS = 50001;
 const DISCORD_MISSING_PERMISSIONS = 50013;
 const MAX_EMBEDS_PER_MESSAGE = 10;
 const MAX_EMBED_TEXT_PER_MESSAGE = 6000;
-
-function loadLegacyAppConfig() {
-  const { appConfig } = require('../config/config') as typeof import('../config/config');
-  return appConfig;
-}
-
-function createLegacyMatchPresentationService(pubgClient: PubgClient, shard: Shard) {
-  const { createMatchPresentationService } =
-    require('./match-presentation.service') as typeof import('./match-presentation.service');
-  return createMatchPresentationService(pubgClient, shard);
-}
-
-function createLegacyRepositories() {
-  const { MatchRepository } =
-    require('../data/repositories/match.repository') as typeof import('../data/repositories/match.repository');
-  const { PlayerRepository } =
-    require('../data/repositories/player.repository') as typeof import('../data/repositories/player.repository');
-  const { ProcessedMatchRepository } =
-    require('../data/repositories/processed-match.repository') as typeof import('../data/repositories/processed-match.repository');
-  return {
-    matchRepository: new MatchRepository(),
-    playerRepository: new PlayerRepository(),
-    processedMatchRepository: new ProcessedMatchRepository(),
-  };
-}
 
 export interface DiscordBotDependencies {
   client: Client;
@@ -121,42 +95,8 @@ export class DiscordBotService {
       ),
   ];
 
-  public constructor(deps: DiscordBotDependencies);
-  public constructor(apiKey: string, shard?: Shard, matchPresentation?: MatchPresentationService);
-  public constructor(
-    depsOrApiKey: DiscordBotDependencies | string,
-    shard: Shard = 'pc-na',
-    matchPresentation?: MatchPresentationService
-  ) {
-    if (typeof depsOrApiKey === 'string') {
-      const appConfig = loadLegacyAppConfig();
-      const client = new Client({
-        intents: [
-          GatewayIntentBits.Guilds,
-          GatewayIntentBits.GuildMessages,
-          GatewayIntentBits.MessageContent,
-        ],
-      });
-      const pubgClient = new PubgClient({
-        apiKey: depsOrApiKey,
-        shard,
-      });
-      const repositories = createLegacyRepositories();
-      const token = appConfig.discord.token;
-      this.deps = {
-        client,
-        rest: new REST().setToken(token),
-        token,
-        clientId: appConfig.discord.clientId,
-        pubgClient,
-        ...repositories,
-        matchInterpreter: new MatchInterpreter(),
-        matchPresentation:
-          matchPresentation ?? createLegacyMatchPresentationService(pubgClient, shard),
-      };
-    } else {
-      this.deps = depsOrApiKey;
-    }
+  public constructor(deps: DiscordBotDependencies) {
+    this.deps = deps;
     this.setupEventHandlers();
   }
 

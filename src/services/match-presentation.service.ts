@@ -12,8 +12,7 @@ import {
   type TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 import { EmbedBuilder } from 'discord.js';
-import { appConfig } from '../config/config';
-import { TelemetryRepository } from '../data/repositories/telemetry.repository';
+import type { TelemetryRepository } from '../data/repositories/telemetry.repository';
 import type {
   AssistInfo,
   KillChain,
@@ -32,13 +31,9 @@ import {
   type LobbyDifficultyResult,
   type OpponentDifficultyResult,
 } from '../utils/match-difficulty.util';
-import { CoachingDecisionEngineService } from './coaching-decision-engine.service';
-import { CoachingNarratorService } from './coaching-narrator.service';
-import { CoachingPipelineService } from './coaching-pipeline.service';
-import { FightContextBuilderService } from './fight-context-builder.service';
-import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
-import { PlayerStatsService } from './player-stats.service';
-import { TelemetryProcessorService } from './telemetry-processor.service';
+import type { CoachingPipelineService } from './coaching-pipeline.service';
+import type { PlayerStatsService } from './player-stats.service';
+import type { TelemetryProcessorService } from './telemetry-processor.service';
 
 export interface MatchPresentationDependencies {
   pubgClient: PubgClient;
@@ -46,41 +41,6 @@ export interface MatchPresentationDependencies {
   telemetryProcessor: TelemetryProcessorService;
   playerStatsService: PlayerStatsService;
   coachingPipeline: CoachingPipelineService;
-}
-
-export function createMatchPresentationService(
-  pubgClient: PubgClient,
-  shard: string
-): MatchPresentationService {
-  const llmClient =
-    appConfig.llm.coachingEnabled && appConfig.llm.openRouterApiKey && appConfig.llm.openRouterModel
-      ? new OpenRouterCoachingLlmClient({
-          apiKey: appConfig.llm.openRouterApiKey,
-          model: appConfig.llm.openRouterModel,
-          timeoutMs: appConfig.llm.timeoutMs,
-        })
-      : undefined;
-  const narrator = new CoachingNarratorService(llmClient, {
-    enabled: Boolean(llmClient),
-    maxLineLength: 240,
-  });
-  const fightContextBuilder = new FightContextBuilderService();
-  const decisionEngine = new CoachingDecisionEngineService();
-  const coachingPipeline = new CoachingPipelineService({
-    analyze: (analysis, names, damage, resetEvents) =>
-      decisionEngine.createInsights(
-        fightContextBuilder.buildFightContexts(analysis, names, damage, resetEvents)
-      ),
-    narrate: (insights) => narrator.narrate(insights),
-  });
-
-  return new MatchPresentationService({
-    pubgClient,
-    telemetryRepository: new TelemetryRepository(),
-    telemetryProcessor: new TelemetryProcessorService(),
-    playerStatsService: new PlayerStatsService(pubgClient, shard),
-    coachingPipeline,
-  });
 }
 
 export class MatchPresentationService {
