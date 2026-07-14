@@ -7,7 +7,13 @@ jest.mock('../../../src/data/repositories/season-cache.repository');
 describe('PlayerStatsService', () => {
   let service: PlayerStatsService;
   let mockRepo: jest.Mocked<SeasonCacheRepository>;
-  let mockPubgClient: any;
+  let mockPubgClient: {
+    seasons: { getCurrentSeason: jest.Mock };
+    players: {
+      getPlayerSeasonStats: jest.Mock;
+      getPlayerSeasonStatsBatch: jest.Mock;
+    };
+  };
 
   beforeEach(() => {
     mockRepo = new SeasonCacheRepository() as jest.Mocked<SeasonCacheRepository>;
@@ -26,7 +32,16 @@ describe('PlayerStatsService', () => {
       },
     };
 
-    service = new PlayerStatsService(mockPubgClient as PubgClient, 'steam', mockRepo);
+    service = new PlayerStatsService(mockPubgClient as unknown as PubgClient, 'steam', mockRepo);
+  });
+
+  it('retains the legacy constructor with a lazily loaded repository', () => {
+    jest.mocked(SeasonCacheRepository).mockClear();
+
+    expect(
+      () => new PlayerStatsService(mockPubgClient as unknown as PubgClient, 'steam')
+    ).not.toThrow();
+    expect(SeasonCacheRepository).toHaveBeenCalledTimes(1);
   });
 
   describe('getSeasonStats', () => {

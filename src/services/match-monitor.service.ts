@@ -1,42 +1,91 @@
 import { type Player, PubgClient, type Shard } from '@j03fr0st/pubg-ts';
-import { appConfig } from '../config/config';
-import { MatchRepository } from '../data/repositories/match.repository';
-import { PlayerRepository } from '../data/repositories/player.repository';
-import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+import type { MatchRepository } from '../data/repositories/match.repository';
+import type { PlayerRepository } from '../data/repositories/player.repository';
+import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
 import { MatchInterpreter } from './match-interpreter.service';
 
+function loadLegacyAppConfig() {
+  const { appConfig } = require('../config/config') as typeof import('../config/config');
+  return appConfig;
+}
+
+function createLegacyRepositories() {
+  const { MatchRepository } =
+    require('../data/repositories/match.repository') as typeof import('../data/repositories/match.repository');
+  const { PlayerRepository } =
+    require('../data/repositories/player.repository') as typeof import('../data/repositories/player.repository');
+  const { ProcessedMatchRepository } =
+    require('../data/repositories/processed-match.repository') as typeof import('../data/repositories/processed-match.repository');
+  return {
+    matchRepository: new MatchRepository(),
+    playerRepository: new PlayerRepository(),
+    processedMatchRepository: new ProcessedMatchRepository(),
+  };
+}
+
+export interface MatchMonitorOptions {
+  checkIntervalMs: number;
+  channelId: string;
+  maxMatchesToProcess: number;
+}
+
+export interface MatchMonitorDependencies {
+  discordBot: DiscordBotService;
+  pubgClient: PubgClient;
+  playerRepository: PlayerRepository;
+  processedMatchRepository: ProcessedMatchRepository;
+  matchRepository: MatchRepository;
+  matchInterpreter: MatchInterpreter;
+  options: MatchMonitorOptions;
+}
+
 export class MatchMonitorService {
-  private readonly checkInterval: number;
-  private readonly channelId: string;
-  private readonly maxMatchesToProcess: number;
+  private readonly deps: MatchMonitorDependencies;
   private isRunning = false;
   private shouldStop = false;
-  private readonly pubgClient: PubgClient;
 
-  private readonly playerRepository = new PlayerRepository();
-  private readonly processedMatchRepository = new ProcessedMatchRepository();
-  private readonly matchRepository = new MatchRepository();
-  private readonly matchInterpreter = new MatchInterpreter();
-
-  constructor(
-    private readonly discordBot: DiscordBotService,
-    apiKey: string,
+  public constructor(dependencies: MatchMonitorDependencies);
+  public constructor(discordBot: DiscordBotService, apiKey: string, shard?: Shard);
+  public constructor(
+    dependenciesOrDiscordBot: MatchMonitorDependencies | DiscordBotService,
+    apiKey?: string,
     shard: Shard = 'steam'
   ) {
-    this.checkInterval = appConfig.monitoring.checkIntervalMs;
-    this.channelId = appConfig.discord.channelId;
-    this.maxMatchesToProcess = appConfig.monitoring.maxMatchesToProcess;
+    if ('discordBot' in dependenciesOrDiscordBot) {
+      this.deps = dependenciesOrDiscordBot;
+    } else {
+      if (apiKey === undefined) {
+        throw new Error('PUBG API key is required by the legacy match monitor constructor');
+      }
+      const appConfig = loadLegacyAppConfig();
+      const repositories = createLegacyRepositories();
+      this.deps = {
+        discordBot: dependenciesOrDiscordBot,
+        pubgClient: new PubgClient({ apiKey, shard }),
+        ...repositories,
+        matchInterpreter: new MatchInterpreter(),
+        options: {
+          checkIntervalMs: appConfig.monitoring.checkIntervalMs,
+          channelId: appConfig.discord.channelId,
+          maxMatchesToProcess: appConfig.monitoring.maxMatchesToProcess,
+        },
+      };
+    }
 
-    this.pubgClient = new PubgClient({
-      apiKey,
-      shard: shard,
-    });
+    const { maxMatchesToProcess } = this.deps.options;
+    if (
+      !Number.isFinite(maxMatchesToProcess) ||
+      !Number.isInteger(maxMatchesToProcess) ||
+      maxMatchesToProcess <= 0
+    ) {
+      throw new Error('maxMatchesToProcess must be a positive finite integer');
+    }
 
     monitor(
-      `Match monitor configured with: checkInterval=${this.checkInterval}ms, maxMatches=${this.maxMatchesToProcess}`
+      `Match monitor configured with: checkInterval=${this.deps.options.checkIntervalMs}ms, maxMatches=${this.deps.options.maxMatchesToProcess}`
     );
   }
 
@@ -46,13 +95,13 @@ export class MatchMonitorService {
       return;
     }
 
-    if (this.channelId === '') {
+    if (this.deps.options.channelId === '') {
       error('DISCORD_CHANNEL_ID is not set');
       return;
     }
 
     try {
-      await this.discordBot.validateChannelAccess(this.channelId);
+      await this.deps.discordBot.validateChannelAccess(this.deps.options.channelId);
     } catch (err) {
       error(
         'Discord channel access validation failed. Match monitoring will not start:',
@@ -79,7 +128,7 @@ export class MatchMonitorService {
 
         // Calculate time spent and adjust delay to maintain consistent interval
         const elapsedTime = Date.now() - startTime;
-        const delayTime = Math.max(0, this.checkInterval - elapsedTime);
+        const delayTime = Math.max(0, this.deps.options.checkIntervalMs - elapsedTime);
 
         if (!this.shouldStop) {
           await this.delay(delayTime);
@@ -115,7 +164,7 @@ export class MatchMonitorService {
 
   public async checkNow(): Promise<void> {
     const cycleStartTime = Date.now();
-    const players = await this.playerRepository.getAllPlayers();
+    const players = await this.deps.playerRepository.getAllPlayers();
 
     if (players.length === 0) {
       debug('No players to monitor, skipping check');
@@ -128,7 +177,7 @@ export class MatchMonitorService {
     const allPlayersData: Player[] = [];
     for (const playerName of playerNames) {
       try {
-        const playerResponse = await this.pubgClient.players.getPlayerByName(playerName);
+        const playerResponse = await this.deps.pubgClient.players.getPlayerByName(playerName);
         if (Array.isArray(playerResponse.data)) {
           allPlayersData.push(...playerResponse.data);
         } else {
@@ -139,7 +188,7 @@ export class MatchMonitorService {
         const playerData = Array.isArray(playerResponse.data)
           ? playerResponse.data[0]
           : (playerResponse.data as Player);
-        await this.playerRepository.savePlayer({
+        await this.deps.playerRepository.savePlayer({
           id: playerData.id,
           type: playerData.type,
           attributes: playerData.attributes,
@@ -176,12 +225,12 @@ export class MatchMonitorService {
     }
 
     // Filter out already processed matches BEFORE making API calls
-    const processedMatches = await this.processedMatchRepository.getProcessedMatches();
+    const processedMatches = await this.deps.processedMatchRepository.getProcessedMatches();
     debug(`Retrieved ${processedMatches.length} previously processed matches`);
 
-    const newMatchIds = Array.from(uniqueMatchIds.keys()).filter(
-      (matchId) => !processedMatches.includes(matchId)
-    );
+    const newMatchIds = [...uniqueMatchIds.keys()]
+      .filter((matchId) => !processedMatches.includes(matchId))
+      .slice(0, this.deps.options.maxMatchesToProcess);
 
     if (newMatchIds.length === 0) {
       debug('No new matches found');
@@ -195,12 +244,12 @@ export class MatchMonitorService {
 
     for (const matchId of newMatchIds) {
       try {
-        const response = await this.pubgClient.matches.getMatch(matchId);
-        const interpreted = this.matchInterpreter.interpret(response);
+        const response = await this.deps.pubgClient.matches.getMatch(matchId);
+        const interpreted = this.deps.matchInterpreter.interpret(response);
 
         // Persist match data to DB
         try {
-          await this.matchRepository.saveMatch(interpreted);
+          await this.deps.matchRepository.saveMatch(interpreted);
         } catch (saveErr) {
           warn(`Failed to save match ${matchId} to DB: ${saveErr}`);
           if (newMatchIds.indexOf(matchId) < newMatchIds.length - 1) {
@@ -238,13 +287,13 @@ export class MatchMonitorService {
           `Processing match ${pending.match.matchId} with ${pending.monitoredPlayers.length} monitored players`
         );
 
-        const summary = this.matchInterpreter.createSummary(
+        const summary = this.deps.matchInterpreter.createSummary(
           pending.match,
           pending.monitoredPlayers.map((player) => player.name)
         );
         if (summary) {
-          await this.discordBot.sendMatchSummary(this.channelId, summary);
-          await this.processedMatchRepository.addProcessedMatch(pending.match.matchId);
+          await this.deps.discordBot.sendMatchSummary(this.deps.options.channelId, summary);
+          await this.deps.processedMatchRepository.addProcessedMatch(pending.match.matchId);
           processedCount++;
           debug(`Match ${pending.match.matchId} processed successfully`);
         } else {

@@ -1,6 +1,9 @@
 import { PubgClient } from '@j03fr0st/pubg-ts';
-import { Client, EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js';
+import { Client, EmbedBuilder, Events, PermissionFlagsBits, REST } from 'discord.js';
+import { MatchRepository } from '../../src/data/repositories/match.repository';
 import { PlayerRepository } from '../../src/data/repositories/player.repository';
+import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
+import { SeasonCacheRepository } from '../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
@@ -45,13 +48,29 @@ function createPresentation(): MatchPresentationService {
     pubgClient,
     telemetryRepository: new TelemetryRepository(),
     telemetryProcessor: new TelemetryProcessorService(),
-    playerStatsService: new PlayerStatsService(pubgClient, 'steam'),
+    playerStatsService: new PlayerStatsService(pubgClient, 'steam', new SeasonCacheRepository()),
     coachingPipeline: new CoachingPipelineService({
       analyze: () => [],
       narrate: async () => ({ sections: [] }),
     }),
   };
   return new MatchPresentationService(dependencies);
+}
+
+function createBot(presentation: MatchPresentationService): DiscordBotService {
+  const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+  return new DiscordBotService({
+    client: new Client({ intents: [] }),
+    rest: new REST(),
+    token: 'test-token',
+    clientId: 'test-client-id',
+    pubgClient,
+    playerRepository: new PlayerRepository(),
+    processedMatchRepository: new ProcessedMatchRepository(),
+    matchRepository: new MatchRepository(),
+    matchInterpreter: new MatchInterpreter(),
+    matchPresentation: presentation,
+  });
 }
 
 function latestDiscordClient() {
@@ -155,13 +174,132 @@ describe('Discord match presentation gateway', () => {
     jest.restoreAllMocks();
   });
 
+  it('constructs explicit services without loading config, repositories, or Prisma', () => {
+    const requiredKeys = [
+      'DISCORD_TOKEN',
+      'DISCORD_CLIENT_ID',
+      'DISCORD_CHANNEL_ID',
+      'PUBG_API_KEY',
+      'DATABASE_URL',
+    ] as const;
+    const previousValues = requiredKeys.map((key) => process.env[key]);
+    for (const key of requiredKeys) delete process.env[key];
+    const forbiddenModules = [
+      '../../src/config/config',
+      '../../src/data/prisma.client',
+      '../../src/data/repositories/player.repository',
+      '../../src/data/repositories/processed-match.repository',
+      '../../src/data/repositories/match.repository',
+      '../../src/data/repositories/season-cache.repository',
+    ];
+    for (const modulePath of forbiddenModules) {
+      jest.doMock(modulePath, () => {
+        throw new Error(`Module must not load for explicit dependencies: ${modulePath}`);
+      });
+    }
+
+    try {
+      jest.isolateModules(() => {
+        const { DiscordBotService: IsolatedDiscordBotService } = jest.requireActual(
+          '../../src/services/discord-bot.service'
+        ) as typeof import('../../src/services/discord-bot.service');
+        const { MatchMonitorService: IsolatedMatchMonitorService } = jest.requireActual(
+          '../../src/services/match-monitor.service'
+        ) as typeof import('../../src/services/match-monitor.service');
+        const { PlayerStatsService: IsolatedPlayerStatsService } = jest.requireActual(
+          '../../src/services/player-stats.service'
+        ) as typeof import('../../src/services/player-stats.service');
+        const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+        const playerRepository = new PlayerRepository();
+        const processedMatchRepository = new ProcessedMatchRepository();
+        const matchRepository = new MatchRepository();
+        const matchInterpreter = new MatchInterpreter();
+        const discordBot = new IsolatedDiscordBotService({
+          client: new Client({ intents: [] }),
+          rest: new REST(),
+          token: 'test-token',
+          clientId: 'test-client-id',
+          pubgClient,
+          playerRepository,
+          processedMatchRepository,
+          matchRepository,
+          matchInterpreter,
+          matchPresentation: createPresentation(),
+        });
+
+        expect(
+          () =>
+            new IsolatedMatchMonitorService({
+              discordBot,
+              pubgClient,
+              playerRepository,
+              processedMatchRepository,
+              matchRepository,
+              matchInterpreter,
+              options: {
+                checkIntervalMs: 60_000,
+                channelId: 'channel-123',
+                maxMatchesToProcess: 2,
+              },
+            })
+        ).not.toThrow();
+        expect(
+          () => new IsolatedPlayerStatsService(pubgClient, 'steam', new SeasonCacheRepository())
+        ).not.toThrow();
+      });
+    } finally {
+      for (const modulePath of forbiddenModules) jest.dontMock(modulePath);
+      requiredKeys.forEach((key, index) => {
+        const value = previousValues[index];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      });
+    }
+  });
+
+  it('retains the legacy constructor with lazily loaded collaborators', () => {
+    jest.mocked(Client).mockClear();
+    jest.mocked(PubgClient).mockClear();
+
+    expect(() => new DiscordBotService('legacy-api-key', 'steam')).not.toThrow();
+    expect(Client).toHaveBeenCalledTimes(1);
+    expect(PubgClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('initializes with the explicitly supplied REST and Discord credentials', async () => {
+    const client = new Client({ intents: [] });
+    const rest = {
+      put: jest.fn().mockResolvedValue(undefined),
+    } as unknown as REST;
+    const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+    const bot = new DiscordBotService({
+      client,
+      rest,
+      token: 'explicit-token',
+      clientId: 'explicit-client-id',
+      pubgClient,
+      playerRepository: new PlayerRepository(),
+      processedMatchRepository: new ProcessedMatchRepository(),
+      matchRepository: new MatchRepository(),
+      matchInterpreter: new MatchInterpreter(),
+      matchPresentation: createPresentation(),
+    });
+
+    await bot.initialize();
+
+    expect(rest.put).toHaveBeenCalledWith(expect.stringContaining('explicit-client-id'), {
+      body: expect.any(Array),
+    });
+    expect(client.login).toHaveBeenCalledWith('explicit-token');
+  });
+
   it('delegates presentation and sends 12 small embeds in exact 10/2 batches', async () => {
     const presentation = createPresentation();
     const embeds = Array.from({ length: 12 }, (_, index) =>
       new EmbedBuilder().setTitle(`Embed ${index + 1}`)
     );
     const createEmbeds = jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
-    const bot = new DiscordBotService('test-api-key', 'steam', presentation);
+    const bot = createBot(presentation);
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
     const summary = makeMatchSummary({
@@ -192,7 +330,7 @@ describe('Discord match presentation gateway', () => {
       new EmbedBuilder().setDescription('B'.repeat(3000)),
     ];
     jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
-    const bot = new DiscordBotService('test-api-key', 'steam', presentation);
+    const bot = createBot(presentation);
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
 
@@ -206,7 +344,7 @@ describe('Discord match presentation gateway', () => {
     const presentation = createPresentation();
     const embeds = Array.from({ length: 6 }, (_, index) => createRichEmbed(index + 1, 1000));
     jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
-    const bot = new DiscordBotService('test-api-key', 'steam', presentation);
+    const bot = createBot(presentation);
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
 
@@ -223,7 +361,7 @@ describe('Discord match presentation gateway', () => {
       .setDescription('D'.repeat(4096))
       .setFooter({ text: 'F'.repeat(1905) });
     jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([oversized]);
-    const bot = new DiscordBotService('test-api-key', 'steam', presentation);
+    const bot = createBot(presentation);
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
 
@@ -234,7 +372,7 @@ describe('Discord match presentation gateway', () => {
   });
 
   it('sends real basic presentation output through the gateway', async () => {
-    const bot = new DiscordBotService('test-api-key', 'steam', createPresentation());
+    const bot = createBot(createPresentation());
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
     const summary = makeMatchSummary({
@@ -263,7 +401,7 @@ describe('Discord match presentation gateway', () => {
     const presentation = createPresentation();
     const embeds = Array.from({ length: 12 }, (_, index) => createRichEmbed(index + 1, 1000));
     const createEmbeds = jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
-    new DiscordBotService('test-api-key', 'steam', presentation);
+    createBot(presentation);
     jest.mocked(latestPubgClient().matches.getMatch).mockResolvedValue(makeMatchResponse());
     jest.spyOn(PlayerRepository.prototype, 'getAllPlayers').mockResolvedValue([
       {
@@ -290,36 +428,8 @@ describe('Discord match presentation gateway', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it('uses the production presentation factory for manual processmatch output', async () => {
-    const expectedEmbeds = [createRichEmbed(1)];
-    const createEmbeds = jest
-      .spyOn(MatchPresentationService.prototype, 'createEmbeds')
-      .mockResolvedValue(expectedEmbeds);
-    new DiscordBotService('test-api-key', 'steam');
-    jest.mocked(latestPubgClient().matches.getMatch).mockResolvedValue(makeMatchResponse());
-    jest.spyOn(PlayerRepository.prototype, 'getAllPlayers').mockResolvedValue([
-      {
-        id: 'player-1',
-        pubgId: 'account.1',
-        name: 'Player1',
-        shardId: 'steam',
-        patchVersion: '36.1.1',
-        titleId: 'bluehole-pubg',
-        lastMatchAt: null,
-        createdAt: new Date('2026-07-14T08:00:00.000Z'),
-        updatedAt: new Date('2026-07-14T08:00:00.000Z'),
-      },
-    ]);
-    const interaction = createProcessMatchInteraction();
-
-    await interactionHandler()(interaction);
-
-    expect(createEmbeds).toHaveBeenCalledWith(createExpectedManualSummary());
-    expect(interaction.editReply).toHaveBeenCalledWith({ embeds: expectedEmbeds });
-  });
-
   it('explains Missing Access returned while sending a batch', async () => {
-    const bot = new DiscordBotService('test-api-key', 'steam', createPresentation());
+    const bot = createBot(createPresentation());
     const channel = createTextChannel();
     channel.send.mockRejectedValue({ code: 50001, message: 'Missing Access' });
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
@@ -330,7 +440,7 @@ describe('Discord match presentation gateway', () => {
   });
 
   it('explains when Discord cannot fetch the configured channel', async () => {
-    const bot = new DiscordBotService('test-api-key', 'steam', createPresentation());
+    const bot = createBot(createPresentation());
     jest
       .mocked(latestDiscordClient().channels.fetch)
       .mockRejectedValue({ code: 50001, message: 'Missing Access' });
@@ -341,7 +451,7 @@ describe('Discord match presentation gateway', () => {
   });
 
   it('rejects before sending when the bot cannot view the channel', async () => {
-    const bot = new DiscordBotService('test-api-key', 'steam', createPresentation());
+    const bot = createBot(createPresentation());
     const channel = createTextChannel();
     channel.permissionsFor.mockReturnValue({
       has: jest.fn((permission: bigint) => permission !== PermissionFlagsBits.ViewChannel),
@@ -355,7 +465,7 @@ describe('Discord match presentation gateway', () => {
   });
 
   it('rejects thread channels because monitoring requires a guild text channel', async () => {
-    const bot = new DiscordBotService('test-api-key', 'steam', createPresentation());
+    const bot = createBot(createPresentation());
     const channel = createTextChannel();
     channel.type = 11;
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);

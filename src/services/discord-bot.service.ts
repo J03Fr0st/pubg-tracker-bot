@@ -13,15 +13,13 @@ import {
   SlashCommandBuilder,
   type TextBasedChannel,
 } from 'discord.js';
-import { PlayerRepository } from '../data/repositories/player.repository';
-import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
+import type { MatchRepository } from '../data/repositories/match.repository';
+import type { PlayerRepository } from '../data/repositories/player.repository';
+import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchSummary } from '../types/match.types';
 import { debug, error, success } from '../utils/logger';
 import { MatchInterpreter } from './match-interpreter.service';
-import {
-  createMatchPresentationService,
-  type MatchPresentationService,
-} from './match-presentation.service';
+import type { MatchPresentationService } from './match-presentation.service';
 
 type SendableTextChannel = TextBasedChannel & {
   send(options: { embeds: EmbedBuilder[] }): Promise<unknown>;
@@ -40,13 +38,46 @@ const DISCORD_MISSING_PERMISSIONS = 50013;
 const MAX_EMBEDS_PER_MESSAGE = 10;
 const MAX_EMBED_TEXT_PER_MESSAGE = 6000;
 
+function loadLegacyAppConfig() {
+  const { appConfig } = require('../config/config') as typeof import('../config/config');
+  return appConfig;
+}
+
+function createLegacyMatchPresentationService(pubgClient: PubgClient, shard: Shard) {
+  const { createMatchPresentationService } =
+    require('./match-presentation.service') as typeof import('./match-presentation.service');
+  return createMatchPresentationService(pubgClient, shard);
+}
+
+function createLegacyRepositories() {
+  const { MatchRepository } =
+    require('../data/repositories/match.repository') as typeof import('../data/repositories/match.repository');
+  const { PlayerRepository } =
+    require('../data/repositories/player.repository') as typeof import('../data/repositories/player.repository');
+  const { ProcessedMatchRepository } =
+    require('../data/repositories/processed-match.repository') as typeof import('../data/repositories/processed-match.repository');
+  return {
+    matchRepository: new MatchRepository(),
+    playerRepository: new PlayerRepository(),
+    processedMatchRepository: new ProcessedMatchRepository(),
+  };
+}
+
+export interface DiscordBotDependencies {
+  client: Client;
+  rest: REST;
+  token: string;
+  clientId: string;
+  pubgClient: PubgClient;
+  playerRepository: PlayerRepository;
+  processedMatchRepository: ProcessedMatchRepository;
+  matchRepository: MatchRepository;
+  matchInterpreter: MatchInterpreter;
+  matchPresentation: MatchPresentationService;
+}
+
 export class DiscordBotService {
-  private readonly client: Client;
-  private readonly playerRepository = new PlayerRepository();
-  private readonly processedMatchRepository = new ProcessedMatchRepository();
-  private readonly matchInterpreter = new MatchInterpreter();
-  private readonly pubgClient: PubgClient;
-  private readonly matchPresentation: MatchPresentationService;
+  private readonly deps: DiscordBotDependencies;
   private readonly commands = [
     new SlashCommandBuilder()
       .setName('add')
@@ -90,33 +121,50 @@ export class DiscordBotService {
       ),
   ];
 
-  constructor(
-    apiKey: string,
+  public constructor(deps: DiscordBotDependencies);
+  public constructor(apiKey: string, shard?: Shard, matchPresentation?: MatchPresentationService);
+  public constructor(
+    depsOrApiKey: DiscordBotDependencies | string,
     shard: Shard = 'pc-na',
     matchPresentation?: MatchPresentationService
   ) {
-    this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-      ],
-    });
-    this.pubgClient = new PubgClient({
-      apiKey,
-      shard: shard as any,
-    });
-    this.matchPresentation =
-      matchPresentation ?? createMatchPresentationService(this.pubgClient, shard);
+    if (typeof depsOrApiKey === 'string') {
+      const appConfig = loadLegacyAppConfig();
+      const client = new Client({
+        intents: [
+          GatewayIntentBits.Guilds,
+          GatewayIntentBits.GuildMessages,
+          GatewayIntentBits.MessageContent,
+        ],
+      });
+      const pubgClient = new PubgClient({
+        apiKey: depsOrApiKey,
+        shard,
+      });
+      const repositories = createLegacyRepositories();
+      const token = appConfig.discord.token;
+      this.deps = {
+        client,
+        rest: new REST().setToken(token),
+        token,
+        clientId: appConfig.discord.clientId,
+        pubgClient,
+        ...repositories,
+        matchInterpreter: new MatchInterpreter(),
+        matchPresentation:
+          matchPresentation ?? createLegacyMatchPresentationService(pubgClient, shard),
+      };
+    } else {
+      this.deps = depsOrApiKey;
+    }
     this.setupEventHandlers();
   }
 
   public async initialize(): Promise<void> {
     // Register slash commands
-    const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
     try {
       debug('Started refreshing application (/) commands.');
-      await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!), {
+      await this.deps.rest.put(Routes.applicationCommands(this.deps.clientId), {
         body: this.commands,
       });
       success('Successfully reloaded application (/) commands.');
@@ -124,12 +172,12 @@ export class DiscordBotService {
       error('Error registering slash commands:', err as Error);
     }
 
-    await this.client.login(process.env.DISCORD_TOKEN);
+    await this.deps.client.login(this.deps.token);
   }
 
   public async sendMatchSummary(channelId: string, summary: MatchSummary): Promise<void> {
     const channel = await this.fetchTextChannel(channelId);
-    const embeds = await this.matchPresentation.createEmbeds(summary);
+    const embeds = await this.deps.matchPresentation.createEmbeds(summary);
     if (embeds.length === 0) {
       error('No embeds were created for match summary');
       return;
@@ -150,7 +198,7 @@ export class DiscordBotService {
 
   private async fetchTextChannel(channelId: string): Promise<SendableTextChannel> {
     try {
-      const channel = await this.client.channels.fetch(channelId);
+      const channel = await this.deps.client.channels.fetch(channelId);
       if (!channel) {
         throw new Error(`Could not find channel with ID ${channelId}`);
       }
@@ -253,7 +301,7 @@ export class DiscordBotService {
   }
 
   private formatDiscordChannelDiagnostics(channel?: Channel | TextBasedChannel): string {
-    const botUser = this.client.user;
+    const botUser = this.deps.client.user;
     const channelLike = channel as
       | {
           id?: string;
@@ -276,11 +324,11 @@ export class DiscordBotService {
   }
 
   private getBotChannelPermissions(channel?: unknown): ChannelPermissionSnapshot | null {
-    if (!this.hasPermissionResolver(channel) || !this.client.user) {
+    if (!this.hasPermissionResolver(channel) || !this.deps.client.user) {
       return null;
     }
 
-    return channel.permissionsFor(this.client.user);
+    return channel.permissionsFor(this.deps.client.user);
   }
 
   private hasPermissionResolver(channel: unknown): channel is ChannelWithPermissionResolver {
@@ -315,7 +363,7 @@ export class DiscordBotService {
   }
 
   private setupEventHandlers(): void {
-    this.client.on(Events.InteractionCreate, async (interaction) => {
+    this.deps.client.on(Events.InteractionCreate, async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
 
       try {
@@ -361,12 +409,12 @@ export class DiscordBotService {
     const playerName = interaction.options.getString('playername', true);
 
     try {
-      const playerResponse = await this.pubgClient.players.getPlayerByName(playerName);
+      const playerResponse = await this.deps.pubgClient.players.getPlayerByName(playerName);
       const player = Array.isArray(playerResponse.data)
         ? playerResponse.data[0]
         : (playerResponse.data as Player);
 
-      await this.playerRepository.savePlayer({
+      await this.deps.playerRepository.savePlayer({
         id: player.id,
         type: player.type,
         attributes: player.attributes,
@@ -404,7 +452,7 @@ export class DiscordBotService {
     const playerName = interaction.options.getString('playername', true);
 
     try {
-      await this.playerRepository.removePlayer(playerName);
+      await this.deps.playerRepository.removePlayer(playerName);
       const successEmbed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Player Removed')
@@ -429,7 +477,7 @@ export class DiscordBotService {
 
   private async handleListPlayers(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
-    const players = await this.playerRepository.getAllPlayers();
+    const players = await this.deps.playerRepository.getAllPlayers();
 
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
@@ -456,7 +504,7 @@ export class DiscordBotService {
 
     try {
       // Get details about the last match before removing it
-      const lastMatch = await this.processedMatchRepository.getLastProcessedMatch();
+      const lastMatch = await this.deps.processedMatchRepository.getLastProcessedMatch();
 
       if (!lastMatch) {
         debug(`No matches found to remove for user ${userName}`);
@@ -476,7 +524,7 @@ export class DiscordBotService {
       );
 
       // Remove the last processed match
-      const removedMatchId = await this.processedMatchRepository.removeLastProcessedMatch();
+      const removedMatchId = await this.deps.processedMatchRepository.removeLastProcessedMatch();
 
       if (removedMatchId) {
         success(`Successfully removed last match ${removedMatchId} by user ${userName}`);
@@ -527,7 +575,7 @@ export class DiscordBotService {
     const matchId = interaction.options.getString('matchid', true);
     debug(`User ${userName} requested to remove match ${matchId}`);
     try {
-      const deleted = await this.processedMatchRepository.removeProcessedMatch(matchId);
+      const deleted = await this.deps.processedMatchRepository.removeProcessedMatch(matchId);
       if (deleted) {
         const successEmbed = new EmbedBuilder()
           .setColor(0x00ff00)
@@ -568,11 +616,11 @@ export class DiscordBotService {
     debug(`User ${userName} requested to process match ${matchId}`);
 
     try {
-      const response = await this.pubgClient.matches.getMatch(matchId);
+      const response = await this.deps.pubgClient.matches.getMatch(matchId);
       debug(`Successfully fetched match details for ${matchId}`);
-      const interpreted = this.matchInterpreter.interpret(response);
-      const monitoredPlayers = await this.playerRepository.getAllPlayers();
-      const summary = this.matchInterpreter.createSummary(
+      const interpreted = this.deps.matchInterpreter.interpret(response);
+      const monitoredPlayers = await this.deps.playerRepository.getAllPlayers();
+      const summary = this.deps.matchInterpreter.createSummary(
         interpreted,
         monitoredPlayers.map((player) => player.name)
       );
@@ -582,7 +630,7 @@ export class DiscordBotService {
       }
 
       debug(`Built match summary with ${summary.players.length} roster players for ${matchId}`);
-      const embeds = await this.matchPresentation.createEmbeds(summary);
+      const embeds = await this.deps.matchPresentation.createEmbeds(summary);
 
       if (embeds && embeds.length > 0) {
         const batches = this.createEmbedBatches(embeds);
