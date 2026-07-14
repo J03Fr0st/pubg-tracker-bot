@@ -1,5 +1,4 @@
 import {
-  type Asset,
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
   type LogHeal,
@@ -9,10 +8,8 @@ import {
   type LogPlayerRevive,
   type LogPlayerTakeDamage,
   MAP_NAMES,
-  type Participant,
   type Player,
   PubgClient,
-  type Roster,
   type Shard,
   type TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
@@ -42,10 +39,7 @@ import type {
   PlayerAnalysis,
 } from '../types/analytics-results.types';
 import type { CoachingNarration } from '../types/coaching.types';
-import type {
-  DiscordMatchGroupSummary,
-  DiscordPlayerMatchStats,
-} from '../types/discord-match-summary.types';
+import type { MatchSummary, MatchSummaryPlayer } from '../types/match.types';
 import type { TelemetryCacheReadResult } from '../types/telemetry-cache.types';
 import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, success, warn } from '../utils/logger';
@@ -62,6 +56,7 @@ import { CoachingDecisionEngineService } from './coaching-decision-engine.servic
 import { CoachingNarratorService } from './coaching-narrator.service';
 import { CoachingPipelineService } from './coaching-pipeline.service';
 import { FightContextBuilderService } from './fight-context-builder.service';
+import { MatchInterpreter } from './match-interpreter.service';
 import { OpenRouterCoachingLlmClient } from './openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from './player-stats.service';
 import { TelemetryProcessorService } from './telemetry-processor.service';
@@ -97,6 +92,7 @@ export class DiscordBotService {
   private readonly processedMatchRepository = new ProcessedMatchRepository();
   private readonly matchRepository = new MatchRepository();
   private readonly telemetryRepository = new TelemetryRepository();
+  private readonly matchInterpreter = new MatchInterpreter();
   private readonly pubgClient: PubgClient;
   private readonly playerStatsService: PlayerStatsService;
   private readonly telemetryProcessor: TelemetryProcessorService;
@@ -206,10 +202,7 @@ export class DiscordBotService {
     await this.client.login(process.env.DISCORD_TOKEN);
   }
 
-  public async sendMatchSummary(
-    channelId: string,
-    summary: DiscordMatchGroupSummary
-  ): Promise<void> {
+  public async sendMatchSummary(channelId: string, summary: MatchSummary): Promise<void> {
     const channel = await this.fetchTextChannel(channelId);
 
     // Create basic match summary embeds
@@ -653,63 +646,36 @@ export class DiscordBotService {
     debug(`User ${userName} requested to process match ${matchId}`);
 
     try {
-      // Fetch match details from PUBG API
-      const matchDetails = await this.pubgClient.matches.getMatch(matchId);
+      const response = await this.pubgClient.matches.getMatch(matchId);
       debug(`Successfully fetched match details for ${matchId}`);
-
-      // Get all monitored players to find any that participated in this match
+      const interpreted = this.matchInterpreter.interpret(response);
       const monitoredPlayers = await this.playerRepository.getAllPlayers();
-      const monitoredPlayerNames = monitoredPlayers.map((p) => p.name);
-
-      // Extract participants from match details
-      const participants = matchDetails.included.filter(
-        (item): item is Participant =>
-          item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
+      const summary = this.matchInterpreter.createSummary(
+        interpreted,
+        monitoredPlayers.map((player) => player.name)
       );
-
-      // Find which monitored players are in this match
-      const matchingPlayers = participants.filter((p) =>
-        monitoredPlayerNames.includes(p.attributes.stats?.name || '')
-      );
-
-      if (matchingPlayers.length === 0) {
-        const noPlayersEmbed = new EmbedBuilder()
-          .setColor(0xffa500)
-          .setTitle('⚠️ No Monitored Players Found')
-          .setDescription('None of your monitored players participated in this match.')
-          .addFields({ name: 'Match ID', value: matchId, inline: true })
-          .setTimestamp()
-          .setFooter({ text: 'PUBG Tracker Bot' });
-        await interaction.editReply({ embeds: [noPlayersEmbed] });
+      if (!summary) {
+        await interaction.editReply({ embeds: [this.createNoMonitoredPlayersEmbed(matchId)] });
         return;
       }
 
-      debug(`Found ${matchingPlayers.length} monitored players in match ${matchId}`);
+      debug(`Built match summary with ${summary.players.length} roster players for ${matchId}`);
+      const embeds = await this.createMatchSummaryEmbeds(summary);
 
-      // Create match summary using the same logic as the monitor service
-      const summary = await this.createMatchSummaryFromMatchDetails(matchDetails, matchingPlayers);
-
-      if (summary) {
-        // Send the match summary as a reply
-        const embeds = await this.createMatchSummaryEmbeds(summary);
-
-        if (embeds && embeds.length > 0) {
-          // Send embeds in batches to avoid hitting Discord limits
-          for (let i = 0; i < embeds.length; i += 10) {
-            const batch = embeds.slice(i, i + 10);
-            if (i === 0) {
-              await interaction.editReply({ embeds: batch });
-            } else {
-              await interaction.followUp({ embeds: batch });
-            }
+      if (embeds && embeds.length > 0) {
+        // Send embeds in batches to avoid hitting Discord limits
+        for (let i = 0; i < embeds.length; i += 10) {
+          const batch = embeds.slice(i, i + 10);
+          if (i === 0) {
+            await interaction.editReply({ embeds: batch });
+          } else {
+            await interaction.followUp({ embeds: batch });
           }
-
-          success(`Successfully processed match ${matchId} for user ${userName}`);
-        } else {
-          throw new Error('Failed to create match summary embeds');
         }
+
+        success(`Successfully processed match ${matchId} for user ${userName}`);
       } else {
-        throw new Error('Failed to create match summary');
+        throw new Error('Failed to create match summary embeds');
       }
     } catch (err) {
       const errorObj = err as Error;
@@ -728,99 +694,24 @@ export class DiscordBotService {
     }
   }
 
-  private async createMatchSummaryFromMatchDetails(
-    matchDetails: any,
-    matchingPlayers: Participant[]
-  ): Promise<DiscordMatchGroupSummary | null> {
-    try {
-      const playerStats: DiscordPlayerMatchStats[] = [];
-      let teamRank: number | undefined;
-
-      // Extract rosters from match details
-      const rosters = matchDetails.included.filter(
-        (item: any): item is Roster =>
-          item.type === 'roster' &&
-          'relationships' in item &&
-          !!item.relationships?.participants?.data
-      );
-
-      // Extract all participants for roster lookups
-      const allParticipants = matchDetails.included.filter(
-        (item: any): item is Participant =>
-          item.type === 'participant' && 'attributes' in item && 'stats' in item.attributes
-      );
-
-      for (const participant of matchingPlayers) {
-        if (teamRank === undefined) {
-          teamRank = participant.attributes.stats.winPlace;
-        } else if (teamRank !== participant.attributes.stats.winPlace) {
-          teamRank = undefined;
-        }
-
-        // Find all players in the same roster as the current player
-        const roster = rosters.find((r: Roster) =>
-          r.relationships?.participants?.data?.some((p: { id: string }) => p.id === participant.id)
-        );
-
-        if (roster) {
-          const rosterParticipantIds =
-            roster.relationships?.participants?.data?.map((p: { id: string }) => p.id) || [];
-          const rosterParticipants = allParticipants.filter(
-            (p: Participant) => rosterParticipantIds.includes(p.id) && p.attributes.stats
-          );
-
-          for (const rosterParticipant of rosterParticipants) {
-            if (!playerStats.some((p) => p.name === rosterParticipant.attributes.stats.name)) {
-              playerStats.push({
-                name: rosterParticipant.attributes.stats.name,
-                pubgId: rosterParticipant.attributes.stats.playerId,
-                stats: rosterParticipant.attributes.stats,
-              });
-            }
-          }
-        } else {
-          // If no roster found, just add the current player
-          playerStats.push({
-            name: participant.attributes.stats.name,
-            pubgId: participant.attributes.stats.playerId,
-            stats: participant.attributes.stats,
-          });
-        }
-      }
-
-      // Get telemetry URL from assets
-      const telemetryAsset = matchDetails.included?.find(
-        (item: any): item is Asset => item.type === 'asset'
-      );
-
-      // Get the telemetry URL from the asset
-      const telemetryUrl = telemetryAsset?.attributes.URL || '';
-
-      return {
-        matchId: matchDetails.data.id,
-        mapName: matchDetails.data.attributes.mapName,
-        gameMode: matchDetails.data.attributes.gameMode,
-        playedAt: matchDetails.data.attributes.createdAt,
-        players: playerStats,
-        teamRank,
-        telemetryUrl,
-      };
-    } catch (err) {
-      error('Error creating match summary from match details:', err as Error);
-      return null;
-    }
+  private createNoMonitoredPlayersEmbed(matchId: string): EmbedBuilder {
+    return new EmbedBuilder()
+      .setColor(0xffa500)
+      .setTitle('⚠️ No Monitored Players Found')
+      .setDescription('None of your monitored players participated in this match.')
+      .addFields({ name: 'Match ID', value: matchId, inline: true })
+      .setTimestamp()
+      .setFooter({ text: 'PUBG Tracker Bot' });
   }
 
-  private async createMatchSummaryEmbeds(
-    summary: DiscordMatchGroupSummary
-  ): Promise<EmbedBuilder[]> {
+  private async createMatchSummaryEmbeds(summary: MatchSummary): Promise<EmbedBuilder[]> {
     const { mapName, gameMode, playedAt, players, matchId } = summary;
     const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
 
     // Generate a consistent color for this match based on matchId
     const matchColor = MatchColorUtil.generateMatchColor(matchId);
 
-    const matchDate = new Date(playedAt);
+    const matchDate = playedAt;
     const dateString = matchDate
       .toLocaleTimeString('en-ZA', {
         year: 'numeric',
@@ -920,7 +811,7 @@ export class DiscordBotService {
   }
 
   private async buildEnhancedMatchEmbeds(
-    summary: DiscordMatchGroupSummary,
+    summary: MatchSummary,
     mainEmbed: EmbedBuilder,
     mainDescriptionLines: string[],
     matchAnalysis: MatchAnalysis,
@@ -1146,12 +1037,12 @@ export class DiscordBotService {
     return this.pubgClient.assets.getGameModeName(gameModeCode) || gameModeCode;
   }
 
-  private formatPlayerTitle(player: DiscordPlayerMatchStats): string {
+  private formatPlayerTitle(player: MatchSummaryPlayer): string {
     return `Player: ${player.name}`;
   }
 
   private createBasicPlayerEmbeds(
-    players: DiscordPlayerMatchStats[],
+    players: MatchSummaryPlayer[],
     matchColor: number,
     matchId: string
   ): EmbedBuilder[] {
@@ -1159,7 +1050,7 @@ export class DiscordBotService {
   }
 
   private createBasicPlayerEmbed(
-    player: DiscordPlayerMatchStats,
+    player: MatchSummaryPlayer,
     matchColor: number,
     matchId: string
   ): EmbedBuilder {
@@ -1207,7 +1098,7 @@ export class DiscordBotService {
     mainEmbed: EmbedBuilder,
     mainDescriptionLines: string[],
     matchAnalysis: MatchAnalysis,
-    players: DiscordPlayerMatchStats[],
+    players: MatchSummaryPlayer[],
     gameMode: string
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const opponentAccountIds = this.collectOpponentAccountIds(matchAnalysis, players);
@@ -1357,7 +1248,7 @@ export class DiscordBotService {
    */
   private collectOpponentAccountIds(
     matchAnalysis: MatchAnalysis,
-    players: DiscordPlayerMatchStats[]
+    players: MatchSummaryPlayer[]
   ): string[] {
     const trackedAccountIds = new Set(
       players.map((player) => player.pubgId).filter((id): id is string => Boolean(id))
@@ -1447,7 +1338,7 @@ export class DiscordBotService {
    * @returns Discord EmbedBuilder with enhanced player statistics
    */
   private createEnhancedPlayerEmbed(
-    player: DiscordPlayerMatchStats,
+    player: MatchSummaryPlayer,
     analysis: PlayerAnalysis,
     matchColor: number,
     matchId: string,
@@ -1480,7 +1371,7 @@ export class DiscordBotService {
    * @returns Formatted string suitable for Discord embed description
    */
   private formatEnhancedStats(
-    player: DiscordPlayerMatchStats,
+    player: MatchSummaryPlayer,
     analysis: PlayerAnalysis,
     matchId: string,
     participantStats: Map<string, ParticipantMatchStats>,

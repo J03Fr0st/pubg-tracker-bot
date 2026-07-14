@@ -7,12 +7,20 @@ import {
 } from '@j03fr0st/pubg-ts';
 import { Client } from 'discord.js';
 import { MatchRepository } from '../../src/data/repositories/match.repository';
+import { PlayerRepository } from '../../src/data/repositories/player.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
 import { CoachingNarratorService } from '../../src/services/coaching-narrator.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
+import { MatchInterpreter } from '../../src/services/match-interpreter.service';
 import { PlayerStatsService } from '../../src/services/player-stats.service';
 import { TelemetryProcessorService } from '../../src/services/telemetry-processor.service';
-import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
+import { makeMatchResponse } from '../fixtures/match-response.fixture';
+import {
+  MATCH_PLAYED_AT,
+  makeMatchParticipantStats,
+  makeMatchSummary,
+  matchEventAt,
+} from '../fixtures/match-summary.fixture';
 
 // Mock the Discord.js client and components
 jest.mock('discord.js', () => ({
@@ -101,6 +109,7 @@ jest.mock('@j03fr0st/pubg-ts', () => ({
       getMapName: jest.fn(),
     },
     matches: {
+      getMatch: jest.fn(),
       getTelemetry: jest.fn(),
     },
   })),
@@ -109,35 +118,6 @@ jest.mock('@j03fr0st/pubg-ts', () => ({
 // Mock environment variables
 process.env.DISCORD_TOKEN = 'mock_discord_token';
 process.env.DISCORD_CLIENT_ID = 'mock_client_id';
-
-// Helper function to create valid player stats
-function createPlayerStats(overrides: any = {}) {
-  return {
-    kills: 0,
-    assists: 0,
-    DBNOs: 0,
-    damageDealt: 0,
-    headshotKills: 0,
-    longestKill: 0,
-    revives: 0,
-    timeSurvived: 0,
-    walkDistance: 0,
-    rideDistance: 0,
-    swimDistance: 0,
-    weaponsAcquired: 0,
-    boosts: 0,
-    heals: 0,
-    killPlace: 50,
-    winPlace: 50,
-    deathType: 'byplayer',
-    killStreaks: 0,
-    name: 'DefaultPlayer',
-    roadKills: 0,
-    teamKills: 0,
-    vehicleDestroys: 0,
-    ...overrides,
-  };
-}
 
 function createMockTextChannel() {
   return {
@@ -186,7 +166,7 @@ describe('Telemetry Discord Flow Integration', () => {
     // Setup mock telemetry data
     mockTelemetryData = [
       {
-        _D: '2024-01-01T10:00:00.000Z',
+        _D: matchEventAt(0),
         _T: 'LogPlayerKillV2',
         killer: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
@@ -196,7 +176,7 @@ describe('Telemetry Discord Flow Integration', () => {
       } as LogPlayerKillV2,
       // Add death event where TestPlayer1 gets killed
       {
-        _D: '2024-01-01T10:02:00.000Z',
+        _D: matchEventAt(120),
         _T: 'LogPlayerKillV2',
         killer: { name: 'Enemy2' },
         victim: { name: 'TestPlayer1' },
@@ -212,7 +192,7 @@ describe('Telemetry Discord Flow Integration', () => {
       } as LogPlayerKillV2,
       // Add knockdown event where TestPlayer1 gets knocked down
       {
-        _D: '2024-01-01T10:01:30.000Z',
+        _D: matchEventAt(90),
         _T: 'LogPlayerMakeGroggy',
         attacker: { name: 'Enemy3' },
         victim: { name: 'TestPlayer1' },
@@ -226,7 +206,7 @@ describe('Telemetry Discord Flow Integration', () => {
         ],
       } as LogPlayerMakeGroggy,
       {
-        _D: '2024-01-01T09:59:55.000Z',
+        _D: matchEventAt(5),
         _T: 'LogPlayerTakeDamage',
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy1' },
@@ -234,7 +214,7 @@ describe('Telemetry Discord Flow Integration', () => {
         damage: 50,
       } as LogPlayerTakeDamage,
       {
-        _D: '2024-01-01T09:59:50.000Z',
+        _D: matchEventAt(10),
         _T: 'LogPlayerMakeGroggy',
         attacker: { name: 'TestPlayer1' },
         victim: { name: 'Enemy2' },
@@ -250,19 +230,105 @@ describe('Telemetry Discord Flow Integration', () => {
     matchReadSpy.mockRestore();
   });
 
+  it('keeps telemetry events within the canonical match window', () => {
+    const matchStart = MATCH_PLAYED_AT.getTime();
+    const matchEnd = matchStart + 30 * 60 * 1000;
+
+    expect(
+      mockTelemetryData.every((event) => {
+        const eventTime = new Date(event._D).getTime();
+        return eventTime >= matchStart && eventTime <= matchEnd;
+      })
+    ).toBe(true);
+  });
+
+  it('presents /processmatch through the canonical match interpretation', async () => {
+    const response = makeMatchResponse();
+    const interpreter = new MatchInterpreter();
+    const expected = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
+      'Player1',
+    ]);
+    if (!expected) {
+      throw new Error('Expected fixture to include Player1');
+    }
+    const mockPubgClient = getLatestMockInstance<{
+      matches: { getMatch: jest.Mock; getTelemetry: jest.Mock };
+    }>(PubgClient, 'PubgClient');
+    const mockClient = getLatestMockInstance<{
+      on: jest.Mock;
+      channels: { fetch: jest.Mock };
+    }>(Client, 'Client');
+    const interactionHandler = mockClient.on.mock.calls.find(
+      ([event]: [string]) => event === 'interactionCreate'
+    )?.[1];
+    if (!interactionHandler) {
+      throw new Error('Discord interaction handler was not registered');
+    }
+    const getAllPlayers = jest
+      .spyOn(PlayerRepository.prototype, 'getAllPlayers')
+      .mockResolvedValue([
+        {
+          id: 'player-1',
+          pubgId: 'account.1',
+          name: 'Player1',
+          shardId: 'steam',
+          patchVersion: '36.1.1',
+          titleId: 'bluehole-pubg',
+          lastMatchAt: null,
+          createdAt: new Date('2026-07-14T07:00:00.000Z'),
+          updatedAt: new Date('2026-07-14T07:00:00.000Z'),
+        },
+      ]);
+    mockPubgClient.matches.getMatch.mockResolvedValue(response);
+    mockPubgClient.matches.getTelemetry.mockResolvedValue([]);
+    const createSummarySpy = jest.spyOn(MatchInterpreter.prototype, 'createSummary');
+    const interaction = {
+      commandName: 'processmatch',
+      isChatInputCommand: jest.fn().mockReturnValue(true),
+      user: { username: 'Tester' },
+      options: { getString: jest.fn().mockReturnValue('match-xyz') },
+      deferReply: jest.fn().mockResolvedValue(undefined),
+      editReply: jest.fn().mockResolvedValue(undefined),
+      followUp: jest.fn().mockResolvedValue(undefined),
+      replied: false,
+      deferred: true,
+    };
+
+    try {
+      await interactionHandler(interaction);
+
+      const manualEmbeds = interaction.editReply.mock.calls[0][0].embeds.map(
+        (embed: { toJSON(): unknown }) => embed.toJSON()
+      );
+      const automaticChannel = createMockTextChannel();
+      mockClient.channels.fetch.mockResolvedValue(automaticChannel);
+      await discordBotService.sendMatchSummary('automatic-channel', expected);
+      const automaticEmbeds = automaticChannel.send.mock.calls
+        .flatMap((call) => call[0].embeds)
+        .map((embed) => embed.toJSON());
+
+      expect(createSummarySpy).toHaveReturnedWith(expected);
+      expect(manualEmbeds).toEqual(automaticEmbeds);
+      expect(mockPubgClient.matches.getMatch).toHaveBeenCalledTimes(1);
+    } finally {
+      createSummarySpy.mockRestore();
+      getAllPlayers.mockRestore();
+    }
+  });
+
   describe('sendMatchSummary with telemetry processing', () => {
     it('should create enhanced embeds when telemetry data is available', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-123',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-123',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({
               kills: 2,
               assists: 1,
               DBNOs: 3,
@@ -275,11 +341,10 @@ describe('Telemetry Discord Flow Integration', () => {
               killPlace: 15,
               winPlace: 5,
               killStreaks: 1,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       // Mock the telemetry fetch to return our test data
       const mockPubgClient = (discordBotService as any).pubgClient;
@@ -307,36 +372,34 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('renders identical enriched coaching output from live and cached telemetry', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-123',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-123',
         players: [
           {
             name: 'IntegrationPlayer',
             pubgId: 'tracked-1',
-            stats: createPlayerStats({
-              name: 'IntegrationPlayer',
+            stats: makeMatchParticipantStats({
               damageDealt: 0,
               timeSurvived: 1122,
               winPlace: 5,
             }),
           },
         ],
-      };
+      });
       const rawEvents = [
         {
-          _D: '2024-01-01T10:18:30.000Z',
+          _D: matchEventAt(1110),
           _T: 'LogHeal',
           character: { name: 'IntegrationPlayer', accountId: 'tracked-1' },
           item: { itemId: 'Item_Heal_FirstAid_C' },
           healAmount: 40,
         } as LogHeal,
         {
-          _D: '2024-01-01T10:18:36.000Z',
+          _D: matchEventAt(1116),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'EnemyOne', accountId: 'enemy-1' },
           victim: { name: 'IntegrationPlayer', accountId: 'tracked-1' },
@@ -344,7 +407,7 @@ describe('Telemetry Discord Flow Integration', () => {
           damageCauserName: 'WeapBerylM762_C',
         } as LogPlayerTakeDamage,
         {
-          _D: '2024-01-01T10:18:42.000Z',
+          _D: matchEventAt(1122),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyOne', accountId: 'enemy-1' },
           victim: { name: 'IntegrationPlayer', accountId: 'tracked-1' },
@@ -355,7 +418,7 @@ describe('Telemetry Discord Flow Integration', () => {
       const matchAnalysis = await new TelemetryProcessorService().processMatchTelemetry(
         rawEvents,
         mockSummary.matchId,
-        new Date(mockSummary.playedAt),
+        mockSummary.playedAt,
         ['IntegrationPlayer']
       );
       const participants = [
@@ -364,8 +427,8 @@ describe('Telemetry Discord Flow Integration', () => {
           matchId: mockSummary.matchId,
           rosterId: 'roster-1',
           pubgId: 'tracked-1',
-          ...createPlayerStats({
-            name: 'IntegrationPlayer',
+          name: 'IntegrationPlayer',
+          ...makeMatchParticipantStats({
             damageDealt: 0,
             timeSurvived: 1122,
             winPlace: 5,
@@ -376,8 +439,8 @@ describe('Telemetry Discord Flow Integration', () => {
           matchId: mockSummary.matchId,
           rosterId: 'roster-2',
           pubgId: 'enemy-1',
-          ...createPlayerStats({
-            name: 'EnemyOne',
+          name: 'EnemyOne',
+          ...makeMatchParticipantStats({
             kills: 1,
             damageDealt: 83,
             timeSurvived: 1200,
@@ -395,8 +458,8 @@ describe('Telemetry Discord Flow Integration', () => {
         seasonState: 'progress',
         shardId: 'steam',
         telemetryUrl: mockSummary.telemetryUrl ?? '',
-        playedAt: new Date(mockSummary.playedAt),
-        createdAt: new Date(mockSummary.playedAt),
+        playedAt: mockSummary.playedAt,
+        createdAt: mockSummary.playedAt,
         participants,
         rosters: [],
       };
@@ -445,9 +508,7 @@ describe('Telemetry Discord Flow Integration', () => {
         expect(sentTitles).toContain('Coaching');
         expect(sentTitles).toContain('🎮 PUBG Match Summary');
         expect(sentTitles).toContain('Player: IntegrationPlayer');
-        expect(mainDescription).toContain(
-          '⚔️ Opponent Difficulty: **Hard** (75/100, 1 opponent)'
-        );
+        expect(mainDescription).toContain('⚔️ Opponent Difficulty: **Hard** (75/100, 1 opponent)');
         expect(mainDescription).toContain(
           '🏟️ Lobby Difficulty: **Standard** (63/100, 2 players: 2 humans, 0 bots)'
         );
@@ -462,25 +523,25 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('does not retry cached presentation through live telemetry when enrichment fails', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-cache-presentation-failure',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl:
           'https://telemetry-cdn.playbattlegrounds.com/test-match-cache-presentation-failure',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({ name: 'TestPlayer1', winPlace: 5 }),
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({ winPlace: 5 }),
           },
         ],
-      };
+      });
       const matchAnalysis = await new TelemetryProcessorService().processMatchTelemetry(
         mockTelemetryData,
         mockSummary.matchId,
-        new Date(mockSummary.playedAt),
+        mockSummary.playedAt,
         ['TestPlayer1']
       );
       cacheReadSpy
@@ -506,26 +567,24 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('fetches live telemetry once when the cached row is corrupt', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-corrupt-cache',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-corrupt-cache',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({ name: 'TestPlayer1', winPlace: 5 }),
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({ winPlace: 5 }),
           },
         ],
-      };
-      cacheReadSpy
-        .mockReset()
-        .mockResolvedValue({
-          kind: 'corrupt',
-          reason: 'invalid matchStartTime',
-        });
+      });
+      cacheReadSpy.mockReset().mockResolvedValue({
+        kind: 'corrupt',
+        reason: 'invalid matchStartTime',
+      });
       const mockPubgClient = getLatestMockInstance<{
         matches: { getTelemetry: jest.Mock };
       }>(PubgClient, 'PubgClient');
@@ -545,20 +604,20 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('still sends live telemetry embeds when the cache write fails', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-cache-write-failure',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-cache-write-failure',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({ name: 'TestPlayer1', winPlace: 5 }),
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({ winPlace: 5 }),
           },
         ],
-      };
+      });
       cacheWriteSpy.mockRejectedValue(new Error('cache unavailable'));
       const mockPubgClient = getLatestMockInstance<{
         matches: { getTelemetry: jest.Mock };
@@ -582,17 +641,17 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should fallback to basic embeds when telemetry processing fails', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-456',
         mapName: 'Sanhok',
         gameMode: 'duo',
-        playedAt: '2024-01-01T11:00:00.000Z',
         teamRank: 3,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-456',
         players: [
           {
             name: 'TestPlayer2',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer2',
+            stats: makeMatchParticipantStats({
               kills: 1,
               assists: 2,
               DBNOs: 1,
@@ -604,17 +663,14 @@ describe('Telemetry Discord Flow Integration', () => {
               rideDistance: 500,
               killPlace: 25,
               winPlace: 3,
-              name: 'TestPlayer2',
             }),
           },
         ],
-      };
+      });
 
       // Mock telemetry fetch to throw an error
       const mockPubgClient = (discordBotService as any).pubgClient;
-      mockPubgClient.matches.getTelemetry.mockRejectedValue(
-        new Error('Telemetry fetch failed')
-      );
+      mockPubgClient.matches.getTelemetry.mockRejectedValue(new Error('Telemetry fetch failed'));
 
       // Mock the channel send
       const mockChannel = createMockTextChannel();
@@ -634,17 +690,17 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should use basic embeds when no telemetry URL is provided', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-789',
         mapName: 'Miramar',
         gameMode: 'solo',
-        playedAt: '2024-01-01T12:00:00.000Z',
         teamRank: 1,
         telemetryUrl: undefined, // No telemetry URL
         players: [
           {
             name: 'TestPlayer3',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer3',
+            stats: makeMatchParticipantStats({
               kills: 8,
               DBNOs: 8,
               damageDealt: 800,
@@ -657,11 +713,10 @@ describe('Telemetry Discord Flow Integration', () => {
               killPlace: 1,
               winPlace: 1,
               killStreaks: 2,
-              name: 'TestPlayer3',
             }),
           },
         ],
-      };
+      });
 
       // Mock the channel send
       const mockChannel = createMockTextChannel();
@@ -684,7 +739,7 @@ describe('Telemetry Discord Flow Integration', () => {
         ...mockTelemetryData,
         // Add events for Player2
         {
-          _D: '2024-01-01T10:01:00.000Z',
+          _D: matchEventAt(60),
           _T: 'LogPlayerKillV2',
           killer: { name: 'Player2' },
           victim: { name: 'Enemy3' },
@@ -693,7 +748,7 @@ describe('Telemetry Discord Flow Integration', () => {
           damageReason: 'NonSpecific',
         } as LogPlayerKillV2,
         {
-          _D: '2024-01-01T10:00:55.000Z',
+          _D: matchEventAt(55),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'Player2' },
           victim: { name: 'Enemy3' },
@@ -702,17 +757,17 @@ describe('Telemetry Discord Flow Integration', () => {
         } as LogPlayerTakeDamage,
       ];
 
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-multi',
         mapName: 'Vikendi',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 2,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-multi',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({
               kills: 2,
               assists: 1,
               DBNOs: 2,
@@ -724,12 +779,12 @@ describe('Telemetry Discord Flow Integration', () => {
               rideDistance: 1000,
               killPlace: 5,
               winPlace: 2,
-              name: 'TestPlayer1',
             }),
           },
           {
             name: 'Player2',
-            stats: createPlayerStats({
+            pubgId: 'account.Player2',
+            stats: makeMatchParticipantStats({
               kills: 1,
               DBNOs: 1,
               damageDealt: 200,
@@ -740,11 +795,10 @@ describe('Telemetry Discord Flow Integration', () => {
               rideDistance: 800,
               killPlace: 8,
               winPlace: 2,
-              name: 'Player2',
             }),
           },
         ],
-      };
+      });
 
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.matches.getTelemetry.mockResolvedValue(extendedTelemetryData);
@@ -763,17 +817,17 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should handle telemetry processor service errors gracefully', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-error',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-error',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({
               kills: 1,
               DBNOs: 1,
               damageDealt: 150,
@@ -782,11 +836,10 @@ describe('Telemetry Discord Flow Integration', () => {
               walkDistance: 1200,
               killPlace: 20,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       // Mock telemetry to return invalid data that causes processor to fail
       const mockPubgClient = (discordBotService as any).pubgClient;
@@ -808,32 +861,31 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should append a coaching embed when telemetry produces a strong coaching insight', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-coaching',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({
               kills: 0,
               DBNOs: 0,
               damageDealt: 0,
               longestKill: 0,
               timeSurvived: 1122,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       const coachingTelemetry = [
         {
-          _D: '2024-01-01T10:18:36.000Z',
+          _D: matchEventAt(1116),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
@@ -841,7 +893,7 @@ describe('Telemetry Discord Flow Integration', () => {
           damageCauserName: 'WeapBerylM762_C',
         } as LogPlayerTakeDamage,
         {
-          _D: '2024-01-01T10:18:42.000Z',
+          _D: matchEventAt(1122),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
@@ -874,44 +926,44 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('adds pattern to fix only when repeated coaching evidence exists', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-coaching-pattern',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching-pattern',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({ name: 'TestPlayer1', winPlace: 5 }),
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({ winPlace: 5 }),
           },
         ],
-      };
+      });
 
       const telemetry = [
         {
-          _D: '2024-01-01T10:10:00.000Z',
+          _D: matchEventAt(600),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
           damage: 83,
         },
         {
-          _D: '2024-01-01T10:10:06.000Z',
+          _D: matchEventAt(606),
           _T: 'LogPlayerMakeGroggy',
           attacker: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
         },
         {
-          _D: '2024-01-01T10:18:36.000Z',
+          _D: matchEventAt(1116),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'EnemyTwo' },
           victim: { name: 'TestPlayer1' },
           damage: 90,
         },
         {
-          _D: '2024-01-01T10:18:42.000Z',
+          _D: matchEventAt(1122),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyTwo' },
           victim: { name: 'TestPlayer1' },
@@ -936,39 +988,38 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should still post match summary when coaching narration fails', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-coaching-fallback',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-coaching-fallback',
         players: [
           {
             name: 'TestPlayer1',
-            stats: createPlayerStats({
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats({
               kills: 0,
               DBNOs: 0,
               damageDealt: 0,
               timeSurvived: 1122,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.matches.getTelemetry.mockResolvedValue([
         {
-          _D: '2024-01-01T10:18:36.000Z',
+          _D: matchEventAt(1116),
           _T: 'LogPlayerTakeDamage',
           attacker: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
           damage: 83,
         } as LogPlayerTakeDamage,
         {
-          _D: '2024-01-01T10:18:42.000Z',
+          _D: matchEventAt(1122),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyOne' },
           victim: { name: 'TestPlayer1' },
@@ -990,32 +1041,30 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('includes opponent difficulty on the main summary when opponent season stats exist', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-match-difficulty',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-match-difficulty',
         players: [
           {
             name: 'TestPlayer1',
             pubgId: 'tracked-1',
-            stats: createPlayerStats({
+            stats: makeMatchParticipantStats({
               kills: 0,
               DBNOs: 0,
               damageDealt: 0,
               timeSurvived: 1122,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       const telemetry = [
         {
-          _D: '2024-01-01T10:02:00.000Z',
+          _D: matchEventAt(120),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyOne', accountId: 'enemy-1' },
           victim: { name: 'TestPlayer1', accountId: 'tracked-1' },
@@ -1035,9 +1084,7 @@ describe('Telemetry Discord Flow Integration', () => {
         findMatch: jest.fn().mockResolvedValue(null),
       };
       (discordBotService as any).playerStatsService = {
-        getSeasonStats: jest
-          .fn()
-          .mockResolvedValue(new Map([['enemy-1', { kd: 1.5, adr: 225 }]])),
+        getSeasonStats: jest.fn().mockResolvedValue(new Map([['enemy-1', { kd: 1.5, adr: 225 }]])),
       };
 
       const mockChannel = createMockTextChannel();
@@ -1055,39 +1102,37 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('excludes bot opponents from the season stats lookup', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-bot-opponent',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-bot-opponent',
         players: [
           {
             name: 'TestPlayer1',
             pubgId: 'tracked-1',
-            stats: createPlayerStats({
+            stats: makeMatchParticipantStats({
               kills: 1,
               DBNOs: 0,
               damageDealt: 100,
               timeSurvived: 1122,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       const telemetry = [
         {
-          _D: '2024-01-01T10:01:00.000Z',
+          _D: matchEventAt(60),
           _T: 'LogPlayerKillV2',
           killer: { name: 'TestPlayer1', accountId: 'tracked-1' },
           victim: { name: 'BotEnemy', accountId: 'ai.1' },
           damageCauserName: 'WeapBerylM762_C',
         } as LogPlayerKillV2,
         {
-          _D: '2024-01-01T10:02:00.000Z',
+          _D: matchEventAt(120),
           _T: 'LogPlayerKillV2',
           killer: { name: 'EnemyOne', accountId: 'enemy-1' },
           victim: { name: 'TestPlayer1', accountId: 'tracked-1' },
@@ -1123,28 +1168,26 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('includes lobby difficulty with bots on the main summary when participants are saved', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'test-lobby-difficulty',
         mapName: 'Erangel',
         gameMode: 'squad',
-        playedAt: '2024-01-01T10:00:00.000Z',
         teamRank: 5,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/test-lobby-difficulty',
         players: [
           {
             name: 'TestPlayer1',
             pubgId: 'tracked-1',
-            stats: createPlayerStats({
+            stats: makeMatchParticipantStats({
               kills: 0,
               DBNOs: 0,
               damageDealt: 0,
               timeSurvived: 1122,
               winPlace: 5,
-              name: 'TestPlayer1',
             }),
           },
         ],
-      };
+      });
 
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.matches.getTelemetry.mockResolvedValue([]);
@@ -1195,15 +1238,20 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should pass correct parameters to telemetry processor', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'integration-test-match',
         mapName: 'Erangel',
         gameMode: 'duo',
-        playedAt: '2024-01-01T10:30:00.000Z',
         teamRank: 4,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/integration-test-match',
-        players: [{ name: 'IntegrationPlayer', stats: undefined }],
-      };
+        players: [
+          {
+            name: 'IntegrationPlayer',
+            pubgId: 'account.IntegrationPlayer',
+            stats: makeMatchParticipantStats(),
+          },
+        ],
+      });
 
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.matches.getTelemetry.mockResolvedValue(mockTelemetryData);
@@ -1230,15 +1278,20 @@ describe('Telemetry Discord Flow Integration', () => {
     });
 
     it('should process timeline events with damage data', async () => {
-      const mockSummary: DiscordMatchGroupSummary = {
+      const mockSummary = makeMatchSummary({
         matchId: 'timeline-test-match',
         mapName: 'Erangel',
         gameMode: 'duo',
-        playedAt: '2024-01-01T10:30:00.000Z',
         teamRank: 4,
         telemetryUrl: 'https://telemetry-cdn.playbattlegrounds.com/timeline-test-match',
-        players: [{ name: 'TestPlayer1', stats: undefined }],
-      };
+        players: [
+          {
+            name: 'TestPlayer1',
+            pubgId: 'account.TestPlayer1',
+            stats: makeMatchParticipantStats(),
+          },
+        ],
+      });
 
       const mockPubgClient = (discordBotService as any).pubgClient;
       mockPubgClient.matches.getTelemetry.mockResolvedValue(mockTelemetryData);

@@ -3,15 +3,10 @@ import { appConfig } from '../config/config';
 import { MatchRepository } from '../data/repositories/match.repository';
 import { PlayerRepository } from '../data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
-import type { MatchSummary } from '../types/match.types';
 import type { MatchMonitorMatchGroup, MatchMonitorPlayer } from '../types/match-monitor.types';
 import { debug, error, info, monitor, success, warn } from '../utils/logger';
 import type { DiscordBotService } from './discord-bot.service';
 import { MatchInterpreter } from './match-interpreter.service';
-
-interface MatchSummaryDestination {
-  sendMatchSummary(channelId: string, summary: MatchSummary): Promise<void>;
-}
 
 export class MatchMonitorService {
   private readonly checkInterval: number;
@@ -248,9 +243,7 @@ export class MatchMonitorService {
           pending.monitoredPlayers.map((player) => player.name)
         );
         if (summary) {
-          // Task 3 migrates DiscordBotService's public signature to MatchSummary.
-          const destination = this.discordBot as unknown as MatchSummaryDestination;
-          await destination.sendMatchSummary(this.channelId, summary);
+          await this.discordBot.sendMatchSummary(this.channelId, summary);
           await this.processedMatchRepository.addProcessedMatch(pending.match.matchId);
           processedCount++;
           debug(`Match ${pending.match.matchId} processed successfully`);

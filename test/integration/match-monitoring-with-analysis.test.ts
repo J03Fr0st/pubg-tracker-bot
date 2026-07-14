@@ -1,5 +1,5 @@
 import { DiscordBotService } from '../../src/services/discord-bot.service';
-import type { DiscordMatchGroupSummary } from '../../src/types/discord-match-summary.types';
+import { makeMatchParticipantStats, makeMatchSummary } from '../fixtures/match-summary.fixture';
 
 // Mock the @j03fr0st/pubg-ts library
 jest.mock('@j03fr0st/pubg-ts', () => ({
@@ -91,15 +91,20 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
   });
 
   it('should send a basic match summary when no telemetry is available', async () => {
-    const mockMatchSummary: DiscordMatchGroupSummary = {
+    const mockMatchSummary = makeMatchSummary({
       matchId: 'error-test-match',
       mapName: 'Desert_Main',
       gameMode: 'squad',
-      playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
       telemetryUrl: undefined,
-      players: [{ name: 'TestPlayer', stats: undefined }],
-    };
+      players: [
+        {
+          name: 'TestPlayer',
+          pubgId: 'account.TestPlayer',
+          stats: makeMatchParticipantStats({ winPlace: 25 }),
+        },
+      ],
+    });
 
     const mockSend = jest.fn().mockResolvedValue(undefined);
     const mockChannel = { type: 0, isTextBased: jest.fn().mockReturnValue(true), send: mockSend };
@@ -113,15 +118,20 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
   });
 
   it('should explain when Discord cannot access the configured channel', async () => {
-    const mockMatchSummary: DiscordMatchGroupSummary = {
+    const mockMatchSummary = makeMatchSummary({
       matchId: 'missing-access-test-match',
       mapName: 'Desert_Main',
       gameMode: 'squad',
-      playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
       telemetryUrl: undefined,
-      players: [{ name: 'TestPlayer', stats: undefined }],
-    };
+      players: [
+        {
+          name: 'TestPlayer',
+          pubgId: 'account.TestPlayer',
+          stats: makeMatchParticipantStats({ winPlace: 25 }),
+        },
+      ],
+    });
 
     const discordMissingAccessError = Object.assign(new Error('Missing Access'), {
       code: 50001,
@@ -151,15 +161,20 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
   });
 
   it('should reject before sending when the bot cannot view the configured channel', async () => {
-    const mockMatchSummary: DiscordMatchGroupSummary = {
+    const mockMatchSummary = makeMatchSummary({
       matchId: 'missing-view-channel-test-match',
       mapName: 'Desert_Main',
       gameMode: 'squad',
-      playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
       telemetryUrl: undefined,
-      players: [{ name: 'TestPlayer', stats: undefined }],
-    };
+      players: [
+        {
+          name: 'TestPlayer',
+          pubgId: 'account.TestPlayer',
+          stats: makeMatchParticipantStats({ winPlace: 25 }),
+        },
+      ],
+    });
 
     const mockSend = jest.fn();
     const mockChannel = {
@@ -188,15 +203,20 @@ describe('Match Monitoring with Telemetry Analysis Integration', () => {
   });
 
   it('should reject thread channels because monitoring requires a normal text channel', async () => {
-    const mockMatchSummary: DiscordMatchGroupSummary = {
+    const mockMatchSummary = makeMatchSummary({
       matchId: 'thread-channel-test-match',
       mapName: 'Desert_Main',
       gameMode: 'squad',
-      playedAt: '2024-01-01T15:30:00.000Z',
       teamRank: 25,
       telemetryUrl: undefined,
-      players: [{ name: 'TestPlayer', stats: undefined }],
-    };
+      players: [
+        {
+          name: 'TestPlayer',
+          pubgId: 'account.TestPlayer',
+          stats: makeMatchParticipantStats({ winPlace: 25 }),
+        },
+      ],
+    });
 
     const mockChannel = {
       id: 'thread-channel-id',
