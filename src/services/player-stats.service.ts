@@ -2,8 +2,8 @@ import type { GameMode, PubgClient, Shard } from '@j03fr0st/pubg-ts';
 import type {
   SeasonCacheKey,
   SeasonCacheRepository,
+  SeasonCacheWrite,
   SeasonStats,
-  UpsertSeasonCacheData,
 } from '../data/repositories/season-cache.repository';
 import { debug, warn } from '../utils/logger';
 
@@ -81,7 +81,7 @@ export class PlayerStatsService {
     }
 
     debug(`Fetching season stats for ${toFetch.length} players from API`);
-    const upserts: UpsertSeasonCacheData[] = [];
+    const upserts: SeasonCacheWrite[] = [];
 
     const batches = this.chunk(toFetch, SEASON_STATS_BATCH_SIZE);
     await Promise.all(
@@ -102,7 +102,7 @@ export class PlayerStatsService {
     // Cache results
     if (upserts.length > 0) {
       this.repository
-        .upsertStats(upserts)
+        .upsertStats(key, upserts)
         .catch((err) => warn(`Failed to cache season stats: ${err}`));
     }
 
@@ -114,7 +114,7 @@ export class PlayerStatsService {
     seasonId: string,
     gameMode: string,
     results: Map<string, SeasonStatsResult>,
-    upserts: UpsertSeasonCacheData[]
+    upserts: SeasonCacheWrite[]
   ): Promise<void> {
     try {
       const statsResults = await this.fetchBatchModeStats(accountIds, seasonId, gameMode);
@@ -153,10 +153,7 @@ export class PlayerStatsService {
 
           results.set(accountId, rounded);
           upserts.push({
-            platform: this.platform,
             accountId,
-            seasonId,
-            gameMode,
             kd: rounded.kd,
             adr: rounded.adr,
             wins: modeStats.wins ?? 0,

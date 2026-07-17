@@ -144,6 +144,44 @@ describe('PlayerStatsService', () => {
       });
     });
 
+    it('returns API stats without waiting for the cache write and passes the key separately', async () => {
+      mockRepo.findFreshStats.mockResolvedValue(cacheMiss('acc-1'));
+      mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
+        data: [seasonStatsResponse('acc-1')],
+      });
+      mockRepo.upsertStats.mockReturnValue(new Promise<void>(() => undefined));
+
+      const outcome = await Promise.race([
+        service.getSeasonStats(['acc-1'], 'squad-fpp').then((stats) => ({
+          kind: 'resolved' as const,
+          stats,
+        })),
+        new Promise<{ kind: 'still-pending' }>((resolve) => {
+          setImmediate(() => resolve({ kind: 'still-pending' }));
+        }),
+      ]);
+
+      expect(outcome.kind).toBe('resolved');
+      if (outcome.kind !== 'resolved') throw new Error('season stats write blocked the result');
+      expect(outcome.stats).toEqual(new Map([['acc-1', { kd: 2.5, adr: 200 }]]));
+      expect(mockRepo.upsertStats).toHaveBeenCalledWith(
+        {
+          platform: 'steam',
+          seasonId: 'division.bro.official.pc-2018-28',
+          gameMode: 'squad-fpp',
+        },
+        [
+          {
+            accountId: 'acc-1',
+            kd: 2.5,
+            adr: 200,
+            wins: 5,
+            games: 25,
+          },
+        ]
+      );
+    });
+
     it('skips players with no rounds played in the requested game mode', async () => {
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
         data: [

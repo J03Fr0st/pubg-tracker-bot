@@ -24,8 +24,6 @@ export interface SeasonCacheWrite extends SeasonStats {
   games: number;
 }
 
-export interface UpsertSeasonCacheData extends SeasonCacheKey, SeasonCacheWrite {}
-
 export class SeasonCacheRepository {
   public constructor(
     private readonly prisma: PrismaClient,
@@ -57,16 +55,17 @@ export class SeasonCacheRepository {
     };
   }
 
-  public async upsertStats(stats: UpsertSeasonCacheData[]): Promise<void> {
+  public async upsertStats(key: SeasonCacheKey, stats: SeasonCacheWrite[]): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      const cachedAt = new Date(this.now());
       for (const stat of stats) {
         await tx.playerSeasonCache.upsert({
           where: {
             platform_accountId_seasonId_gameMode: {
-              platform: stat.platform,
+              platform: key.platform,
               accountId: stat.accountId,
-              seasonId: stat.seasonId,
-              gameMode: stat.gameMode,
+              seasonId: key.seasonId,
+              gameMode: key.gameMode,
             },
           },
           update: {
@@ -74,17 +73,18 @@ export class SeasonCacheRepository {
             adr: stat.adr,
             wins: stat.wins,
             games: stat.games,
-            cachedAt: new Date(),
+            cachedAt,
           },
           create: {
-            platform: stat.platform,
+            platform: key.platform,
             accountId: stat.accountId,
-            seasonId: stat.seasonId,
-            gameMode: stat.gameMode,
+            seasonId: key.seasonId,
+            gameMode: key.gameMode,
             kd: stat.kd,
             adr: stat.adr,
             wins: stat.wins,
             games: stat.games,
+            cachedAt,
           },
         });
       }
