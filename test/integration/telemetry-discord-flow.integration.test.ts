@@ -105,7 +105,7 @@ function createSummary() {
     matchId: 'channel-match',
     mapName: 'Baltic_Main',
     gameMode: 'squad',
-    players: [
+    rosterParticipants: [
       {
         name: 'ChannelPlayer',
         pubgId: 'account.channel',
@@ -162,7 +162,7 @@ function createProcessMatchInteraction() {
 function createExpectedManualSummary() {
   const interpreter = new MatchInterpreter();
   const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-    'Player1',
+    'account.1',
   ]);
   if (!summary) {
     throw new Error('Expected monitored player summary');
@@ -301,7 +301,7 @@ describe('Discord match presentation gateway', () => {
       matchId: 'batch-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'BatchPlayer',
           pubgId: 'account.batch',
@@ -374,7 +374,7 @@ describe('Discord match presentation gateway', () => {
       matchId: 'smoke-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'SmokePlayer',
           pubgId: 'account.smoke',

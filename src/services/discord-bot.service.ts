@@ -560,14 +560,16 @@ export class DiscordBotService {
       const monitoredPlayers = await this.deps.playerRepository.getAllPlayers();
       const summary = this.deps.matchInterpreter.createSummary(
         interpreted,
-        monitoredPlayers.map((player) => player.name)
+        monitoredPlayers.map((player) => player.pubgId)
       );
       if (!summary) {
         await interaction.editReply({ embeds: [this.createNoMonitoredPlayersEmbed(matchId)] });
         return;
       }
 
-      debug(`Built match summary with ${summary.players.length} roster players for ${matchId}`);
+      debug(
+        `Built match summary with ${summary.rosterParticipants.length} roster players for ${matchId}`
+      );
       const embeds = await this.deps.matchPresentation.createEmbeds(summary);
 
       if (embeds && embeds.length > 0) {

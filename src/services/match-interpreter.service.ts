@@ -5,7 +5,7 @@ import type {
   MatchParticipant,
   MatchParticipantStats,
   MatchSummary,
-  MatchSummaryPlayer,
+  MatchSummaryParticipant,
 } from '../types/match.types';
 
 function interpretStats(stats: ParticipantStats): MatchParticipantStats {
@@ -36,7 +36,7 @@ function interpretStats(stats: ParticipantStats): MatchParticipantStats {
 
 export class MatchInterpreter {
   public interpret(response: MatchResponse): InterpretedMatch {
-    const participants: MatchParticipant[] = [];
+    const participantRecords: Array<Omit<MatchParticipant, 'rosterId'>> = [];
     const rosters: InterpretedRoster[] = [];
     let telemetryUrl: string | undefined;
 
@@ -44,7 +44,7 @@ export class MatchInterpreter {
       switch (item.type) {
         case 'participant': {
           const stats = item.attributes.stats;
-          participants.push({
+          participantRecords.push({
             participantId: item.id,
             pubgId: stats.playerId,
             name: stats.name,
@@ -68,6 +68,17 @@ export class MatchInterpreter {
       }
     }
 
+    const rosterIdByParticipantId = new Map<string, string>();
+    for (const roster of rosters) {
+      for (const participantId of roster.participantIds) {
+        rosterIdByParticipantId.set(participantId, roster.rosterId);
+      }
+    }
+    const participants: MatchParticipant[] = participantRecords.map((participant) => ({
+      ...participant,
+      rosterId: rosterIdByParticipantId.get(participant.participantId) ?? null,
+    }));
+
     return {
       matchId: response.data.id,
       gameMode: response.data.attributes.gameMode,
@@ -85,37 +96,32 @@ export class MatchInterpreter {
 
   public createSummary(
     match: InterpretedMatch,
-    monitoredPlayerNames: readonly string[]
+    monitoredPlayerPubgIds: readonly string[]
   ): MatchSummary | null {
-    const monitoredNames = new Set(monitoredPlayerNames);
+    const monitoredPubgIds = new Set(monitoredPlayerPubgIds);
     const monitored = match.participants.filter((participant) =>
-      monitoredNames.has(participant.name)
+      monitoredPubgIds.has(participant.pubgId)
     );
     if (monitored.length === 0) {
       return null;
     }
 
-    const monitoredIds = new Set(monitored.map((participant) => participant.participantId));
     const selectedRosterIds = new Set(
-      match.rosters
-        .filter((roster) => roster.participantIds.some((id) => monitoredIds.has(id)))
-        .map((roster) => roster.rosterId)
+      monitored
+        .map((participant) => participant.rosterId)
+        .filter((rosterId): rosterId is string => rosterId !== null)
     );
-    const selectedParticipantIds = new Set(
-      match.rosters
-        .filter((roster) => selectedRosterIds.has(roster.rosterId))
-        .flatMap((roster) => roster.participantIds)
-    );
-    const summaryParticipants = match.participants.filter(
+    const monitoredIds = new Set(monitored.map((participant) => participant.pubgId));
+    const rosterParticipants = match.participants.filter(
       (participant) =>
-        selectedParticipantIds.has(participant.participantId) ||
-        monitoredIds.has(participant.participantId)
+        monitoredIds.has(participant.pubgId) ||
+        (participant.rosterId !== null && selectedRosterIds.has(participant.rosterId))
     );
     const placements = new Set(monitored.map((participant) => participant.stats.winPlace));
-
-    const toSummaryPlayer = (participant: MatchParticipant): MatchSummaryPlayer => ({
-      name: participant.name,
+    const toSummaryParticipant = (participant: MatchParticipant): MatchSummaryParticipant => ({
       pubgId: participant.pubgId,
+      name: participant.name,
+      rosterId: participant.rosterId,
       stats: participant.stats,
     });
 
@@ -124,8 +130,9 @@ export class MatchInterpreter {
       mapName: match.mapName,
       gameMode: match.gameMode,
       playedAt: match.playedAt,
-      players: summaryParticipants.map(toSummaryPlayer),
-      lobbyPlayers: match.participants.map(toSummaryPlayer),
+      rosterParticipants: rosterParticipants.map(toSummaryParticipant),
+      monitoredPlayers: monitored.map(toSummaryParticipant),
+      lobbyParticipants: match.participants.map(toSummaryParticipant),
       ...(placements.size === 1 ? { teamRank: monitored[0].stats.winPlace } : {}),
       ...(match.telemetryUrl === undefined ? {} : { telemetryUrl: match.telemetryUrl }),
     };

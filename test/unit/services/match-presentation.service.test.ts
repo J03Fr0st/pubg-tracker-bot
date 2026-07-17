@@ -81,7 +81,7 @@ describe('MatchPresentationService', () => {
       matchId: 'basic-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'BasicPlayer',
           pubgId: 'account.basic',
@@ -115,6 +115,63 @@ describe('MatchPresentationService', () => {
     expect(coaching).not.toHaveBeenCalled();
   });
 
+  it('uses roster participants for totals and order but enhances only monitored players', async () => {
+    const deps = createDependencies();
+    const matchAnalysis = createMatchAnalysis('role-match', 'MonitoredPlayer');
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis,
+      rawEvents: [],
+    });
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    const coaching = jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
+    const service = new MatchPresentationService(deps);
+    const monitored = {
+      name: 'MonitoredPlayer',
+      pubgId: 'account.monitored',
+      rosterId: 'roster-1',
+      stats: makeMatchParticipantStats({ kills: 2, damageDealt: 200 }),
+    };
+    const teammate = {
+      name: 'RosterTeammate',
+      pubgId: 'account.teammate',
+      rosterId: 'roster-1',
+      stats: makeMatchParticipantStats({ kills: 1, damageDealt: 100 }),
+    };
+    const summary = makeMatchSummary({
+      matchId: 'role-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/role-match',
+      rosterParticipants: [monitored, teammate],
+      monitoredPlayers: [monitored],
+      lobbyParticipants: [
+        monitored,
+        teammate,
+        {
+          name: 'LobbyOpponent',
+          pubgId: 'account.opponent',
+          rosterId: 'roster-2',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+
+    expect(embeds[0].data.description).toContain('👥 Squad Size: **2 players**');
+    expect(embeds[0].data.description).toContain('⚔️ Total Kills: **3**');
+    expect(embeds[0].data.description).toContain('💥 Total Damage: **300**');
+    expect(embeds.slice(1, 3).map((embed) => embed.data.title)).toEqual([
+      'Player: MonitoredPlayer',
+      'Player: RosterTeammate',
+    ]);
+    expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
+    expect(embeds[2].data.description).toContain('⚔️ Kills: 1');
+    expect(embeds[2].data.description).not.toContain('⚔️ **COMBAT STATS**');
+    expect(coaching).toHaveBeenCalledWith(matchAnalysis, ['MonitoredPlayer'], [], []);
+  });
+
   it('creates enhanced player embeds from live telemetry', async () => {
     const deps = createDependencies();
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
@@ -131,7 +188,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/live-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'LivePlayer',
           pubgId: 'account.live',
@@ -174,7 +231,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-save-failure',
-      players: [
+      rosterParticipants: [
         {
           name: 'LivePlayer',
           pubgId: 'account.live',
@@ -208,7 +265,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-parity',
-      players: [
+      rosterParticipants: [
         {
           name: 'ParityPlayer',
           pubgId: 'account.parity',
@@ -247,7 +304,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cached-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CachedPlayer',
           pubgId: 'account.cached',
@@ -312,14 +369,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/opponent-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'TrackedPlayer',
           pubgId: 'account.tracked',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -353,8 +410,8 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/lobby-match',
-      players: [rankedPlayer],
-      lobbyPlayers: [
+      rosterParticipants: [rankedPlayer],
+      lobbyParticipants: [
         rankedPlayer,
         {
           name: 'MissingStats',
@@ -413,14 +470,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/timeline-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'TimelinePlayer',
           pubgId: 'account.timeline',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -460,14 +517,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/corrupt-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CorruptPlayer',
           pubgId: 'account.corrupt',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -523,14 +580,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-error-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CacheErrorPlayer',
           pubgId: 'account.cache-error',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [
+      lobbyParticipants: [
         {
           name: 'LobbyEnemy',
           pubgId: 'account.lobby-enemy',
@@ -572,7 +629,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/failed-telemetry-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'FallbackPlayer',
           pubgId: 'account.fallback',
@@ -601,8 +658,8 @@ describe('MatchPresentationService', () => {
       matchId: 'pristine-fallback',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [player],
-      lobbyPlayers: [],
+      rosterParticipants: [player],
+      lobbyParticipants: [],
     });
     const expected = await service.createEmbeds(basicSummary);
     const matchAnalysis = createMatchAnalysis('pristine-fallback', 'PristinePlayer');
@@ -645,8 +702,8 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/pristine-fallback',
-      players: [player],
-      lobbyPlayers: [],
+      rosterParticipants: [player],
+      lobbyParticipants: [],
     });
 
     const actual = await service.createEmbeds(enhancedSummary);
@@ -672,14 +729,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/coaching-failure',
-      players: [
+      rosterParticipants: [
         {
           name: 'CoachedPlayer',
           pubgId: 'account.coached',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -698,7 +755,7 @@ describe('MatchPresentationService', () => {
       matchId: 'stable-format-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'FormatPlayer',
           pubgId: 'account.format',
@@ -725,7 +782,7 @@ describe('MatchPresentationService', () => {
       matchId: 'empty-catalog-labels',
       mapName: 'Unknown_Main',
       gameMode: 'unknown-mode',
-      players: [
+      rosterParticipants: [
         {
           name: 'FormatPlayer',
           pubgId: 'account.format',

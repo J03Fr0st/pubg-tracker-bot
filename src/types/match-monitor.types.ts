@@ -1,7 +1,7 @@
 import type { InterpretedMatch } from './match.types';
 
 export interface MatchMonitorPlayer {
-  id: string;
+  pubgId: string;
   name: string;
 }
 

@@ -73,7 +73,7 @@ function makeParticipant(
   };
 }
 
-export function makeMatchResponse(): MatchResponse {
+export function makeMatchResponse(monitoredPlayerPubgId = 'account.1'): MatchResponse {
   return {
     data: {
       type: 'match',
@@ -106,7 +106,7 @@ export function makeMatchResponse(): MatchResponse {
     included: [
       makeRoster('roster-1', 3, ['participant-1', 'participant-2']),
       makeRoster('roster-2', 10, ['participant-3']),
-      makeParticipant('participant-1', 'account.1', 'Player1', 3),
+      makeParticipant('participant-1', monitoredPlayerPubgId, 'Player1', 3),
       makeParticipant('participant-2', 'account.2', 'TeamMate', 3),
       makeParticipant('participant-3', 'account.3', 'Opponent', 10),
       {
