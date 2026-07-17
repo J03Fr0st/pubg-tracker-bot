@@ -38,6 +38,7 @@ export interface AssistInfo {
 }
 
 export interface PlayerTelemetry {
+  pubgId: string;
   playerName: string;
   matchStartTime: Date;
   killEvents: LogPlayerKillV2[];

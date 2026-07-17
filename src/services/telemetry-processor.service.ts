@@ -16,104 +16,46 @@ import type {
   PlayerAnalysis,
   WeaponStats,
 } from '../types/analytics-results.types';
+import type { MatchPlayerIdentity } from '../types/match.types';
 
 export class TelemetryProcessorService {
-  /**
-   * Performs robust player name matching to handle potential inconsistencies in telemetry data.
-   *
-   * Handles cases like:
-   * - Exact matches
-   * - Case differences
-   * - Leading/trailing whitespace
-   * - Special character variations
-   *
-   * @param telemetryName - Name from telemetry event (may be null/undefined)
-   * @param trackedName - Name we're tracking
-   * @returns true if names match, false otherwise
-   */
-  private isPlayerNameMatch(
-    telemetryName: string | undefined | null,
-    trackedName: string
-  ): boolean {
-    if (!telemetryName || !trackedName) return false;
-
-    // Exact match first
-    if (telemetryName === trackedName) return true;
-
-    // Case-insensitive match
-    if (telemetryName.toLowerCase() === trackedName.toLowerCase()) return true;
-
-    // Trim whitespace and try again
-    const trimmedTelemetry = telemetryName.trim();
-    const trimmedTracked = trackedName.trim();
-    if (trimmedTelemetry.toLowerCase() === trimmedTracked.toLowerCase()) return true;
-
-    return false;
-  }
-  /**
-   * Processes raw telemetry data for a match and returns enhanced analytics for tracked players.
-   *
-   * This method analyzes various telemetry events (kills, damage, knockdowns, etc.) to provide
-   * detailed combat statistics, weapon performance metrics, kill chains, and assist calculations.
-   *
-   * @param telemetryData - Array of raw telemetry events from PUBG API
-   * @param matchId - Unique identifier for the match
-   * @param matchStartTime - Timestamp when the match started
-   * @param trackedPlayerNames - List of player names to analyze (only these players will be processed)
-   * @returns Promise resolving to MatchAnalysis containing detailed player analytics
-   *
-   * @example
-   * ```typescript
-   * const analysis = await processor.processMatchTelemetry(
-   *   telemetryEvents,
-   *   'match-123',
-   *   new Date('2024-01-01T10:00:00Z'),
-   *   ['PlayerName1', 'PlayerName2']
-   * );
-   *
-   * const playerStats = analysis.playerAnalyses.get('PlayerName1');
-   * console.log(`Player dealt ${playerStats.totalDamageDealt} damage`);
-   * ```
-   */
   public async processMatchTelemetry(
-    telemetryData: TelemetryEvent[], // Use existing union type
+    telemetryData: TelemetryEvent[],
     matchId: string,
     matchStartTime: Date,
-    trackedPlayerNames: string[]
+    monitoredPlayers: readonly MatchPlayerIdentity[]
   ): Promise<MatchAnalysis> {
     const startTime = Date.now();
-
-    // Filter events by type using existing interfaces
-    const killEvents = telemetryData.filter((e) => e._T === 'LogPlayerKillV2') as LogPlayerKillV2[];
+    const killEvents = telemetryData.filter(
+      (event) => event._T === 'LogPlayerKillV2'
+    ) as LogPlayerKillV2[];
     const knockdownEvents = telemetryData.filter(
-      (e) => e._T === 'LogPlayerMakeGroggy'
+      (event) => event._T === 'LogPlayerMakeGroggy'
     ) as LogPlayerMakeGroggy[];
     const damageEvents = telemetryData.filter(
-      (e) => e._T === 'LogPlayerTakeDamage'
+      (event) => event._T === 'LogPlayerTakeDamage'
     ) as LogPlayerTakeDamage[];
-    // Removed attackEvents collection as it was unused
     const reviveEvents = telemetryData.filter(
-      (e) => e._T === 'LogPlayerRevive'
+      (event) => event._T === 'LogPlayerRevive'
     ) as LogPlayerRevive[];
     const fireCountEvents = telemetryData.filter(
-      (e) => e._T === 'LogWeaponFireCount'
+      (event) => event._T === 'LogWeaponFireCount'
     ) as LogWeaponFireCount[];
-
     const playerAnalyses = new Map<string, PlayerAnalysis>();
 
-    // Process each tracked player
-    for (const playerName of trackedPlayerNames) {
-      const analysis = this.analyzePlayer(
-        playerName,
-        killEvents,
-        knockdownEvents,
-        damageEvents,
-        reviveEvents,
-        fireCountEvents,
-        matchStartTime
+    for (const player of monitoredPlayers) {
+      playerAnalyses.set(
+        player.pubgId,
+        this.analyzePlayer(
+          player,
+          killEvents,
+          knockdownEvents,
+          damageEvents,
+          reviveEvents,
+          fireCountEvents,
+          matchStartTime
+        )
       );
-
-      playerAnalyses.set(playerName, analysis);
     }
 
     return {
@@ -124,28 +66,8 @@ export class TelemetryProcessorService {
     };
   }
 
-  /**
-   * Analyzes telemetry events for a single player and calculates comprehensive combat statistics.
-   *
-   * This method processes all telemetry events related to the specified player, including:
-   * - Kill and knockdown events
-   * - Damage dealt and taken
-   * - Weapon usage statistics
-   * - Kill chain analysis
-   * - Assist calculations
-   *
-   * @param playerName - Name of the player to analyze
-   * @param allKills - All kill events from the match
-   * @param allKnockdowns - All knockdown events from the match
-   * @param allDamage - All damage events from the match
-   * @param allAttacks - All attack events from the match
-   * @param allRevives - All revive events from the match
-   * @param allFireCounts - All weapon fire count events from the match
-   * @param matchStartTime - Timestamp when the match started (used for timing calculations)
-   * @returns PlayerAnalysis object with detailed statistics and raw event data
-   */
   private analyzePlayer(
-    playerName: string,
+    player: MatchPlayerIdentity,
     allKills: LogPlayerKillV2[],
     allKnockdowns: LogPlayerMakeGroggy[],
     allDamage: LogPlayerTakeDamage[],
@@ -153,100 +75,59 @@ export class TelemetryProcessorService {
     allFireCounts: LogWeaponFireCount[],
     matchStartTime: Date
   ): PlayerAnalysis {
-    // Debug: Log all unique killer names in telemetry
-    const allKillerNames = [...new Set(allKills.map((k) => k.killer?.name).filter(Boolean))];
-    console.log('[DEBUG] Tracked player:', playerName);
-    console.log('[DEBUG] All killer names in telemetry:', allKillerNames);
-
-    // Filter events for this player (using existing types directly)
-    const playerKills = allKills.filter((k) => this.isPlayerNameMatch(k.killer?.name, playerName));
-    const playerKnockdowns = allKnockdowns.filter((k) =>
-      this.isPlayerNameMatch(k.attacker?.name, playerName)
+    const playerKills = allKills.filter((event) => event.killer?.accountId === player.pubgId);
+    const playerKnockdowns = allKnockdowns.filter(
+      (event) => event.attacker?.accountId === player.pubgId
     );
-    const playerDamageDealt = allDamage.filter((d) =>
-      this.isPlayerNameMatch(d.attacker?.name, playerName)
+    const playerDamageDealt = allDamage.filter(
+      (event) => event.attacker?.accountId === player.pubgId
     );
-    const playerDamageTaken = allDamage.filter((d) =>
-      this.isPlayerNameMatch(d.victim?.name, playerName)
+    const playerDamageTaken = allDamage.filter(
+      (event) => event.victim?.accountId === player.pubgId
     );
-    // Removed unused attacks filtering
-    const playerRevives = allRevives.filter((r) =>
-      this.isPlayerNameMatch(r.reviver?.name, playerName)
+    const playerRevives = allRevives.filter((event) => event.reviver?.accountId === player.pubgId);
+    const playerFireCounts = allFireCounts.filter(
+      (event) => event.character?.accountId === player.pubgId
     );
-    const playerFireCounts = allFireCounts.filter((f) =>
-      this.isPlayerNameMatch(f.character?.name, playerName)
+    const playerDeaths = allKills.filter((event) => event.victim?.accountId === player.pubgId);
+    const playerKnockedDown = allKnockdowns.filter(
+      (event) => event.victim?.accountId === player.pubgId
     );
-
-    // Debug: Log filtered results
-    console.log('[DEBUG] Found kills for player:', playerName, playerKills.length);
-    console.log('[DEBUG] Found knockdowns for player:', playerName, playerKnockdowns.length);
-    console.log('[DEBUG] Found damage events for player:', playerName, playerDamageDealt.length);
-
-    if (playerKills.length > 0) {
-      console.log(
-        '[DEBUG] First few kills:',
-        playerKills.slice(0, 3).map((k) => ({
-          victim: k.victim?.name,
-          killer: k.killer?.name,
-          timestamp: k._D,
-          weapon: this.getKillDamageCauserName(k),
-        }))
-      );
-    }
-    // Events where player is the victim
-    const playerDeaths = allKills.filter((k) => this.isPlayerNameMatch(k.victim?.name, playerName));
-    const playerKnockedDown = allKnockdowns.filter((k) =>
-      this.isPlayerNameMatch(k.victim?.name, playerName)
-    );
-
-    // Calculate weapon statistics
     const weaponStats = this.calculateWeaponStats(
       playerKills,
       playerKnockdowns,
       playerDamageDealt,
       playerFireCounts
     );
-
-    // Analyze kill chains
     const killChains = this.analyzeKillChains(playerKills);
-
-    // Calculate assists
-    const calculatedAssists = this.calculateAssists(playerName, allKills, allDamage, allKnockdowns);
-
-    // Calculate summary stats
-    const totalDamageDealt = playerDamageDealt.reduce((sum, d) => sum + d.damage, 0);
-    const totalDamageTaken = playerDamageTaken.reduce((sum, d) => sum + d.damage, 0);
+    const calculatedAssists = this.calculateAssists(player, allKills, allDamage, allKnockdowns);
+    const totalDamageDealt = playerDamageDealt.reduce((sum, event) => sum + event.damage, 0);
+    const totalDamageTaken = playerDamageTaken.reduce((sum, event) => sum + event.damage, 0);
     const kdRatio =
       playerDeaths.length > 0 ? playerKills.length / playerDeaths.length : playerKills.length;
-
-    // Calculate average kill distance, filtering out invalid distances
     const validKillDistances = playerKills
-      .map((k) => k.distance)
-      .filter((distance) => distance != null && !isNaN(distance) && distance > 0);
-
+      .map((event) => event.distance)
+      .filter((distance) => distance != null && !Number.isNaN(distance) && distance > 0);
     const avgKillDistance =
       validKillDistances.length > 0
         ? validKillDistances.reduce((sum, distance) => sum + distance, 0) /
           validKillDistances.length /
           100
         : 0;
-
-    const headshotKills = playerKills.filter((k) => k.damageReason === 'HeadShot').length;
+    const headshotKills = playerKills.filter((event) => event.damageReason === 'HeadShot').length;
     const headshotPercentage =
       playerKills.length > 0 ? (headshotKills / playerKills.length) * 100 : 0;
 
     return {
-      playerName,
-      matchStartTime, // Include the actual match start time
-      // Store raw events (using existing types!)
+      pubgId: player.pubgId,
+      playerName: player.name,
+      matchStartTime,
       killEvents: playerKills,
       knockdownEvents: playerKnockdowns,
       damageEvents: playerDamageDealt,
       reviveEvents: playerRevives,
-      // Events where player is the victim
       deathEvents: playerDeaths,
       knockedDownEvents: playerKnockedDown,
-      // Calculated analytics
       weaponStats,
       killChains,
       calculatedAssists,
@@ -255,7 +136,7 @@ export class TelemetryProcessorService {
       kdRatio,
       avgKillDistance,
       headshotPercentage,
-      killsPerMinute: 0, // Calculate based on match duration
+      killsPerMinute: 0,
     };
   }
 
@@ -456,88 +337,66 @@ export class TelemetryProcessorService {
     };
   }
 
-  /**
-   * Calculates assist contributions for kills performed by other players.
-   *
-   * An assist is awarded when a player:
-   * - Deals at least 20 damage to a victim within 10 seconds of their death, OR
-   * - Knocks down a victim within 10 seconds of their death
-   *
-   * Both damage and knockdown assists can be combined for a single kill.
-   *
-   * @param playerName - Name of the player to calculate assists for
-   * @param allKills - All kill events from the match
-   * @param allDamage - All damage events from the match
-   * @param allKnockdowns - All knockdown events from the match
-   * @returns Array of AssistInfo objects representing valid assist contributions
-   */
   private calculateAssists(
-    playerName: string,
+    player: MatchPlayerIdentity,
     allKills: LogPlayerKillV2[],
     allDamage: LogPlayerTakeDamage[],
     allKnockdowns: LogPlayerMakeGroggy[]
   ): AssistInfo[] {
     const assists: AssistInfo[] = [];
-    const ASSIST_TIME_WINDOW = 10 * 1000; // 10 seconds
-    const MIN_DAMAGE_THRESHOLD = 20;
+    const assistTimeWindowMs = 10_000;
+    const minimumDamage = 20;
 
     for (const kill of allKills) {
-      if (kill.killer?.name === playerName) continue; // Skip player's own kills
-
-      const killTime = new Date(kill._D!).getTime();
-      const victim = kill.victim?.name;
-      if (!victim) continue;
-
-      // Find damage dealt by this player to the victim before the kill
+      if (kill.killer?.accountId === player.pubgId) continue;
+      const victimPubgId = kill.victim?.accountId;
+      const victimName = kill.victim?.name;
+      if (!victimPubgId || !victimName || !kill._D) continue;
+      const killTime = new Date(kill._D).getTime();
       const playerDamageToVictim = allDamage.filter(
-        (d) =>
-          d.attacker?.name === playerName &&
-          d.victim?.name === victim &&
-          new Date(d._D!).getTime() < killTime &&
-          killTime - new Date(d._D!).getTime() <= ASSIST_TIME_WINDOW
+        (event) =>
+          event.attacker?.accountId === player.pubgId &&
+          event.victim?.accountId === victimPubgId &&
+          Boolean(event._D) &&
+          new Date(event._D!).getTime() < killTime &&
+          killTime - new Date(event._D!).getTime() <= assistTimeWindowMs
       );
-
-      // Find knockdowns by this player on the victim
       const playerKnockdownsOfVictim = allKnockdowns.filter(
-        (k) =>
-          k.attacker?.name === playerName &&
-          k.victim?.name === victim &&
-          new Date(k._D!).getTime() < killTime &&
-          killTime - new Date(k._D!).getTime() <= ASSIST_TIME_WINDOW
+        (event) =>
+          event.attacker?.accountId === player.pubgId &&
+          event.victim?.accountId === victimPubgId &&
+          Boolean(event._D) &&
+          new Date(event._D!).getTime() < killTime &&
+          killTime - new Date(event._D!).getTime() <= assistTimeWindowMs
       );
-
-      const totalDamage = playerDamageToVictim.reduce((sum, d) => sum + d.damage, 0);
+      const totalDamage = playerDamageToVictim.reduce((sum, event) => sum + event.damage, 0);
       const hasKnockdown = playerKnockdownsOfVictim.length > 0;
+      if (totalDamage < minimumDamage && !hasKnockdown) continue;
+      const allDamageToVictim = allDamage
+        .filter(
+          (event) =>
+            event.victim?.accountId === victimPubgId &&
+            Boolean(event._D) &&
+            new Date(event._D!).getTime() < killTime
+        )
+        .reduce((sum, event) => sum + event.damage, 0);
+      const assistType =
+        totalDamage >= minimumDamage && hasKnockdown
+          ? 'both'
+          : hasKnockdown
+            ? 'knockdown'
+            : 'damage';
+      const damageCauser =
+        playerDamageToVictim[0]?.damageCauserName ?? playerKnockdownsOfVictim[0]?.damageCauserName;
 
-      if (totalDamage >= MIN_DAMAGE_THRESHOLD || hasKnockdown) {
-        // Calculate total damage to victim from all players for percentage
-        const allDamageToVictim = allDamage
-          .filter((d) => d.victim?.name === victim && new Date(d._D!).getTime() < killTime)
-          .reduce((sum, d) => sum + d.damage, 0);
-
-        const assistType =
-          totalDamage >= MIN_DAMAGE_THRESHOLD && hasKnockdown
-            ? 'both'
-            : hasKnockdown
-              ? 'knockdown'
-              : 'damage';
-
-        const weapon =
-          playerDamageToVictim.length > 0
-            ? this.getReadableWeaponName(playerDamageToVictim[0].damageCauserName)
-            : playerKnockdownsOfVictim.length > 0
-              ? this.getReadableWeaponName(playerKnockdownsOfVictim[0].damageCauserName)
-              : 'Unknown';
-
-        assists.push({
-          assistingPlayer: playerName,
-          killedPlayer: victim,
-          damageDealt: totalDamage,
-          damagePercentage: allDamageToVictim > 0 ? (totalDamage / allDamageToVictim) * 100 : 0,
-          assistType,
-          weapon,
-        });
-      }
+      assists.push({
+        assistingPlayer: player.name,
+        killedPlayer: victimName,
+        damageDealt: totalDamage,
+        damagePercentage: allDamageToVictim > 0 ? (totalDamage / allDamageToVictim) * 100 : 0,
+        assistType,
+        weapon: damageCauser ? this.getReadableWeaponName(damageCauser) : 'Unknown',
+      });
     }
 
     return assists;

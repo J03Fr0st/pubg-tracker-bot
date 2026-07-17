@@ -6,6 +6,24 @@ import type {
   TelemetryEvent,
 } from '@j03fr0st/pubg-ts';
 import { TelemetryProcessorService } from '../../../src/services/telemetry-processor.service';
+import type { MatchPlayerIdentity } from '../../../src/types/match.types';
+
+const testPlayer: MatchPlayerIdentity = {
+  pubgId: 'account.test-player-1',
+  name: 'TestPlayer1',
+  rosterId: 'roster-1',
+};
+
+const identities: Record<string, MatchPlayerIdentity> = {
+  TestPlayer1: testPlayer,
+  SilentPlayer: {
+    pubgId: 'account.silent-player',
+    name: 'SilentPlayer',
+    rosterId: 'roster-1',
+  },
+  Player1: { pubgId: 'account.player-1', name: 'Player1', rosterId: 'roster-1' },
+  Player2: { pubgId: 'account.player-2', name: 'Player2', rosterId: 'roster-1' },
+};
 
 describe('TelemetryProcessorService', () => {
   let telemetryProcessor: TelemetryProcessorService;
@@ -15,12 +33,46 @@ describe('TelemetryProcessorService', () => {
   });
 
   describe('processMatchTelemetry', () => {
+    it('uses accountId when telemetry names are stale or duplicated', async () => {
+      const exactAccount = {
+        _D: '2024-01-01T10:00:00.000Z',
+        _T: 'LogPlayerKillV2',
+        killer: { accountId: 'account.test-player-1', name: 'OldDisplayName' },
+        victim: { accountId: 'account.enemy-1', name: 'EnemyOne' },
+        damageCauserName: 'WeapAK47_C',
+        distance: 15000,
+      } as LogPlayerKillV2;
+      const duplicateNameWrongAccount = {
+        _D: '2024-01-01T10:00:01.000Z',
+        _T: 'LogPlayerKillV2',
+        killer: { accountId: 'account.someone-else', name: 'TestPlayer1' },
+        victim: { accountId: 'account.enemy-2', name: 'EnemyTwo' },
+        damageCauserName: 'WeapM416_C',
+        distance: 10000,
+      } as LogPlayerKillV2;
+
+      const result = await telemetryProcessor.processMatchTelemetry(
+        [exactAccount, duplicateNameWrongAccount],
+        'identity-match',
+        new Date('2024-01-01T09:30:00.000Z'),
+        [testPlayer]
+      );
+
+      expect([...result.playerAnalyses.keys()]).toEqual(['account.test-player-1']);
+      expect(result.playerAnalyses.get('account.test-player-1')).toMatchObject({
+        pubgId: 'account.test-player-1',
+        playerName: 'TestPlayer1',
+        killEvents: [exactAccount],
+      });
+      expect(result.playerAnalyses.has('TestPlayer1')).toBe(false);
+    });
+
     it('should process basic telemetry data successfully', async () => {
       const mockKillEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'EnemyPlayer1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'EnemyPlayer1', accountId: 'account.enemy-player-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000, // 150m in cm
         damageReason: 'HeadShot',
@@ -29,15 +81,15 @@ describe('TelemetryProcessorService', () => {
       const mockDamageEvent = {
         _D: '2024-01-01T09:59:55.000Z',
         _T: 'LogPlayerTakeDamage',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'EnemyPlayer1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'EnemyPlayer1', accountId: 'account.enemy-player-1' },
         damageCauserName: 'WeapAK47_C',
         damage: 50,
       } as LogPlayerTakeDamage;
 
       const telemetryData: TelemetryEvent[] = [mockKillEvent, mockDamageEvent];
       const matchStartTime = new Date('2024-01-01T09:30:00.000Z');
-      const trackedPlayers = ['TestPlayer1'];
+      const trackedPlayers = [identities.TestPlayer1];
 
       const result = await telemetryProcessor.processMatchTelemetry(
         telemetryData,
@@ -51,7 +103,7 @@ describe('TelemetryProcessorService', () => {
       expect(result.totalEventsProcessed).toBe(2);
       expect(result.processingTimeMs).toBeGreaterThanOrEqual(0);
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis).toBeDefined();
       expect(playerAnalysis!.killEvents).toHaveLength(1);
       expect(playerAnalysis!.damageEvents).toHaveLength(1);
@@ -63,14 +115,14 @@ describe('TelemetryProcessorService', () => {
 
     it('should handle empty telemetry data', async () => {
       const result = await telemetryProcessor.processMatchTelemetry([], 'empty-match', new Date(), [
-        'TestPlayer1',
+        identities.TestPlayer1,
       ]);
 
       expect(result.matchId).toBe('empty-match');
       expect(result.playerAnalyses.size).toBe(1);
       expect(result.totalEventsProcessed).toBe(0);
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.killEvents).toHaveLength(0);
       expect(playerAnalysis!.weaponStats).toHaveLength(0);
       expect(playerAnalysis!.killChains).toHaveLength(0);
@@ -80,8 +132,8 @@ describe('TelemetryProcessorService', () => {
       const mockKillEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'UntrackedPlayer' },
-        victim: { name: 'TestPlayer1' },
+        killer: { name: 'UntrackedPlayer', accountId: 'account.untracked-player' },
+        victim: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
         damageCauserName: 'WeapM416_C',
         distance: 10000,
         damageReason: 'NonSpecific',
@@ -91,10 +143,10 @@ describe('TelemetryProcessorService', () => {
         [mockKillEvent],
         'filtered-match',
         new Date(),
-        ['TestPlayer1'] // Only tracking TestPlayer1, not UntrackedPlayer
+        [identities.TestPlayer1] // Only tracking TestPlayer1, not UntrackedPlayer
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.killEvents).toHaveLength(0); // No kills by TestPlayer1
       expect(playerAnalysis!.totalDamageDealt).toBe(0);
     });
@@ -105,8 +157,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 20000, // 200m
       } as LogPlayerKillV2;
@@ -114,8 +166,8 @@ describe('TelemetryProcessorService', () => {
       const knockdownEvent = {
         _D: '2024-01-01T10:00:05.000Z',
         _T: 'LogPlayerMakeGroggy',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy2' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000, // 150m
       } as LogPlayerMakeGroggy;
@@ -123,8 +175,8 @@ describe('TelemetryProcessorService', () => {
       const damageEvent = {
         _D: '2024-01-01T10:00:03.000Z',
         _T: 'LogPlayerTakeDamage',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         damage: 75,
       } as LogPlayerTakeDamage;
@@ -132,7 +184,7 @@ describe('TelemetryProcessorService', () => {
       const fireCountEvent = {
         _D: '2024-01-01T10:00:01.000Z',
         _T: 'LogWeaponFireCount',
-        character: { name: 'TestPlayer1' },
+        character: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
         weaponId: 'WeapAK47_C',
         fireCount: 10,
       } as LogWeaponFireCount;
@@ -141,10 +193,10 @@ describe('TelemetryProcessorService', () => {
         [killEvent, knockdownEvent, damageEvent, fireCountEvent],
         'weapon-stats-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.weaponStats).toHaveLength(1);
 
       const ak47Stats = playerAnalysis!.weaponStats[0];
@@ -163,8 +215,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         finishDamageInfo: {
           damageCauserName: 'WeapKar98k_C',
         },
@@ -175,10 +227,10 @@ describe('TelemetryProcessorService', () => {
         [killEvent],
         'nested-finish-damage-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.weaponStats).toHaveLength(1);
       expect(playerAnalysis!.weaponStats[0]).toMatchObject({
         weaponName: 'Kar98k',
@@ -191,8 +243,8 @@ describe('TelemetryProcessorService', () => {
       const killerDamageKill = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         finishDamageInfo: null,
         killerDamageInfo: [
           {
@@ -204,8 +256,8 @@ describe('TelemetryProcessorService', () => {
       const legacyKill = {
         _D: '2024-01-01T10:00:15.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy2' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapAK47_C',
         distance: 12000,
       } as LogPlayerKillV2;
@@ -214,10 +266,10 @@ describe('TelemetryProcessorService', () => {
         [killerDamageKill, legacyKill],
         'fallback-kill-weapon-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.weaponStats.map((stats) => stats.weaponName)).toEqual(['M24', 'AKM']);
       expect(playerAnalysis!.killChains[0].weaponsUsed).toEqual(['M24', 'AKM']);
     });
@@ -228,8 +280,8 @@ describe('TelemetryProcessorService', () => {
       const kill1 = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapM416_C',
         distance: 10000,
       } as LogPlayerKillV2;
@@ -237,8 +289,8 @@ describe('TelemetryProcessorService', () => {
       const kill2 = {
         _D: '2024-01-01T10:00:15.000Z', // 15 seconds later
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy2' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapM416_C',
         distance: 12000,
       } as LogPlayerKillV2;
@@ -246,8 +298,8 @@ describe('TelemetryProcessorService', () => {
       const kill3 = {
         _D: '2024-01-01T10:00:25.000Z', // 10 seconds after kill2
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy3' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy3', accountId: 'account.enemy-3' },
         damageCauserName: 'WeapAK47_C',
         distance: 8000,
       } as LogPlayerKillV2;
@@ -256,10 +308,10 @@ describe('TelemetryProcessorService', () => {
         [kill1, kill2, kill3],
         'kill-chain-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.killChains).toHaveLength(1);
 
       const killChain = playerAnalysis!.killChains[0];
@@ -272,8 +324,8 @@ describe('TelemetryProcessorService', () => {
       const kill1 = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapM416_C',
         distance: 10000,
       } as LogPlayerKillV2;
@@ -281,8 +333,8 @@ describe('TelemetryProcessorService', () => {
       const kill2 = {
         _D: '2024-01-01T10:00:35.000Z', // 35 seconds later (exceeds 30s window)
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy2' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapM416_C',
         distance: 12000,
       } as LogPlayerKillV2;
@@ -291,10 +343,10 @@ describe('TelemetryProcessorService', () => {
         [kill1, kill2],
         'broken-chain-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.killChains).toHaveLength(0); // No chains with 2+ kills
     });
   });
@@ -304,8 +356,8 @@ describe('TelemetryProcessorService', () => {
       const damageEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerTakeDamage',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapM416_C',
         damage: 50,
       } as LogPlayerTakeDamage;
@@ -313,8 +365,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:08.000Z', // 8 seconds later (within 10s window)
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Teammate1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'Teammate1', accountId: 'account.teammate-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -323,10 +375,10 @@ describe('TelemetryProcessorService', () => {
         [damageEvent, killEvent],
         'assist-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.calculatedAssists).toHaveLength(1);
 
       const assist = playerAnalysis!.calculatedAssists[0];
@@ -341,8 +393,8 @@ describe('TelemetryProcessorService', () => {
       const knockdownEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerMakeGroggy',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapSCAR_C',
         distance: 12000,
       } as LogPlayerMakeGroggy;
@@ -350,8 +402,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:05.000Z', // 5 seconds later
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Teammate1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'Teammate1', accountId: 'account.teammate-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -360,10 +412,10 @@ describe('TelemetryProcessorService', () => {
         [knockdownEvent, killEvent],
         'knockdown-assist-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.calculatedAssists).toHaveLength(1);
 
       const assist = playerAnalysis!.calculatedAssists[0];
@@ -375,8 +427,8 @@ describe('TelemetryProcessorService', () => {
       const damageEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerTakeDamage',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapM416_C',
         damage: 50,
       } as LogPlayerTakeDamage;
@@ -384,8 +436,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:15.000Z', // 15 seconds later (exceeds 10s window)
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Teammate1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'Teammate1', accountId: 'account.teammate-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -394,10 +446,10 @@ describe('TelemetryProcessorService', () => {
         [damageEvent, killEvent],
         'no-assist-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.calculatedAssists).toHaveLength(0);
     });
 
@@ -405,8 +457,8 @@ describe('TelemetryProcessorService', () => {
       const damageEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerTakeDamage',
-        attacker: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        attacker: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapM416_C',
         damage: 15, // Below 20 damage threshold
       } as LogPlayerTakeDamage;
@@ -414,8 +466,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:05.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Teammate1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'Teammate1', accountId: 'account.teammate-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -424,10 +476,10 @@ describe('TelemetryProcessorService', () => {
         [damageEvent, killEvent],
         'low-damage-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.calculatedAssists).toHaveLength(0);
     });
   });
@@ -437,8 +489,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -446,8 +498,8 @@ describe('TelemetryProcessorService', () => {
       const deathEvent = {
         _D: '2024-01-01T10:00:30.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Enemy2' },
-        victim: { name: 'TestPlayer1' },
+        killer: { name: 'Enemy2', accountId: 'account.enemy-2' },
+        victim: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
         damageCauserName: 'WeapM416_C',
         distance: 12000,
       } as LogPlayerKillV2;
@@ -456,10 +508,10 @@ describe('TelemetryProcessorService', () => {
         [killEvent, deathEvent],
         'kd-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.kdRatio).toBe(1.0); // 1 kill, 1 death = 1.0 K/D
     });
 
@@ -467,8 +519,8 @@ describe('TelemetryProcessorService', () => {
       const headshotKill = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         damageReason: 'HeadShot',
         distance: 15000,
@@ -477,8 +529,8 @@ describe('TelemetryProcessorService', () => {
       const bodyKill = {
         _D: '2024-01-01T10:00:15.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'TestPlayer1' },
-        victim: { name: 'Enemy2' },
+        killer: { name: 'TestPlayer1', accountId: 'account.test-player-1' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapAK47_C',
         damageReason: 'NonSpecific',
         distance: 12000,
@@ -488,10 +540,10 @@ describe('TelemetryProcessorService', () => {
         [headshotKill, bodyKill],
         'headshot-match',
         new Date(),
-        ['TestPlayer1']
+        [identities.TestPlayer1]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
+      const playerAnalysis = result.playerAnalyses.get(identities.TestPlayer1.pubgId);
       expect(playerAnalysis!.headshotPercentage).toBe(50); // 1 out of 2 kills = 50%
     });
   });
@@ -502,10 +554,10 @@ describe('TelemetryProcessorService', () => {
         [],
         'empty-player-match',
         new Date(),
-        ['SilentPlayer']
+        [identities.SilentPlayer]
       );
 
-      const playerAnalysis = result.playerAnalyses.get('SilentPlayer');
+      const playerAnalysis = result.playerAnalyses.get(identities.SilentPlayer.pubgId);
       expect(playerAnalysis).toBeDefined();
       expect(playerAnalysis!.killEvents).toHaveLength(0);
       expect(playerAnalysis!.weaponStats).toHaveLength(0);
@@ -518,8 +570,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent1 = {
         _D: '2024-01-01T10:00:00.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Player1' },
-        victim: { name: 'Enemy1' },
+        killer: { name: 'Player1', accountId: 'account.player-1' },
+        victim: { name: 'Enemy1', accountId: 'account.enemy-1' },
         damageCauserName: 'WeapAK47_C',
         distance: 15000,
       } as LogPlayerKillV2;
@@ -527,8 +579,8 @@ describe('TelemetryProcessorService', () => {
       const killEvent2 = {
         _D: '2024-01-01T10:00:05.000Z',
         _T: 'LogPlayerKillV2',
-        killer: { name: 'Player2' },
-        victim: { name: 'Enemy2' },
+        killer: { name: 'Player2', accountId: 'account.player-2' },
+        victim: { name: 'Enemy2', accountId: 'account.enemy-2' },
         damageCauserName: 'WeapM416_C',
         distance: 12000,
       } as LogPlayerKillV2;
@@ -537,13 +589,13 @@ describe('TelemetryProcessorService', () => {
         [killEvent1, killEvent2],
         'multi-player-match',
         new Date(),
-        ['Player1', 'Player2']
+        [identities.Player1, identities.Player2]
       );
 
       expect(result.playerAnalyses.size).toBe(2);
 
-      const player1Analysis = result.playerAnalyses.get('Player1');
-      const player2Analysis = result.playerAnalyses.get('Player2');
+      const player1Analysis = result.playerAnalyses.get(identities.Player1.pubgId);
+      const player2Analysis = result.playerAnalyses.get(identities.Player2.pubgId);
 
       expect(player1Analysis!.killEvents).toHaveLength(1);
       expect(player2Analysis!.killEvents).toHaveLength(1);

@@ -4,6 +4,7 @@ import type { MatchAnalysis, PlayerAnalysis } from '../../../src/types/analytics
 
 function makeAnalysis(overrides: Partial<PlayerAnalysis>): PlayerAnalysis {
   return {
+    pubgId: 'account.test-player',
     playerName: 'TestPlayer',
     matchStartTime: new Date('2024-01-01T10:00:00.000Z'),
     killEvents: [],

@@ -33,8 +33,9 @@ function createDependencies(): MatchPresentationDependencies {
   };
 }
 
-function createPlayerAnalysis(playerName: string): PlayerAnalysis {
+function createPlayerAnalysis(pubgId: string, playerName: string): PlayerAnalysis {
   return {
+    pubgId,
     playerName,
     matchStartTime: new Date('2026-07-14T08:00:00.000Z'),
     killEvents: [],
@@ -55,10 +56,10 @@ function createPlayerAnalysis(playerName: string): PlayerAnalysis {
   };
 }
 
-function createMatchAnalysis(matchId: string, playerName: string): MatchAnalysis {
+function createMatchAnalysis(matchId: string, pubgId: string, playerName: string): MatchAnalysis {
   return {
     matchId,
-    playerAnalyses: new Map([[playerName, createPlayerAnalysis(playerName)]]),
+    playerAnalyses: new Map([[pubgId, createPlayerAnalysis(pubgId, playerName)]]),
     processingTimeMs: 5,
     totalEventsProcessed: 0,
   };
@@ -117,7 +118,7 @@ describe('MatchPresentationService', () => {
 
   it('uses roster participants for totals and order but enhances only monitored players', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('role-match', 'MonitoredPlayer');
+    const matchAnalysis = createMatchAnalysis('role-match', 'account.monitored', 'MonitoredPlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -179,7 +180,7 @@ describe('MatchPresentationService', () => {
     const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry').mockResolvedValue([]);
     const processTelemetry = jest
       .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
-      .mockResolvedValue(createMatchAnalysis('live-match', 'LivePlayer'));
+      .mockResolvedValue(createMatchAnalysis('live-match', 'account.live', 'LivePlayer'));
     jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
     jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
     const service = new MatchPresentationService(deps);
@@ -201,9 +202,12 @@ describe('MatchPresentationService', () => {
 
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
     expect(liveTelemetry).toHaveBeenCalledWith('live-match');
-    expect(processTelemetry).toHaveBeenCalledWith([], 'live-match', summary.playedAt, [
-      'LivePlayer',
-    ]);
+    expect(processTelemetry).toHaveBeenCalledWith(
+      [],
+      'live-match',
+      summary.playedAt,
+      summary.monitoredPlayers
+    );
   });
 
   it('keeps enhanced delivery nonblocking when saving the live telemetry cache fails', async () => {
@@ -215,7 +219,7 @@ describe('MatchPresentationService', () => {
         common: { isGame: 1 },
       },
     ];
-    const matchAnalysis = createMatchAnalysis('cache-save-failure', 'LivePlayer');
+    const matchAnalysis = createMatchAnalysis('cache-save-failure', 'account.live', 'LivePlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
     const saveTelemetry = jest
       .spyOn(deps.telemetryRepository, 'saveTelemetry')
@@ -248,7 +252,7 @@ describe('MatchPresentationService', () => {
 
   it('renders identical full embed data from the same live and cached telemetry fixture', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cache-parity', 'ParityPlayer');
+    const matchAnalysis = createMatchAnalysis('cache-parity', 'account.parity', 'ParityPlayer');
     const rawEvents: TelemetryEvent[] = [];
     jest
       .spyOn(deps.telemetryRepository, 'getTelemetry')
@@ -282,7 +286,7 @@ describe('MatchPresentationService', () => {
 
   it('uses cached telemetry without a live fetch and still creates coaching', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cached-match', 'CachedPlayer');
+    const matchAnalysis = createMatchAnalysis('cached-match', 'account.cached', 'CachedPlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -324,8 +328,8 @@ describe('MatchPresentationService', () => {
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('opponent-match', 'TrackedPlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('TrackedPlayer');
+    const matchAnalysis = createMatchAnalysis('opponent-match', 'account.tracked', 'TrackedPlayer');
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.tracked');
     if (!playerAnalysis) {
       throw new Error('Expected tracked player analysis');
     }
@@ -389,7 +393,7 @@ describe('MatchPresentationService', () => {
 
   it('uses summary lobby players, counts bots, and omits humans without stats', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('lobby-match', 'LobbyPlayer');
+    const matchAnalysis = createMatchAnalysis('lobby-match', 'account.ranked', 'LobbyPlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -436,8 +440,12 @@ describe('MatchPresentationService', () => {
 
   it('keeps long enhanced timelines within the Discord description limit', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('timeline-match', 'TimelinePlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('TimelinePlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'timeline-match',
+      'account.timeline',
+      'TimelinePlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.timeline');
     if (!playerAnalysis) {
       throw new Error('Expected timeline player analysis');
     }
@@ -507,7 +515,7 @@ describe('MatchPresentationService', () => {
     const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry').mockResolvedValue([]);
     jest
       .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
-      .mockResolvedValue(createMatchAnalysis('corrupt-match', 'CorruptPlayer'));
+      .mockResolvedValue(createMatchAnalysis('corrupt-match', 'account.corrupt', 'CorruptPlayer'));
     jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
     jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
     const warning = jest.spyOn(logger, 'warn').mockImplementation();
@@ -538,8 +546,12 @@ describe('MatchPresentationService', () => {
 
   it('warns and treats a cache lookup failure as a live telemetry miss', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cache-error-match', 'CacheErrorPlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('CacheErrorPlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'cache-error-match',
+      'account.cache-error',
+      'CacheErrorPlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.cache-error');
     if (!playerAnalysis) {
       throw new Error('Expected cache error player analysis');
     }
@@ -662,8 +674,12 @@ describe('MatchPresentationService', () => {
       lobbyParticipants: [],
     });
     const expected = await service.createEmbeds(basicSummary);
-    const matchAnalysis = createMatchAnalysis('pristine-fallback', 'PristinePlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('PristinePlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'pristine-fallback',
+      'account.pristine',
+      'PristinePlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.pristine');
     if (!playerAnalysis) {
       throw new Error('Expected pristine player analysis');
     }
@@ -714,7 +730,11 @@ describe('MatchPresentationService', () => {
 
   it('keeps match and enhanced player embeds when coaching fails', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('coaching-failure', 'CoachedPlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'coaching-failure',
+      'account.coached',
+      'CoachedPlayer'
+    );
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,

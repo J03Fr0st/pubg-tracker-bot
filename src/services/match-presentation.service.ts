@@ -127,7 +127,7 @@ export class MatchPresentationService {
       );
       const playerEmbeds = rosterParticipants.map((participant) => {
         const analysis = monitoredPubgIds.has(participant.pubgId)
-          ? matchAnalysis.playerAnalyses.get(participant.name)
+          ? matchAnalysis.playerAnalyses.get(participant.pubgId)
           : undefined;
         return analysis
           ? this.createEnhancedPlayerEmbed(
@@ -176,7 +176,7 @@ export class MatchPresentationService {
       rawEvents,
       summary.matchId,
       summary.playedAt,
-      summary.monitoredPlayers.map((participant) => participant.name)
+      summary.monitoredPlayers
     );
     this.deps.telemetryRepository
       .saveTelemetry(rawEvents, matchAnalysis)
@@ -602,19 +602,17 @@ export class MatchPresentationService {
 
   private collectOpponentAccountIds(
     matchAnalysis: MatchAnalysis,
-    players: MatchSummaryParticipant[]
+    monitoredPlayers: MatchSummaryParticipant[]
   ): string[] {
-    const trackedAccountIds = new Set(players.map((player) => player.pubgId));
+    const monitoredAccountIds = new Set(monitoredPlayers.map((participant) => participant.pubgId));
     const opponentAccountIds = new Set<string>();
     const addOpponent = (accountId?: string) => {
-      if (!accountId || trackedAccountIds.has(accountId) || isBotAccountId(accountId)) {
-        return;
-      }
+      if (!accountId || monitoredAccountIds.has(accountId) || isBotAccountId(accountId)) return;
       opponentAccountIds.add(accountId);
     };
 
-    for (const player of players) {
-      const analysis = matchAnalysis.playerAnalyses.get(player.name);
+    for (const player of monitoredPlayers) {
+      const analysis = matchAnalysis.playerAnalyses.get(player.pubgId);
       if (!analysis) continue;
       for (const event of analysis.killEvents) addOpponent(event.victim?.accountId);
       for (const event of analysis.deathEvents) addOpponent(event.killer?.accountId);
