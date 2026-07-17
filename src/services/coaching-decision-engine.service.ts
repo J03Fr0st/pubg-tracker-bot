@@ -501,6 +501,16 @@ export class CoachingDecisionEngineService {
     return heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
   }
 
+  private hasResetAfterHeavyDamage(context: FightContext): boolean {
+    const heavyDamage = this.getHeavyDamage(context);
+    if (!heavyDamage) return false;
+    return context.resetEvents.some(
+      (event) =>
+        event.timestamp.getTime() > heavyDamage.timestamp.getTime() &&
+        event.timestamp.getTime() <= context.timestamp.getTime()
+    );
+  }
+
   private isBadReset(context: FightContext): boolean {
     const resetWindow = this.getResetWindowSeconds(context);
     return Boolean(
@@ -508,6 +518,7 @@ export class CoachingDecisionEngineService {
         resetWindow !== undefined &&
         resetWindow >= COACHING_THRESHOLDS.minimumResetWindowSeconds &&
         context.repeatedSameEnemy &&
+        !this.hasResetAfterHeavyDamage(context) &&
         (context.repositionDistanceMeters === undefined ||
           context.repositionDistanceMeters < COACHING_THRESHOLDS.meaningfulRepositionMeters)
     );
@@ -659,11 +670,10 @@ export class CoachingDecisionEngineService {
     const heavyDamage = this.getHeavyDamage(context);
     const seconds = this.getResetWindowSeconds(context);
     if (
-      context.repeatedSameEnemy &&
+      this.isBadReset(context) &&
       heavyDamage &&
       context.enemyName &&
-      seconds !== undefined &&
-      seconds >= COACHING_THRESHOLDS.minimumResetWindowSeconds
+      seconds !== undefined
     ) {
       claims.push({
         text: `${context.enemyName} hit you for ${heavyDamage.damage} damage, then ${seconds}s later you ${context.outcome === 'death' ? 'died' : 'got knocked'} to the same player before creating a reset.`,

@@ -269,6 +269,29 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights[2].evidence[0]).toContain('Aggressive re-peeker');
   });
 
+  it('suppresses bad-reset claims, patterns, and fingerprints after recovery telemetry', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const firstDeath = makeDeath({ seconds: 600 });
+    const secondDeath = makeDeath({ seconds: 700 });
+    const insights = new CoachingDecisionEngineService().createInsights(
+      makeInput({
+        analyses: [makeAnalysis(player, { deathEvents: [firstDeath, secondDeath] })],
+        telemetryEvents: [
+          makeDamage({ seconds: 594 }),
+          makeHeal(597),
+          makeDamage({ seconds: 694 }),
+          makeHeal(697),
+        ],
+      })
+    );
+    const evidence = insights.flatMap((insight) => insight.evidence).join(' ');
+
+    expect(evidence).not.toContain('before creating a reset');
+    expect(evidence).not.toContain('heavy damage was followed by no reset');
+    expect(evidence).not.toContain('Aggressive re-peeker');
+    expect(insights.some((insight) => insight.kind === 'pattern')).toBe(false);
+  });
+
   it('uses teammate raw damage to avoid a false missed-trade claim', () => {
     const player = identity('account.player', 'TestPlayer');
     const teammate = identity('account.teammate', 'TeamMate');
