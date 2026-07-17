@@ -348,6 +348,35 @@ describe('CoachingDecisionEngineService', () => {
     );
   });
 
+  it('does not use a teammate decisive position logged after the reviewed event', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const reviewedDeath = makeDeath({ seconds: 600 });
+    const futureTeammateDeath = makeDeath({
+      seconds: 700,
+      killer: actor('OtherEnemy', 'account.other', { x: 9100, y: 0, z: 0 }),
+      victim: actor('TeamMate', 'account.teammate', { x: 9000, y: 0, z: 0 }),
+    });
+
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          monitoredPlayers: [player, teammate],
+          analyses: [
+            makeAnalysis(player, { deathEvents: [reviewedDeath] }),
+            makeAnalysis(teammate, { deathEvents: [futureTeammateDeath] }),
+          ],
+          telemetryEvents: [makeDamage({ seconds: 594 })],
+        })
+      )
+      .filter((insight) => insight.playerName === 'TestPlayer')
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('nearest tracked teammate');
+    expect(evidence).not.toContain('TeamMate was');
+  });
+
   it('treats only null roster IDs as absent', () => {
     const player = identity('account.player', 'TestPlayer', '');
     const teammate = identity('account.teammate', 'TeamMate', '');

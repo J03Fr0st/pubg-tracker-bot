@@ -371,7 +371,7 @@ export class CoachingDecisionEngineService {
         );
         const position =
           latestDamagePosition ??
-          (analysis ? this.getLastKnownPlayerPosition(analysis) : undefined);
+          (analysis ? this.getLastKnownPlayerPosition(analysis, decisiveTime) : undefined);
         return position
           ? {
               player: candidate,
@@ -440,9 +440,19 @@ export class CoachingDecisionEngineService {
       });
   }
 
-  private getLastKnownPlayerPosition(analysis: PlayerAnalysis): Position | undefined {
-    const decisiveEvent = this.getDecisiveEvents(analysis)[0];
-    return decisiveEvent ? this.getActorPosition(decisiveEvent.victim) : undefined;
+  private getLastKnownPlayerPosition(
+    analysis: PlayerAnalysis,
+    decisiveTime: Date
+  ): Position | undefined {
+    const event = this.getDecisiveEvents(analysis)
+      .map((decisiveEvent) => ({ decisiveEvent, timestamp: this.getEventTime(decisiveEvent) }))
+      .filter(
+        (entry): entry is { decisiveEvent: DecisiveEvent; timestamp: Date } =>
+          entry.timestamp !== null && entry.timestamp.getTime() <= decisiveTime.getTime()
+      )
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]
+      ?.decisiveEvent;
+    return event ? this.getActorPosition(event.victim) : undefined;
   }
 
   private getRepositionDistanceMeters(
