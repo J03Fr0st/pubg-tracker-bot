@@ -1,40 +1,66 @@
 import { CoachingNarratorService } from '../../../src/services/coaching-narrator.service';
 import type { CoachingInsight, CoachingLlmClient } from '../../../src/types/coaching.types';
 
-const insight: CoachingInsight = {
-  playerName: 'TestPlayer',
-  category: 'fight-reset',
-  timestamp: new Date('2024-01-01T10:18:42.000Z'),
-  matchTimeSeconds: 1122,
-  severity: 'high',
-  confidence: 'high',
-  evidence: ['Took 83 damage from EnemyOne', 'Died to EnemyOne 6s later'],
-  recommendation:
-    'Break line of sight, heal, or force a new angle before challenging the same player again.',
-};
+const options = { enabled: true, maxLineLength: 240 };
 
-const enrichedInsight: CoachingInsight = {
-  playerName: 'Aculite',
+const insight: CoachingInsight = {
+  playerName: 'Alice',
   category: 'decisive-mistake',
   kind: 'decisive-mistake',
   title: 'Decisive mistake',
-  timestamp: new Date('2026-05-25T16:27:19.510Z'),
-  matchTimeSeconds: 841,
+  timestamp: new Date('2026-07-17T12:02:00.000Z'),
+  matchTimeSeconds: 120,
   severity: 'high',
-  confidence: 'high',
+  confidence: 'medium',
   evidence: [
-    'You took 67 damage from EnemyOne, healed zero, moved 8m, then died to the same player with M416.',
-    'You took 31 blue-zone damage in the 60s before this fight.',
+    'Alice took 80 damage from Bob at 2:00.',
+    'Bob eliminated Alice 6s later with M416.',
   ],
-  recommendation:
-    'Rotate earlier, break line of sight, heal, then re-engage only from a new angle.',
-  betterPlay: [
-    'rotate earlier before taking optional fights',
-    'break line of sight',
-    'heal before re-engaging',
-    'force a new angle',
+  recommendation: 'Break line of sight and heal before re-engaging.',
+  betterPlay: ['break line of sight', 'heal before re-engaging'],
+};
+
+const secondInsight: CoachingInsight = {
+  ...insight,
+  playerName: 'Carol',
+  category: 'pattern',
+  kind: 'pattern',
+  title: 'Pattern to fix',
+  matchTimeSeconds: 180,
+  evidence: ['Carol took 40 damage from Dave at 3:00.'],
+  recommendation: 'Reposition before re-engaging.',
+  betterPlay: ['reposition before re-engaging'],
+};
+
+const validNarration = {
+  sections: [
+    {
+      playerName: 'Alice',
+      title: 'Decisive mistake',
+      lines: [
+        '2:00 - Decisive mistake: Alice took 80 damage from Bob.',
+        'Bob eliminated Alice 6s later with M416.',
+        'Do this: break line of sight and heal before re-engaging.',
+      ],
+    },
   ],
 };
+
+function makeLlmClient(value: unknown): CoachingLlmClient {
+  return { narrate: jest.fn().mockResolvedValue(value) };
+}
+
+async function expectTemplateFallback(
+  value: unknown,
+  insights: CoachingInsight[] = [insight]
+): Promise<void> {
+  const actual = await new CoachingNarratorService(makeLlmClient(value), options).narrate(insights);
+  const expected = await new CoachingNarratorService(undefined, {
+    enabled: false,
+    maxLineLength: options.maxLineLength,
+  }).narrate(insights);
+  expect(actual).toEqual(expected);
+}
 
 describe('CoachingNarratorService', () => {
   it('formats deterministic template narration when LLM is disabled', async () => {
@@ -45,188 +71,168 @@ describe('CoachingNarratorService', () => {
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections).toHaveLength(1);
-    expect(narration.sections[0].playerName).toBe('TestPlayer');
-    expect(narration.sections[0].lines[0]).toContain('18:42 - Fight Reset');
-    expect(narration.sections[0].lines[1]).toBe('- Took 83 damage from EnemyOne');
-    expect(narration.sections[0].lines[2]).toBe('- Died to EnemyOne 6s later');
-    expect(narration.sections[0].lines[3]).toContain('Do this: Break line of sight');
-    expect(narration.sections[0].lines.join('\n')).not.toContain(';');
+    expect(narration).toEqual({
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: [
+            '2:00 - Decisive mistake',
+            '- Alice took 80 damage from Bob at 2:00.',
+            '- Bob eliminated Alice 6s later with M416.',
+            'Do this: Break line of sight and heal before re-engaging.',
+          ],
+        },
+      ],
+    });
   });
 
-  it('uses valid LLM narration when enabled', async () => {
-    const llmClient: CoachingLlmClient = {
-      narrate: jest.fn().mockResolvedValue({
-        sections: [
-          {
-            playerName: 'TestPlayer',
-            lines: [
-              '18:42 - Fight Reset: You took 83 damage and died 6s later to the same player. Break line of sight and heal before challenging again.',
-            ],
-          },
-        ],
-      }),
-    };
-    const service = new CoachingNarratorService(llmClient, {
-      enabled: true,
-      maxLineLength: 240,
-    });
+  it('returns empty template narration without calling the LLM for no insights', async () => {
+    const llmClient = makeLlmClient(validNarration);
+    const service = new CoachingNarratorService(llmClient, options);
+
+    await expect(service.narrate([])).resolves.toEqual({ sections: [] });
+    expect(llmClient.narrate).not.toHaveBeenCalled();
+  });
+
+  it('reconstructs structurally valid model narration', async () => {
+    const llmClient = makeLlmClient(validNarration);
+    const service = new CoachingNarratorService(llmClient, options);
 
     const narration = await service.narrate([insight]);
 
     expect(llmClient.narrate).toHaveBeenCalledWith([insight]);
-    expect(narration.sections[0].lines[0]).toContain('You took 83 damage');
+    expect(narration).toEqual(validNarration);
+    expect(narration).not.toBe(validNarration);
+    expect(narration.sections[0]).not.toBe(validNarration.sections[0]);
+    expect(narration.sections[0].lines).not.toBe(validNarration.sections[0].lines);
   });
 
-  it('falls back to template narration when LLM throws', async () => {
+  it('falls back to template narration when the LLM throws', async () => {
     const llmClient: CoachingLlmClient = {
       narrate: jest.fn().mockRejectedValue(new Error('OpenRouter timeout')),
     };
-    const service = new CoachingNarratorService(llmClient, {
-      enabled: true,
-      maxLineLength: 240,
-    });
+    const service = new CoachingNarratorService(llmClient, options);
 
     const narration = await service.narrate([insight]);
 
-    expect(narration.sections[0].lines.join('\n')).toContain('Took 83 damage from EnemyOne');
+    expect(narration.sections[0].lines).toContain('- Alice took 80 damage from Bob at 2:00.');
   });
 
-  it('rejects LLM narration that invents a new player name', async () => {
-    const llmClient: CoachingLlmClient = {
-      narrate: jest.fn().mockResolvedValue({
-        sections: [
-          {
-            playerName: 'TestPlayer',
-            lines: ['18:42 - Fight Reset: EnemyTwo punished your swing. Heal before re-engaging.'],
-          },
-        ],
-      }),
-    };
-    const service = new CoachingNarratorService(llmClient, {
-      enabled: true,
-      maxLineLength: 240,
-    });
-
-    const narration = await service.narrate([insight]);
-
-    const fallbackText = narration.sections[0].lines.join('\n');
-    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
-    expect(fallbackText).not.toContain('EnemyTwo');
-  });
-
-  it('formats decisive mistake and pattern section titles', async () => {
-    const service = new CoachingNarratorService(undefined, {
-      enabled: false,
-      maxLineLength: 280,
-    });
-
-    const narration = await service.narrate([
+  it.each([
+    ['null root', null],
+    ['array root', []],
+    ['missing sections', {}],
+    ['unknown root field', { sections: validNarration.sections, extra: true }],
+    ['non-array sections', { sections: 'invalid' }],
+    ['empty sections', { sections: [] }],
+    ['null section', { sections: [null] }],
+    [
+      'unknown section field',
       {
-        ...insight,
-        category: 'decisive-mistake',
-        kind: 'decisive-mistake',
-        title: 'Decisive mistake',
+        sections: [
+          {
+            ...validNarration.sections[0],
+            severity: 'high',
+          },
+        ],
       },
+    ],
+    [
+      'wrong player',
       {
-        ...insight,
-        category: 'pattern',
-        kind: 'pattern',
-        title: 'Pattern to fix',
-        recommendation: 'Stop giving the same enemy a second clean fight.',
+        sections: [{ ...validNarration.sections[0], playerName: 'Mallory' }],
       },
+    ],
+    [
+      'missing title',
       {
-        ...insight,
-        category: 'player-fingerprint',
-        kind: 'player-fingerprint',
-        title: 'Player fingerprint',
-        evidence: ['Aggressive re-peeker: 2 of 2 reviewed fights matched this telemetry pattern.'],
-        recommendation: 'Treat first damage as a reset trigger.',
+        sections: [
+          {
+            playerName: 'Alice',
+            lines: validNarration.sections[0].lines,
+          },
+        ],
       },
-    ]);
-
-    expect(narration.sections[0].title).toBe('Decisive mistake');
-    expect(narration.sections[1].title).toBe('Pattern to fix');
-    expect(narration.sections[2].title).toBe('Player fingerprint');
-    expect(narration.sections[2].lines[0]).toContain('Player fingerprint');
+    ],
+    [
+      'wrong title',
+      {
+        sections: [{ ...validNarration.sections[0], title: 'Pattern to fix' }],
+      },
+    ],
+    [
+      'non-array lines',
+      {
+        sections: [{ ...validNarration.sections[0], lines: 'invalid' }],
+      },
+    ],
+    [
+      'empty lines',
+      {
+        sections: [{ ...validNarration.sections[0], lines: [] }],
+      },
+    ],
+    [
+      'non-string line',
+      {
+        sections: [{ ...validNarration.sections[0], lines: [42] }],
+      },
+    ],
+    [
+      'blank line',
+      {
+        sections: [{ ...validNarration.sections[0], lines: ['   '] }],
+      },
+    ],
+    [
+      'oversized line',
+      {
+        sections: [{ ...validNarration.sections[0], lines: ['x'.repeat(241)] }],
+      },
+    ],
+  ])('falls back for a malformed %s', async (_caseName, value) => {
+    await expectTemplateFallback(value);
   });
 
-  it('formats enriched death-review and zone-pressure evidence in template narration', async () => {
-    const service = new CoachingNarratorService(undefined, {
-      enabled: false,
-      maxLineLength: 240,
-    });
-
-    const narration = await service.narrate([enrichedInsight]);
-    const text = narration.sections[0].lines.join('\n');
-
-    expect(text).toContain('14:01 - Decisive mistake');
-    expect(text).toContain('died to the same player with M416');
-    expect(text).toContain('31 blue-zone damage in the 60s before this fight');
-    expect(text).toContain('Do this: Rotate earlier');
-    expect(narration.sections[0].lines.every((line) => line.length <= 240)).toBe(true);
+  it('rejects the wrong section count', async () => {
+    await expectTemplateFallback(validNarration, [insight, secondInsight]);
   });
 
-  it('rejects LLM narration that invents a new distance', async () => {
-    const llmClient: CoachingLlmClient = {
-      narrate: jest.fn().mockResolvedValue({
+  it('rejects sections in the wrong insight order', async () => {
+    await expectTemplateFallback(
+      {
         sections: [
           {
-            playerName: 'TestPlayer',
-            title: 'Decisive mistake',
-            lines: ['You were 999m away from trade pressure.'],
+            playerName: 'Carol',
+            title: 'Pattern to fix',
+            lines: ['Carol took 40 damage from Dave at 3:00.'],
           },
+          validNarration.sections[0],
         ],
-      }),
-    };
-    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
-
-    const narration = await service.narrate([insight]);
-
-    const fallbackText = narration.sections[0].lines.join('\n');
-    expect(fallbackText).not.toContain('999m');
-    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
+      },
+      [insight, secondInsight]
+    );
   });
 
-  it('rejects unsupported terrain labels from LLM output', async () => {
-    const llmClient: CoachingLlmClient = {
-      narrate: jest.fn().mockResolvedValue({
+  it('rejects a title when the corresponding insight has no title', async () => {
+    const untitledInsight: CoachingInsight = {
+      ...insight,
+      title: undefined,
+      kind: undefined,
+      category: 'fight-reset',
+    };
+    await expectTemplateFallback(
+      {
         sections: [
           {
-            playerName: 'TestPlayer',
+            playerName: 'Alice',
             title: 'Decisive mistake',
-            lines: ['You died because you crossed a field with no cover.'],
+            lines: validNarration.sections[0].lines,
           },
         ],
-      }),
-    };
-    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
-
-    const narration = await service.narrate([insight]);
-
-    const fallbackText = narration.sections[0].lines.join('\n');
-    expect(fallbackText).not.toContain('field');
-    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
-  });
-
-  it('rejects advice outside supplied better plays', async () => {
-    const llmClient: CoachingLlmClient = {
-      narrate: jest.fn().mockResolvedValue({
-        sections: [
-          {
-            playerName: 'TestPlayer',
-            title: 'Decisive mistake',
-            lines: ['You should have thrown a smoke and crashed the compound.'],
-          },
-        ],
-      }),
-    };
-    const service = new CoachingNarratorService(llmClient, { enabled: true, maxLineLength: 240 });
-
-    const narration = await service.narrate([insight]);
-
-    const fallbackText = narration.sections[0].lines.join('\n');
-    expect(fallbackText).not.toContain('smoke');
-    expect(fallbackText).toContain('Took 83 damage from EnemyOne');
+      },
+      [untitledInsight]
+    );
   });
 });

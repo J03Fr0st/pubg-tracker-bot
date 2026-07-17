@@ -54,7 +54,7 @@ export interface CoachingNarration {
 }
 
 export interface CoachingLlmClient {
-  narrate(insights: CoachingInsight[]): Promise<CoachingNarration>;
+  narrate(insights: CoachingInsight[]): Promise<unknown>;
 }
 
 export interface CoachingNarratorOptions {
