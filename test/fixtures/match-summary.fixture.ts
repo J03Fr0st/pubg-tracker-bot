@@ -1,7 +1,7 @@
 import type {
   MatchParticipantStats,
   MatchSummary,
-  MatchSummaryPlayer,
+  MatchSummaryParticipant,
 } from '../../src/types/match.types';
 
 export const MATCH_PLAYED_AT = new Date('2026-07-14T08:00:00.000Z');
@@ -35,16 +35,35 @@ export function makeMatchParticipantStats(
   };
 }
 
-type MatchSummaryFixtureInput = Omit<MatchSummary, 'playedAt' | 'lobbyPlayers'> & {
-  playedAt?: Date;
-  lobbyPlayers?: MatchSummaryPlayer[];
+type ParticipantInput = Omit<MatchSummaryParticipant, 'rosterId'> & {
+  rosterId?: string | null;
 };
 
+type MatchSummaryFixtureInput = Omit<
+  MatchSummary,
+  'playedAt' | 'rosterParticipants' | 'monitoredPlayers' | 'lobbyParticipants'
+> & {
+  playedAt?: Date;
+  rosterParticipants: ParticipantInput[];
+  monitoredPlayers?: ParticipantInput[];
+  lobbyParticipants?: ParticipantInput[];
+};
+
+function withRosterId(participant: ParticipantInput): MatchSummaryParticipant {
+  return {
+    ...participant,
+    rosterId: participant.rosterId === undefined ? 'roster-1' : participant.rosterId,
+  };
+}
+
 export function makeMatchSummary(input: MatchSummaryFixtureInput): MatchSummary {
+  const rosterParticipants = input.rosterParticipants.map(withRosterId);
   return {
     ...input,
     playedAt: input.playedAt ?? new Date(MATCH_PLAYED_AT.getTime()),
-    lobbyPlayers: input.lobbyPlayers ?? input.players,
+    rosterParticipants,
+    monitoredPlayers: (input.monitoredPlayers ?? input.rosterParticipants).map(withRosterId),
+    lobbyParticipants: (input.lobbyParticipants ?? input.rosterParticipants).map(withRosterId),
   };
 }
 

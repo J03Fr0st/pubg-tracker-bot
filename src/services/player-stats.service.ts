@@ -1,16 +1,14 @@
 import type { GameMode, PubgClient, Shard } from '@j03fr0st/pubg-ts';
 import type {
+  SeasonCacheKey,
   SeasonCacheRepository,
-  UpsertSeasonCacheData,
+  SeasonCacheWrite,
+  SeasonStats,
 } from '../data/repositories/season-cache.repository';
 import { debug, warn } from '../utils/logger';
 
-export interface SeasonStatsResult {
-  kd: number;
-  adr: number;
-}
+export type SeasonStatsResult = SeasonStats;
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SEASON_STATS_BATCH_SIZE = 10;
 
 interface PubgModeStats {
@@ -49,11 +47,14 @@ export class PlayerStatsService {
     accountIds: string[],
     gameMode: string
   ): Promise<Map<string, SeasonStatsResult>> {
-    const results = new Map<string, SeasonStatsResult>();
-    if (accountIds.length === 0) return results;
+    if (accountIds.length === 0) return new Map();
 
     const seasonId = await this.ensureSeasonId();
-    const now = Date.now();
+    const key: SeasonCacheKey = {
+      platform: this.platform,
+      seasonId,
+      gameMode,
+    };
 
     debug('Season stats lookup started', {
       platform: this.platform,
@@ -63,29 +64,12 @@ export class PlayerStatsService {
       accountIds,
     });
 
-    // Check cache
-    const cached = await this.repository.findByAccountIds(
-      accountIds,
-      this.platform,
-      seasonId,
-      gameMode
-    );
+    const { freshStats: results, missingAccountIds: toFetch } =
+      await this.repository.findFreshStats(key, accountIds);
 
-    const freshIds = new Set<string>();
-    for (const entry of cached) {
-      const age = now - new Date(entry.cachedAt).getTime();
-      if (age < CACHE_TTL_MS) {
-        results.set(entry.accountId, { kd: entry.kd, adr: entry.adr });
-        freshIds.add(entry.accountId);
-      }
-    }
-
-    // Fetch missing/stale from API
-    const toFetch = accountIds.filter((id) => !freshIds.has(id));
     debug('Season stats cache check complete', {
       requestedCount: accountIds.length,
-      cachedCount: cached.length,
-      freshCount: freshIds.size,
+      freshCount: results.size,
       apiFetchCount: toFetch.length,
     });
 
@@ -97,7 +81,7 @@ export class PlayerStatsService {
     }
 
     debug(`Fetching season stats for ${toFetch.length} players from API`);
-    const upserts: UpsertSeasonCacheData[] = [];
+    const upserts: SeasonCacheWrite[] = [];
 
     const batches = this.chunk(toFetch, SEASON_STATS_BATCH_SIZE);
     await Promise.all(
@@ -118,7 +102,7 @@ export class PlayerStatsService {
     // Cache results
     if (upserts.length > 0) {
       this.repository
-        .upsertStats(upserts)
+        .upsertStats(key, upserts)
         .catch((err) => warn(`Failed to cache season stats: ${err}`));
     }
 
@@ -130,7 +114,7 @@ export class PlayerStatsService {
     seasonId: string,
     gameMode: string,
     results: Map<string, SeasonStatsResult>,
-    upserts: UpsertSeasonCacheData[]
+    upserts: SeasonCacheWrite[]
   ): Promise<void> {
     try {
       const statsResults = await this.fetchBatchModeStats(accountIds, seasonId, gameMode);
@@ -169,10 +153,7 @@ export class PlayerStatsService {
 
           results.set(accountId, rounded);
           upserts.push({
-            platform: this.platform,
             accountId,
-            seasonId,
-            gameMode,
             kd: rounded.kd,
             adr: rounded.adr,
             wins: modeStats.wins ?? 0,

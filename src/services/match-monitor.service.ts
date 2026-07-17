@@ -127,31 +127,30 @@ export class MatchMonitorService {
       return;
     }
 
-    const playerNames = players.map((player) => player.name);
-
     // Get players data from PUBG API
     const allPlayersData: Player[] = [];
-    for (const playerName of playerNames) {
+    for (const monitoredPlayer of players) {
       try {
-        const playerResponse = await this.deps.pubgClient.players.getPlayerByName(playerName);
-        if (Array.isArray(playerResponse.data)) {
-          allPlayersData.push(...playerResponse.data);
-        } else {
-          allPlayersData.push(playerResponse.data as Player);
-        }
+        const playerResponse = await this.deps.pubgClient.players.getPlayerById(
+          monitoredPlayer.pubgId
+        );
+        const refreshedPlayers = Array.isArray(playerResponse.data)
+          ? playerResponse.data
+          : [playerResponse.data as Player];
+        allPlayersData.push(...refreshedPlayers);
 
         // Save to storage for compatibility
-        const playerData = Array.isArray(playerResponse.data)
-          ? playerResponse.data[0]
-          : (playerResponse.data as Player);
-        await this.deps.playerRepository.savePlayer({
-          id: playerData.id,
-          type: playerData.type,
-          attributes: playerData.attributes,
-          relationships: playerData.relationships,
-        });
-      } catch (error) {
-        warn(`Failed to get data for player ${playerName}: ${error}`);
+        const playerData = refreshedPlayers[0];
+        if (playerData) {
+          await this.deps.playerRepository.savePlayer({
+            id: playerData.id,
+            type: playerData.type,
+            attributes: playerData.attributes,
+            relationships: playerData.relationships,
+          });
+        }
+      } catch (err) {
+        warn(`Failed to get data for player ${monitoredPlayer.name}: ${err}`);
       }
     }
 
@@ -172,10 +171,10 @@ export class MatchMonitorService {
 
       for (const match of matches) {
         if (!uniqueMatchIds.has(match.id)) {
-          uniqueMatchIds.set(match.id, [{ id: player.id, name: player.attributes.name }]);
+          uniqueMatchIds.set(match.id, [{ pubgId: player.id, name: player.attributes.name }]);
         } else {
           const existingPlayers = uniqueMatchIds.get(match.id)!;
-          existingPlayers.push({ id: player.id, name: player.attributes.name });
+          existingPlayers.push({ pubgId: player.id, name: player.attributes.name });
         }
       }
     }
@@ -241,7 +240,7 @@ export class MatchMonitorService {
 
         const summary = this.deps.matchInterpreter.createSummary(
           pending.match,
-          pending.monitoredPlayers.map((player) => player.name)
+          pending.monitoredPlayers.map((player) => player.pubgId)
         );
         if (summary) {
           await this.deps.discordBot.sendMatchSummary(this.deps.options.channelId, summary);

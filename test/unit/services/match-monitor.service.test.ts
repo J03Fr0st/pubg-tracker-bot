@@ -40,7 +40,7 @@ function makePlayerResponse(matchIds: string[]) {
 }
 
 function makeResponse(matchId: string, createdAt = '2026-07-14T08:00:00.000Z') {
-  const response = makeMatchResponse();
+  const response = makeMatchResponse('account-player-1');
   response.data.id = matchId;
   response.data.attributes.createdAt = createdAt;
   return response;
@@ -53,7 +53,7 @@ function createDependencies(
   const prisma = {} as never;
   const pubgClient = {
     players: {
-      getPlayerByName: jest.fn().mockResolvedValue(makePlayerResponse(matchIds)),
+      getPlayerById: jest.fn().mockResolvedValue(makePlayerResponse(matchIds)),
     },
     matches: {
       getMatch: jest.fn().mockImplementation(async (matchId: string) => makeResponse(matchId)),
@@ -128,21 +128,56 @@ describe('MatchMonitorService', () => {
     }
   );
 
-  it('fetches, persists, presents, and marks a new match once', async () => {
+  it('refreshes by stored account ID and passes account IDs to the automatic summary', async () => {
     const harness = createDependencies(['match-xyz']);
+    const createSummary = jest.spyOn(harness.dependencies.matchInterpreter, 'createSummary');
     const service = new MatchMonitorService(harness.dependencies);
 
     await service.checkNow();
 
+    expect(harness.pubgClient.players.getPlayerById).toHaveBeenCalledWith('account-player-1');
+    expect(createSummary).toHaveBeenCalledWith(expect.objectContaining({ matchId: 'match-xyz' }), [
+      'account-player-1',
+    ]);
     expect(harness.pubgClient.matches.getMatch).toHaveBeenCalledTimes(1);
     expect(harness.matchRepository.saveMatch).toHaveBeenCalledWith(
       expect.objectContaining({ matchId: 'match-xyz' })
     );
     expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledWith(
       'channel-123',
-      expect.objectContaining({ matchId: 'match-xyz', players: expect.any(Array) })
+      expect.objectContaining({
+        matchId: 'match-xyz',
+        rosterParticipants: expect.any(Array),
+        monitoredPlayers: expect.any(Array),
+        lobbyParticipants: expect.any(Array),
+      })
     );
     expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith('match-xyz');
+  });
+
+  it('does not mark a failed delivery and continues with later matches', async () => {
+    jest.useFakeTimers();
+    const harness = createDependencies(['match-delivery-failed', 'match-delivered']);
+    harness.pubgClient.matches.getMatch
+      .mockResolvedValueOnce(makeResponse('match-delivery-failed'))
+      .mockResolvedValueOnce(makeResponse('match-delivered', '2026-07-14T08:01:00.000Z'));
+    harness.discordBot.sendMatchSummary
+      .mockRejectedValueOnce(new Error('Match summary presentation produced no embeds'))
+      .mockResolvedValueOnce(undefined);
+    const service = new MatchMonitorService(harness.dependencies);
+
+    const check = service.checkNow();
+    await jest.runAllTimersAsync();
+    await check;
+
+    expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledTimes(2);
+    expect(harness.processedMatchRepository.addProcessedMatch).not.toHaveBeenCalledWith(
+      'match-delivery-failed'
+    );
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledTimes(1);
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith(
+      'match-delivered'
+    );
   });
 
   it('processes no more than the configured maximum in one check cycle', async () => {

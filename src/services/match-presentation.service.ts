@@ -1,12 +1,9 @@
 import {
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
-  type LogHeal,
-  type LogItemUse,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
-  type LogPlayerTakeDamage,
   MAP_NAMES,
   type PubgClient,
   type TelemetryEvent,
@@ -20,7 +17,11 @@ import type {
   PlayerAnalysis,
 } from '../types/analytics-results.types';
 import type { CoachingNarration } from '../types/coaching.types';
-import type { MatchParticipantStats, MatchSummary, MatchSummaryPlayer } from '../types/match.types';
+import type {
+  MatchParticipantStats,
+  MatchSummary,
+  MatchSummaryParticipant,
+} from '../types/match.types';
 import { DamageInfoUtils } from '../utils/damage-info.util';
 import { debug, error, warn } from '../utils/logger';
 import { MatchColorUtil } from '../utils/match-colors.util';
@@ -47,7 +48,7 @@ export class MatchPresentationService {
   public constructor(private readonly deps: MatchPresentationDependencies) {}
 
   public async createEmbeds(summary: MatchSummary): Promise<EmbedBuilder[]> {
-    const { mapName, gameMode, playedAt, players, matchId } = summary;
+    const { mapName, gameMode, playedAt, rosterParticipants, matchId } = summary;
     const teamRankText = summary.teamRank ? `#${summary.teamRank}` : 'N/A';
     const matchColor = MatchColorUtil.generateMatchColor(matchId);
     const dateString = playedAt
@@ -61,16 +62,25 @@ export class MatchPresentationService {
         timeZone: 'Africa/Johannesburg',
       })
       .replace(',', '');
-    const totalDamage = players.reduce((acc, player) => acc + player.stats.damageDealt, 0);
-    const totalKills = players.reduce((acc, player) => acc + player.stats.kills, 0);
-    const totalDBNOs = players.reduce((acc, player) => acc + player.stats.DBNOs, 0);
+    const totalDamage = rosterParticipants.reduce(
+      (acc, participant) => acc + participant.stats.damageDealt,
+      0
+    );
+    const totalKills = rosterParticipants.reduce(
+      (acc, participant) => acc + participant.stats.kills,
+      0
+    );
+    const totalDBNOs = rosterParticipants.reduce(
+      (acc, participant) => acc + participant.stats.DBNOs,
+      0
+    );
     const mainDescriptionLines = [
       `⏰ **${dateString}**`,
       `🗺️ **${this.formatMapName(mapName)}** • ${this.formatGameMode(gameMode)}`,
       '',
       '**Team Performance**',
       `🏆 Placement: **${teamRankText}**`,
-      `👥 Squad Size: **${players.length} players**`,
+      `👥 Squad Size: **${rosterParticipants.length} players**`,
       '',
       '**Combat Summary**',
       `⚔️ Total Kills: **${totalKills}**`,
@@ -86,7 +96,7 @@ export class MatchPresentationService {
 
     if (!summary.telemetryUrl) {
       debug('No telemetry URL available, using basic player embeds');
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(rosterParticipants, matchColor, matchId)];
     }
 
     try {
@@ -97,41 +107,46 @@ export class MatchPresentationService {
         enhancedMainEmbed,
         enhancedDescriptionLines,
         matchAnalysis,
-        players,
+        summary.monitoredPlayers,
         gameMode
       );
       seasonStats = await this.applyLobbyDifficulty(
         enhancedMainEmbed,
         enhancedDescriptionLines,
         summary.matchId,
-        summary.lobbyPlayers,
+        summary.lobbyParticipants,
         gameMode,
         seasonStats
       );
-      const participantStats = this.buildParticipantStatsMap(summary.lobbyPlayers);
-      const playerEmbeds = players.map((player) => {
-        const analysis = matchAnalysis.playerAnalyses.get(player.name);
+      const participantStats = this.buildParticipantStatsMap(summary.lobbyParticipants);
+      const monitoredPubgIds = new Set(
+        summary.monitoredPlayers.map((participant) => participant.pubgId)
+      );
+      const playerEmbeds = rosterParticipants.map((participant) => {
+        const analysis = monitoredPubgIds.has(participant.pubgId)
+          ? matchAnalysis.playerAnalyses.get(participant.pubgId)
+          : undefined;
         return analysis
           ? this.createEnhancedPlayerEmbed(
-              player,
+              participant,
               analysis,
               matchColor,
               matchId,
               participantStats,
               seasonStats
             )
-          : this.createBasicPlayerEmbed(player, matchColor, matchId);
+          : this.createBasicPlayerEmbed(participant, matchColor, matchId);
       });
       const coachingEmbeds = await this.createCoachingEmbeds(
         matchAnalysis,
-        players.map((player) => player.name),
+        summary.monitoredPlayers,
         rawEvents,
         matchColor
       );
       return [enhancedMainEmbed, ...playerEmbeds, ...coachingEmbeds];
     } catch (err) {
       error(`Telemetry processing failed: ${(err as Error).message}`);
-      return [mainEmbed, ...this.createBasicPlayerEmbeds(players, matchColor, matchId)];
+      return [mainEmbed, ...this.createBasicPlayerEmbeds(rosterParticipants, matchColor, matchId)];
     }
   }
 
@@ -146,19 +161,27 @@ export class MatchPresentationService {
       warn(`Failed to read telemetry cache for ${summary.matchId}: ${err}`);
       cached = { kind: 'miss' };
     }
+    let rawEvents: TelemetryEvent[];
     if (cached.kind === 'hit') {
-      return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
-    }
-    if (cached.kind === 'corrupt') {
-      warn(`Ignoring corrupt telemetry cache for ${summary.matchId}: ${cached.reason}`);
+      const hasAllMonitoredPlayers = summary.monitoredPlayers.every((player) =>
+        cached.matchAnalysis.playerAnalyses.has(player.pubgId)
+      );
+      if (hasAllMonitoredPlayers) {
+        return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
+      }
+      rawEvents = cached.rawEvents;
+    } else {
+      if (cached.kind === 'corrupt') {
+        warn(`Ignoring corrupt telemetry cache for ${summary.matchId}: ${cached.reason}`);
+      }
+      rawEvents = await this.deps.pubgClient.matches.getTelemetry(summary.matchId);
     }
 
-    const rawEvents = await this.deps.pubgClient.matches.getTelemetry(summary.matchId);
     const matchAnalysis = await this.deps.telemetryProcessor.processMatchTelemetry(
       rawEvents,
       summary.matchId,
       summary.playedAt,
-      summary.players.map((player) => player.name)
+      summary.monitoredPlayers
     );
     this.deps.telemetryRepository
       .saveTelemetry(rawEvents, matchAnalysis)
@@ -179,7 +202,7 @@ export class MatchPresentationService {
   }
 
   private createBasicPlayerEmbeds(
-    players: MatchSummaryPlayer[],
+    players: MatchSummaryParticipant[],
     matchColor: number,
     matchId: string
   ): EmbedBuilder[] {
@@ -187,7 +210,7 @@ export class MatchPresentationService {
   }
 
   private createBasicPlayerEmbed(
-    player: MatchSummaryPlayer,
+    player: MatchSummaryParticipant,
     matchColor: number,
     matchId: string
   ): EmbedBuilder {
@@ -219,7 +242,7 @@ export class MatchPresentationService {
   }
 
   private createEnhancedPlayerEmbed(
-    player: MatchSummaryPlayer,
+    player: MatchSummaryParticipant,
     analysis: PlayerAnalysis,
     matchColor: number,
     matchId: string,
@@ -244,10 +267,10 @@ export class MatchPresentationService {
   }
 
   private buildParticipantStatsMap(
-    lobbyPlayers: MatchSummaryPlayer[]
+    lobbyParticipants: MatchSummaryParticipant[]
   ): Map<string, Pick<MatchParticipantStats, 'kills' | 'damageDealt' | 'winPlace'>> {
     return new Map(
-      lobbyPlayers.map((player) => [
+      lobbyParticipants.map((player) => [
         player.pubgId,
         {
           kills: player.stats.kills,
@@ -259,7 +282,7 @@ export class MatchPresentationService {
   }
 
   private formatEnhancedStats(
-    player: MatchSummaryPlayer,
+    player: MatchSummaryParticipant,
     analysis: PlayerAnalysis,
     matchId: string,
     participantStats: Map<
@@ -557,7 +580,7 @@ export class MatchPresentationService {
     mainEmbed: EmbedBuilder,
     mainDescriptionLines: string[],
     matchAnalysis: MatchAnalysis,
-    players: MatchSummaryPlayer[],
+    players: MatchSummaryParticipant[],
     gameMode: string
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const opponentAccountIds = this.collectOpponentAccountIds(matchAnalysis, players);
@@ -584,19 +607,17 @@ export class MatchPresentationService {
 
   private collectOpponentAccountIds(
     matchAnalysis: MatchAnalysis,
-    players: MatchSummaryPlayer[]
+    monitoredPlayers: MatchSummaryParticipant[]
   ): string[] {
-    const trackedAccountIds = new Set(players.map((player) => player.pubgId));
+    const monitoredAccountIds = new Set(monitoredPlayers.map((participant) => participant.pubgId));
     const opponentAccountIds = new Set<string>();
     const addOpponent = (accountId?: string) => {
-      if (!accountId || trackedAccountIds.has(accountId) || isBotAccountId(accountId)) {
-        return;
-      }
+      if (!accountId || monitoredAccountIds.has(accountId) || isBotAccountId(accountId)) return;
       opponentAccountIds.add(accountId);
     };
 
-    for (const player of players) {
-      const analysis = matchAnalysis.playerAnalyses.get(player.name);
+    for (const player of monitoredPlayers) {
+      const analysis = matchAnalysis.playerAnalyses.get(player.pubgId);
       if (!analysis) continue;
       for (const event of analysis.killEvents) addOpponent(event.victim?.accountId);
       for (const event of analysis.deathEvents) addOpponent(event.killer?.accountId);
@@ -616,12 +637,12 @@ export class MatchPresentationService {
     mainEmbed: EmbedBuilder,
     mainDescriptionLines: string[],
     matchId: string,
-    lobbyPlayers: MatchSummaryPlayer[],
+    lobbyParticipants: MatchSummaryParticipant[],
     gameMode: string,
     existingSeasonStats?: Map<string, { kd: number; adr: number }>
   ): Promise<Map<string, { kd: number; adr: number }> | undefined> {
     const lobbyAccountIds = Array.from(
-      new Set(lobbyPlayers.map((player) => player.pubgId).filter(Boolean))
+      new Set(lobbyParticipants.map((player) => player.pubgId).filter(Boolean))
     );
     if (lobbyAccountIds.length === 0) {
       return existingSeasonStats;
@@ -693,23 +714,16 @@ export class MatchPresentationService {
 
   private async createCoachingEmbeds(
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
-    rawEvents: TelemetryEvent[],
+    monitoredPlayers: readonly MatchSummaryParticipant[],
+    rawEvents: readonly TelemetryEvent[],
     matchColor: number
   ): Promise<EmbedBuilder[]> {
-    const damageEvents = rawEvents.filter(
-      (event) => event._T === 'LogPlayerTakeDamage'
-    ) as LogPlayerTakeDamage[];
-    const resetEvents = rawEvents.filter(
-      (event) => event._T === 'LogHeal' || event._T === 'LogItemUse'
-    ) as Array<LogHeal | LogItemUse>;
     try {
-      const result = await this.deps.coachingPipeline.run(
+      const result = await this.deps.coachingPipeline.run({
         matchAnalysis,
-        trackedPlayerNames,
-        damageEvents,
-        resetEvents
-      );
+        monitoredPlayers,
+        telemetryEvents: rawEvents,
+      });
       if (result.kind === 'empty') {
         return [];
       }

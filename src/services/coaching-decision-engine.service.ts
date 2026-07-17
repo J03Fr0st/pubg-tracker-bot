@@ -1,70 +1,551 @@
+import type {
+  LogHeal,
+  LogItemUse,
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  LogPlayerTakeDamage,
+} from '@j03fr0st/pubg-ts';
 import {
   type CoachingScoringWeights,
   DEFAULT_COACHING_SCORING_WEIGHTS,
 } from '../config/coaching-weights';
+import type { PlayerAnalysis } from '../types/analytics-results.types';
 import type {
+  CoachingAnalysisInput,
+  CoachingClaim,
   CoachingInsight,
   CoachingRating,
-  FightContext,
-  FightContextClaim,
 } from '../types/coaching.types';
+import type { MatchPlayerIdentity } from '../types/match.types';
+import { TelemetryGeometry } from '../utils/telemetry-geometry';
 
-const HEAVY_DAMAGE_THRESHOLD = 60;
-// Minimum gap between the first heavy hit and the decisive event for a "reset" to
-// have been physically possible. After heavy damage a bandage (4s, caps at 75%)
-// is not enough to re-engage, so the floor is one First Aid Kit (6s). Below this
-// the player was bursted down with no real chance to heal up, not a missed reset.
-const MIN_RESET_WINDOW_SECONDS = 6;
-const PATTERN_MIN_COUNT = 2;
-const MAX_INSIGHTS_PER_PLAYER = 3;
-const TRADE_RANGE_METERS = 60;
-const STACKED_ANGLE_DEGREES = 25;
-const MATERIAL_BLUE_ZONE_DAMAGE = 25;
+const COACHING_THRESHOLDS = {
+  contextWindowSeconds: 45,
+  heavyDamage: 60,
+  minimumResetWindowSeconds: 6,
+  patternMinimumCount: 2,
+  maximumInsightsPerPlayer: 3,
+  tradeRangeMeters: 60,
+  meaningfulRepositionMeters: 15,
+  heightAdvantageMeters: 10,
+  tradeDamageWindowSeconds: 10,
+  zonePressureWindowSeconds: 60,
+  materialBlueZoneDamage: 25,
+  stackedAngleDegrees: 25,
+  minimumInsightScore: 0,
+  aggressiveRepeekMinimumCount: 2,
+  lateRotateMinimumCount: 1,
+  isolatedEntryMinimumCount: 2,
+  lowConversionMinimumCount: 2,
+  highConfidenceProfileCount: 2,
+  minimumHeightClaimMeters: 0,
+  lowDamageConversionRatio: 0.5,
+} as const;
+
+type Position = { x: number; y: number; z?: number };
+type DecisiveEvent = LogPlayerKillV2 | LogPlayerMakeGroggy;
+type ActorWithPosition = { name?: string; accountId?: string; location?: Position };
+type FightOutcome = 'knock' | 'death';
+type FightIdentity = { pubgId?: string; name?: string };
+type FightDamageEvent = {
+  timestamp: Date;
+  matchTimeSeconds: number;
+  attacker: FightIdentity;
+  victim: FightIdentity;
+  damage: number;
+  position?: Position;
+};
+type FightResetEvent = {
+  timestamp: Date;
+  matchTimeSeconds: number;
+  character: FightIdentity;
+  itemId?: string;
+  healAmount?: number;
+};
+type FightContext = {
+  playerPubgId: string;
+  playerName: string;
+  enemyName?: string;
+  outcome: FightOutcome;
+  timestamp: Date;
+  matchTimeSeconds: number;
+  damageTaken: FightDamageEvent[];
+  damageDealt: FightDamageEvent[];
+  badResetHeavyDamage?: FightDamageEvent;
+  blueZoneDamage: { damage: number; events: FightDamageEvent[]; windowSeconds: number };
+  playerPosition?: Position;
+  enemyPosition?: Position;
+  closestTeammateName?: string;
+  closestTeammatePosition?: Position;
+  closestTeammateDistanceMeters?: number;
+  stackedPressureAngleDegrees?: number;
+  closestTeammateDamageToEnemy: FightDamageEvent[];
+  enemyDistanceMeters?: number;
+  tradeRangeConfidence: CoachingRating;
+  repositionDistanceMeters?: number;
+  heightDeltaMeters?: number;
+  heightConfidence: CoachingRating;
+};
 
 export class CoachingDecisionEngineService {
   public constructor(
     private readonly weights: CoachingScoringWeights = DEFAULT_COACHING_SCORING_WEIGHTS
   ) {}
 
-  public createInsights(contexts: FightContext[]): CoachingInsight[] {
+  public createInsights(input: CoachingAnalysisInput): CoachingInsight[] {
+    const contexts = this.buildFightContexts(input);
     return [...this.groupContextsByPlayer(contexts).values()].flatMap((playerContexts) => {
-      const decisive = this.createDecisiveInsight(playerContexts);
-      const pattern = this.createPatternInsight(playerContexts);
-      const fingerprint = this.createFingerprintInsight(playerContexts);
-      return [decisive, pattern, fingerprint]
+      const insights = [
+        this.createDecisiveInsight(playerContexts),
+        this.createPatternInsight(playerContexts),
+        this.createFingerprintInsight(playerContexts),
+      ];
+      return insights
         .filter((insight): insight is CoachingInsight => Boolean(insight))
-        .slice(0, MAX_INSIGHTS_PER_PLAYER);
+        .slice(0, COACHING_THRESHOLDS.maximumInsightsPerPlayer);
     });
+  }
+
+  private buildFightContexts(input: CoachingAnalysisInput): FightContext[] {
+    const damageEvents = input.telemetryEvents.filter(
+      (event): event is LogPlayerTakeDamage => event._T === 'LogPlayerTakeDamage'
+    );
+    const resetEvents = input.telemetryEvents.filter(
+      (event): event is LogHeal | LogItemUse => event._T === 'LogHeal' || event._T === 'LogItemUse'
+    );
+    const contexts: FightContext[] = [];
+    for (const player of input.monitoredPlayers) {
+      const analysis = input.matchAnalysis.playerAnalyses.get(player.pubgId);
+      if (!analysis) continue;
+      for (const decisiveEvent of this.getDecisiveEvents(analysis)) {
+        const context = this.buildContextForEvent(
+          player,
+          analysis,
+          decisiveEvent,
+          input.monitoredPlayers,
+          input.matchAnalysis.playerAnalyses,
+          damageEvents,
+          resetEvents
+        );
+        if (context) contexts.push(context);
+      }
+    }
+    return contexts.sort((left, right) => right.matchTimeSeconds - left.matchTimeSeconds);
+  }
+
+  private buildContextForEvent(
+    player: MatchPlayerIdentity,
+    analysis: PlayerAnalysis,
+    decisiveEvent: DecisiveEvent,
+    monitoredPlayers: readonly MatchPlayerIdentity[],
+    analyses: ReadonlyMap<string, PlayerAnalysis>,
+    damageEvents: LogPlayerTakeDamage[],
+    resetEvents: Array<LogHeal | LogItemUse>
+  ): FightContext | null {
+    const timestamp = this.getEventTime(decisiveEvent);
+    if (!timestamp) return null;
+    const enemyActor =
+      decisiveEvent._T === 'LogPlayerMakeGroggy' ? decisiveEvent.attacker : decisiveEvent.killer;
+    const enemy = this.toFightIdentity(enemyActor);
+    const damageTaken = this.getDamageTaken(player, timestamp, damageEvents, analysis.matchStartTime);
+    const damageDealt = this.getDamageDealt(player, timestamp, damageEvents, analysis.matchStartTime);
+    const fightResetEvents = this.getResetEvents(
+      player,
+      timestamp,
+      resetEvents,
+      analysis.matchStartTime
+    );
+    const badResetDamageSegment = this.getBadResetDamageSegment(damageTaken, fightResetEvents);
+    const badResetHeavyDamage = badResetDamageSegment.find(
+      (event) =>
+        event.damage >= COACHING_THRESHOLDS.heavyDamage &&
+        this.identitiesMatch(event.attacker, enemy)
+    );
+    const playerPosition = this.getActorPosition(decisiveEvent.victim);
+    const enemyPosition = this.getActorPosition(enemyActor);
+    const teammate = this.getClosestTeammate(
+      player,
+      playerPosition,
+      monitoredPlayers,
+      analyses,
+      timestamp,
+      damageEvents
+    );
+    const heightDeltaMeters =
+      playerPosition && enemyPosition
+        ? TelemetryGeometry.heightDeltaMeters(playerPosition, enemyPosition)
+        : undefined;
+    return {
+      playerPubgId: player.pubgId,
+      playerName: analysis.playerName,
+      enemyName: enemy.name,
+      outcome: decisiveEvent._T === 'LogPlayerMakeGroggy' ? 'knock' : 'death',
+      timestamp,
+      matchTimeSeconds: TelemetryGeometry.secondsBetween(analysis.matchStartTime, timestamp),
+      damageTaken,
+      damageDealt,
+      badResetHeavyDamage,
+      blueZoneDamage: this.getBlueZoneDamage(
+        player,
+        timestamp,
+        damageEvents,
+        analysis.matchStartTime
+      ),
+      playerPosition,
+      enemyPosition,
+      closestTeammateName: teammate?.player.name,
+      closestTeammatePosition: teammate?.position,
+      closestTeammateDistanceMeters: teammate?.distanceMeters,
+      stackedPressureAngleDegrees:
+        playerPosition && enemyPosition && teammate?.position
+          ? TelemetryGeometry.angleDegrees(enemyPosition, playerPosition, teammate.position)
+          : undefined,
+      closestTeammateDamageToEnemy: this.getDamageFromPlayerToEnemy(
+        teammate?.player,
+        enemy,
+        timestamp,
+        damageEvents,
+        analysis.matchStartTime
+      ),
+      enemyDistanceMeters:
+        playerPosition && enemyPosition
+          ? TelemetryGeometry.distanceMeters(playerPosition, enemyPosition)
+          : undefined,
+      tradeRangeConfidence: teammate?.confidence ?? 'low',
+      repositionDistanceMeters: this.getRepositionDistanceMeters(
+        badResetDamageSegment,
+        playerPosition
+      ),
+      heightDeltaMeters,
+      heightConfidence:
+        heightDeltaMeters !== undefined &&
+        heightDeltaMeters >= COACHING_THRESHOLDS.heightAdvantageMeters
+          ? 'medium'
+          : 'low',
+    };
+  }
+
+  private getDecisiveEvents(analysis: PlayerAnalysis): DecisiveEvent[] {
+    return [...analysis.deathEvents, ...analysis.knockedDownEvents].sort(
+      (left, right) =>
+        (this.getEventTime(right)?.getTime() ?? 0) - (this.getEventTime(left)?.getTime() ?? 0)
+    );
+  }
+
+  private getDamageTaken(
+    player: MatchPlayerIdentity,
+    decisiveTime: Date,
+    events: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): FightDamageEvent[] {
+    return this.getDamageEvents(events, decisiveTime, matchStartTime).filter(
+      (event) => this.identitiesMatch(event.victim, player)
+    );
+  }
+
+  private getDamageDealt(
+    player: MatchPlayerIdentity,
+    decisiveTime: Date,
+    events: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): FightDamageEvent[] {
+    return this.getDamageEvents(events, decisiveTime, matchStartTime).filter(
+      (event) => this.identitiesMatch(event.attacker, player)
+    );
+  }
+
+  private getDamageEvents(
+    events: LogPlayerTakeDamage[],
+    decisiveTime: Date,
+    matchStartTime: Date
+  ): FightDamageEvent[] {
+    return events
+      .map((event) => this.toFightDamageEvent(event, matchStartTime))
+      .filter((event): event is FightDamageEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= COACHING_THRESHOLDS.contextWindowSeconds;
+      });
+  }
+
+  private toFightDamageEvent(
+    event: LogPlayerTakeDamage,
+    matchStartTime: Date
+  ): FightDamageEvent | null {
+    const timestamp = this.getEventTime(event);
+    if (!timestamp) return null;
+    return {
+      timestamp,
+      matchTimeSeconds: TelemetryGeometry.secondsBetween(matchStartTime, timestamp),
+      attacker: this.toFightIdentity(event.attacker),
+      victim: this.toFightIdentity(event.victim),
+      damage: Math.round(event.damage),
+      position: this.getActorPosition(event.victim),
+    };
+  }
+
+  private getResetEvents(
+    player: MatchPlayerIdentity,
+    decisiveTime: Date,
+    events: Array<LogHeal | LogItemUse>,
+    matchStartTime: Date
+  ): FightResetEvent[] {
+    return events
+      .filter((event) => this.identitiesMatch(this.toFightIdentity(event.character), player))
+      .map((event): FightResetEvent | null => {
+        const timestamp = this.getEventTime(event);
+        if (!timestamp) return null;
+        return {
+          timestamp,
+          matchTimeSeconds: TelemetryGeometry.secondsBetween(matchStartTime, timestamp),
+          character: this.toFightIdentity(event.character),
+          itemId: event.item?.itemId,
+          healAmount: event._T === 'LogHeal' ? event.healAmount : undefined,
+        };
+      })
+      .filter((event): event is FightResetEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= COACHING_THRESHOLDS.contextWindowSeconds;
+      })
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  }
+
+  private getBlueZoneDamage(
+    player: MatchPlayerIdentity,
+    decisiveTime: Date,
+    events: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): FightContext['blueZoneDamage'] {
+    const zoneEvents = events
+      .filter(
+        (event) =>
+          this.identitiesMatch(this.toFightIdentity(event.victim), player) &&
+          event.damageTypeCategory === 'Damage_BlueZone'
+      )
+      .map((event) => this.toFightDamageEvent(event, matchStartTime))
+      .filter((event): event is FightDamageEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= COACHING_THRESHOLDS.zonePressureWindowSeconds;
+      });
+    return {
+      damage: zoneEvents.reduce((sum, event) => sum + event.damage, 0),
+      events: zoneEvents,
+      windowSeconds: COACHING_THRESHOLDS.zonePressureWindowSeconds,
+    };
+  }
+
+  private getClosestTeammate(
+    player: MatchPlayerIdentity,
+    playerPosition: Position | undefined,
+    monitoredPlayers: readonly MatchPlayerIdentity[],
+    analyses: ReadonlyMap<string, PlayerAnalysis>,
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[]
+  ):
+    | {
+        player: MatchPlayerIdentity;
+        distanceMeters: number;
+        position: Position;
+        confidence: 'high' | 'medium';
+      }
+    | undefined {
+    if (!playerPosition || player.rosterId === null) return undefined;
+    return monitoredPlayers
+      .filter(
+        (candidate) =>
+          !this.identitiesMatch(candidate, player) &&
+          candidate.rosterId !== null &&
+          candidate.rosterId === player.rosterId
+      )
+      .map((candidate) => {
+        const analysis = analyses.get(candidate.pubgId);
+        const latestDamagePosition = this.getLatestActorPosition(
+          candidate,
+          decisiveTime,
+          damageEvents
+        );
+        const position =
+          latestDamagePosition ??
+          (analysis ? this.getLastKnownPlayerPosition(analysis, decisiveTime) : undefined);
+        return position
+          ? {
+              player: candidate,
+              distanceMeters: TelemetryGeometry.distanceMeters(playerPosition, position),
+              position,
+              confidence: latestDamagePosition ? ('high' as const) : ('medium' as const),
+            }
+          : undefined;
+      })
+      .filter(
+        (
+          candidate
+        ): candidate is {
+          player: MatchPlayerIdentity;
+          distanceMeters: number;
+          position: Position;
+          confidence: 'high' | 'medium';
+        } => Boolean(candidate)
+      )
+      .sort((left, right) => left.distanceMeters - right.distanceMeters)[0];
+  }
+
+  private getLatestActorPosition(
+    identity: MatchPlayerIdentity,
+    decisiveTime: Date,
+    events: LogPlayerTakeDamage[]
+  ): Position | undefined {
+    return events
+      .map((event) => {
+        const timestamp = this.getEventTime(event);
+        const attackerMatches = this.identitiesMatch(
+          this.toFightIdentity(event.attacker),
+          identity
+        );
+        const victimMatches = this.identitiesMatch(this.toFightIdentity(event.victim), identity);
+        const attackerPosition = attackerMatches
+          ? this.getActorPosition(event.attacker)
+          : undefined;
+        const victimPosition = victimMatches ? this.getActorPosition(event.victim) : undefined;
+        const position = attackerPosition ?? victimPosition;
+        return timestamp && position ? { timestamp, position } : undefined;
+      })
+      .filter((entry): entry is { timestamp: Date; position: Position } => Boolean(entry))
+      .filter((entry) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(entry.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= COACHING_THRESHOLDS.contextWindowSeconds;
+      })
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]?.position;
+  }
+
+  private getDamageFromPlayerToEnemy(
+    player: MatchPlayerIdentity | undefined,
+    enemy: FightIdentity | undefined,
+    decisiveTime: Date,
+    events: LogPlayerTakeDamage[],
+    matchStartTime: Date
+  ): FightDamageEvent[] {
+    if (!player || !enemy) return [];
+    return events
+      .filter(
+        (event) =>
+          this.identitiesMatch(this.toFightIdentity(event.attacker), player) &&
+          this.identitiesMatch(this.toFightIdentity(event.victim), enemy)
+      )
+      .map((event) => this.toFightDamageEvent(event, matchStartTime))
+      .filter((event): event is FightDamageEvent => Boolean(event))
+      .filter((event) => {
+        const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
+        return seconds >= 0 && seconds <= COACHING_THRESHOLDS.tradeDamageWindowSeconds;
+      });
+  }
+
+  private getLastKnownPlayerPosition(
+    analysis: PlayerAnalysis,
+    decisiveTime: Date
+  ): Position | undefined {
+    return this.getDecisiveEvents(analysis)
+      .map((decisiveEvent) => ({
+        timestamp: this.getEventTime(decisiveEvent),
+        position: this.getActorPosition(decisiveEvent.victim),
+      }))
+      .filter(
+        (entry): entry is { timestamp: Date; position: Position } =>
+          entry.timestamp !== null &&
+          entry.timestamp.getTime() <= decisiveTime.getTime() &&
+          entry.position !== undefined
+      )
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]?.position;
+  }
+
+  private getRepositionDistanceMeters(
+    damageTaken: FightDamageEvent[],
+    playerPosition: Position | undefined
+  ): number | undefined {
+    const firstDamagePosition = damageTaken[0]?.position;
+    return firstDamagePosition && playerPosition
+      ? TelemetryGeometry.distanceMeters(firstDamagePosition, playerPosition)
+      : undefined;
+  }
+
+  private getBadResetDamageSegment(
+    damageTaken: FightDamageEvent[],
+    resetEvents: FightResetEvent[]
+  ): FightDamageEvent[] {
+    const latestReset = resetEvents.at(-1);
+    return damageTaken
+      .filter(
+        (event) => !latestReset || event.timestamp.getTime() > latestReset.timestamp.getTime()
+      )
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  }
+
+  private identitiesMatch(
+    left: FightIdentity | undefined,
+    right: FightIdentity | undefined
+  ): boolean {
+    if (!left || !right) return false;
+    if (left.pubgId && right.pubgId) return left.pubgId === right.pubgId;
+    if (!left.name || !right.name) return false;
+    return left.name.trim().toLowerCase() === right.name.trim().toLowerCase();
+  }
+
+  private toFightIdentity(actor?: ActorWithPosition): FightIdentity {
+    return {
+      pubgId: actor?.accountId || undefined,
+      name: actor?.name || undefined,
+    };
+  }
+
+  private getActorPosition(actor?: ActorWithPosition): Position | undefined {
+    const location = actor?.location;
+    if (!location || typeof location.x !== 'number' || typeof location.y !== 'number')
+      return undefined;
+    return { x: location.x, y: location.y, z: location.z };
+  }
+
+  private getEventTime(event: { _D?: string }): Date | null {
+    if (!event._D) return null;
+    const parsed = new Date(event._D);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private groupContextsByPlayer(contexts: FightContext[]): Map<string, FightContext[]> {
     const grouped = new Map<string, FightContext[]>();
     for (const context of contexts) {
-      const playerContexts = grouped.get(context.playerName) ?? [];
+      const playerContexts = grouped.get(context.playerPubgId) ?? [];
       playerContexts.push(context);
-      grouped.set(context.playerName, playerContexts);
+      grouped.set(context.playerPubgId, playerContexts);
     }
     return grouped;
   }
 
+  private getResetWindowSeconds(context: FightContext): number | undefined {
+    const heavyDamage = context.badResetHeavyDamage;
+    return heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
+  }
+
+  private isBadReset(context: FightContext): boolean {
+    const resetWindow = this.getResetWindowSeconds(context);
+    return Boolean(
+      context.badResetHeavyDamage &&
+        resetWindow !== undefined &&
+        resetWindow >= COACHING_THRESHOLDS.minimumResetWindowSeconds &&
+        (context.repositionDistanceMeters === undefined ||
+          context.repositionDistanceMeters < COACHING_THRESHOLDS.meaningfulRepositionMeters)
+    );
+  }
+
   private createDecisiveInsight(contexts: FightContext[]): CoachingInsight | null {
-    const ranked = contexts
+    const selected = contexts
       .map((context) => ({ context, score: this.scoreContext(context) }))
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => right.score - left.score);
-
-    const selected = ranked[0]?.context;
-    if (!selected) {
-      return null;
-    }
-
+      .filter((entry) => entry.score > COACHING_THRESHOLDS.minimumInsightScore)
+      .sort((left, right) => right.score - left.score)[0]?.context;
+    if (!selected) return null;
     const claims = this.buildClaims(selected);
-    if (claims.length === 0) {
-      return null;
-    }
-
+    if (claims.length === 0) return null;
     const hasZonePressure = this.hasMaterialZonePressure(selected);
-
     return {
       playerName: selected.playerName,
       category: 'decisive-mistake',
@@ -90,14 +571,11 @@ export class CoachingDecisionEngineService {
 
   private createPatternInsight(contexts: FightContext[]): CoachingInsight | null {
     const badResetContexts = contexts.filter((context) => this.isBadReset(context));
-    if (badResetContexts.length < PATTERN_MIN_COUNT) {
-      return null;
-    }
-
-    const latest = badResetContexts.sort(
+    if (badResetContexts.length < COACHING_THRESHOLDS.patternMinimumCount) return null;
+    const latest = [...badResetContexts].sort(
       (left, right) => right.matchTimeSeconds - left.matchTimeSeconds
     )[0];
-
+    const text = `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`;
     return {
       playerName: latest.playerName,
       category: 'pattern',
@@ -107,9 +585,7 @@ export class CoachingDecisionEngineService {
       matchTimeSeconds: latest.matchTimeSeconds,
       severity: 'medium',
       confidence: 'high',
-      evidence: [
-        `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`,
-      ],
+      evidence: [text],
       recommendation:
         'Stop giving the same enemy a second clean fight after you are already damaged.',
       betterPlay: [
@@ -119,7 +595,7 @@ export class CoachingDecisionEngineService {
       ],
       claims: [
         {
-          text: `Repeated ${badResetContexts.length} fights where heavy damage was followed by no reset.`,
+          text,
           confidence: 'high',
           evidence: badResetContexts.map(
             (context) => `${context.playerName} at ${context.matchTimeSeconds}s`
@@ -130,65 +606,52 @@ export class CoachingDecisionEngineService {
   }
 
   private createFingerprintInsight(contexts: FightContext[]): CoachingInsight | null {
-    const reviewedFightCount = contexts.length;
-    if (reviewedFightCount === 0) {
-      return null;
-    }
-
-    const badResetCount = contexts.filter((context) => this.isBadReset(context)).length;
-    const zonePressureCount = contexts.filter((context) =>
-      this.hasMaterialZonePressure(context)
-    ).length;
-    const isolatedTradeCount = contexts.filter((context) => this.hasIsolatedTrade(context)).length;
-    const lowDamageConversionCount = contexts.filter((context) =>
-      this.hasLowDamageConversion(context)
-    ).length;
-
-    const profile = [
+    if (contexts.length === 0) return null;
+    const profiles = [
       {
         name: 'Aggressive re-peeker',
-        count: badResetCount,
-        minimumCount: 2,
+        count: contexts.filter((context) => this.isBadReset(context)).length,
+        minimumCount: COACHING_THRESHOLDS.aggressiveRepeekMinimumCount,
         recommendation:
           'Treat first damage as a reset trigger: break line of sight, heal, then force a new angle.',
         betterPlay: ['break line of sight', 'heal before re-engaging', 'force a new angle'],
       },
       {
         name: 'Late-rotate fighter',
-        count: zonePressureCount,
-        minimumCount: 1,
+        count: contexts.filter((context) => this.hasMaterialZonePressure(context)).length,
+        minimumCount: COACHING_THRESHOLDS.lateRotateMinimumCount,
         recommendation:
           'Choose the next position earlier and move before blue-zone damage turns the fight into a forced duel.',
-        betterPlay: ['rotate earlier before taking optional fights', 'move before blue-zone damage'],
+        betterPlay: [
+          'rotate earlier before taking optional fights',
+          'move before blue-zone damage',
+        ],
       },
       {
         name: 'Isolated entry',
-        count: isolatedTradeCount,
-        minimumCount: 2,
+        count: contexts.filter((context) => this.hasIsolatedTrade(context)).length,
+        minimumCount: COACHING_THRESHOLDS.isolatedEntryMinimumCount,
         recommendation:
           'Start fights where the nearest teammate can trade damage, not merely stand nearby.',
         betterPlay: ['wait for teammate trade pressure', 'force a crossfire angle'],
       },
       {
         name: 'Low-conversion trader',
-        count: lowDamageConversionCount,
-        minimumCount: 2,
+        count: contexts.filter((context) => this.hasLowDamageConversion(context)).length,
+        minimumCount: COACHING_THRESHOLDS.lowConversionMinimumCount,
         recommendation:
           'Do not extend damage-negative trades; reset or reposition when return damage is not landing.',
         betterPlay: ['stop damage-negative trades', 'reposition before re-engaging'],
       },
     ]
-      .filter((entry) => entry.count >= entry.minimumCount)
-      .sort((left, right) => right.count - left.count)[0];
-
-    if (!profile) {
-      return null;
-    }
-
+      .filter((profile) => profile.count >= profile.minimumCount)
+      .sort((left, right) => right.count - left.count);
+    const profile = profiles[0];
+    if (!profile) return null;
     const latest = [...contexts].sort(
       (left, right) => right.matchTimeSeconds - left.matchTimeSeconds
     )[0];
-
+    const text = `${profile.name}: ${profile.count} of ${contexts.length} reviewed fights matched this telemetry pattern.`;
     return {
       playerName: latest.playerName,
       category: 'player-fingerprint',
@@ -197,16 +660,16 @@ export class CoachingDecisionEngineService {
       timestamp: latest.timestamp,
       matchTimeSeconds: latest.matchTimeSeconds,
       severity: 'medium',
-      confidence: profile.count >= 2 ? 'high' : 'medium',
-      evidence: [
-        `${profile.name}: ${profile.count} of ${reviewedFightCount} reviewed fights matched this telemetry pattern.`,
-      ],
+      confidence:
+        profile.count >= COACHING_THRESHOLDS.highConfidenceProfileCount ? 'high' : 'medium',
+      evidence: [text],
       recommendation: profile.recommendation,
       betterPlay: profile.betterPlay,
       claims: [
         {
-          text: `${profile.name}: ${profile.count} of ${reviewedFightCount} reviewed fights matched this telemetry pattern.`,
-          confidence: profile.count >= 2 ? 'high' : 'medium',
+          text,
+          confidence:
+            profile.count >= COACHING_THRESHOLDS.highConfidenceProfileCount ? 'high' : 'medium',
           evidence: contexts
             .filter((context) => this.contextMatchesProfile(context, profile.name))
             .map((context) => `${context.playerName} at ${context.matchTimeSeconds}s`),
@@ -215,17 +678,15 @@ export class CoachingDecisionEngineService {
     };
   }
 
-  private buildClaims(context: FightContext): FightContextClaim[] {
-    const claims: FightContextClaim[] = [];
-    const heavyDamage = this.getHeavyDamage(context);
+  private buildClaims(context: FightContext): CoachingClaim[] {
+    const claims: CoachingClaim[] = [];
+    const heavyDamage = context.badResetHeavyDamage;
     const seconds = this.getResetWindowSeconds(context);
-
     if (
-      context.repeatedSameEnemy &&
+      this.isBadReset(context) &&
       heavyDamage &&
       context.enemyName &&
-      seconds !== undefined &&
-      seconds >= MIN_RESET_WINDOW_SECONDS
+      seconds !== undefined
     ) {
       claims.push({
         text: `${context.enemyName} hit you for ${heavyDamage.damage} damage, then ${seconds}s later you ${context.outcome === 'death' ? 'died' : 'got knocked'} to the same player before creating a reset.`,
@@ -236,12 +697,11 @@ export class CoachingDecisionEngineService {
         ],
       });
     }
-
     if (
       context.tradeRangeConfidence !== 'low' &&
       context.closestTeammateName &&
       context.closestTeammateDistanceMeters !== undefined &&
-      context.closestTeammateDistanceMeters > TRADE_RANGE_METERS
+      context.closestTeammateDistanceMeters > COACHING_THRESHOLDS.tradeRangeMeters
     ) {
       claims.push({
         text: `Your nearest tracked teammate appears to have been too far to trade at ${Math.round(context.closestTeammateDistanceMeters)}m away.`,
@@ -249,17 +709,16 @@ export class CoachingDecisionEngineService {
         evidence: [`Closest tracked teammate: ${context.closestTeammateName}`],
       });
     }
-
     if (
       context.tradeRangeConfidence !== 'low' &&
       context.closestTeammateName &&
       context.closestTeammateDistanceMeters !== undefined &&
-      context.closestTeammateDistanceMeters <= TRADE_RANGE_METERS &&
+      context.closestTeammateDistanceMeters <= COACHING_THRESHOLDS.tradeRangeMeters &&
       context.enemyName &&
       context.closestTeammateDamageToEnemy.length === 0
     ) {
       claims.push({
-        text: `${context.closestTeammateName} was ${Math.round(context.closestTeammateDistanceMeters)}m from you, but telemetry shows no damage from them to ${context.enemyName} in the 10s before you went down.`,
+        text: `${context.closestTeammateName} was ${Math.round(context.closestTeammateDistanceMeters)}m from you, but telemetry shows no damage from them to ${context.enemyName} in the ${COACHING_THRESHOLDS.tradeDamageWindowSeconds}s before you went down.`,
         confidence: context.tradeRangeConfidence,
         evidence: [
           `Closest tracked teammate: ${context.closestTeammateName}`,
@@ -267,27 +726,23 @@ export class CoachingDecisionEngineService {
         ],
       });
     }
-
     if (
       context.tradeRangeConfidence !== 'low' &&
       context.closestTeammateName &&
       context.enemyName &&
-      context.teammateAngleFromPlayerToEnemyDegrees !== undefined &&
-      context.teammateAngleFromPlayerToEnemyDegrees <= STACKED_ANGLE_DEGREES
+      context.stackedPressureAngleDegrees !== undefined &&
+      context.stackedPressureAngleDegrees <= COACHING_THRESHOLDS.stackedAngleDegrees
     ) {
       claims.push({
-        text: `${context.closestTeammateName} was only ${context.teammateAngleFromPlayerToEnemyDegrees} degrees off your logged line to ${context.enemyName}; the positions were close together, not a separate angle.`,
+        text: `${context.closestTeammateName} was only ${context.stackedPressureAngleDegrees} degrees off your pressure line around ${context.enemyName}; the positions were close together, not a separate angle.`,
         confidence: context.tradeRangeConfidence,
-        evidence: [
-          `Teammate angle from player-to-enemy line: ${context.teammateAngleFromPlayerToEnemyDegrees} degrees`,
-        ],
+        evidence: [`Pressure angle around enemy: ${context.stackedPressureAngleDegrees} degrees`],
       });
     }
-
     if (
       context.heightConfidence !== 'low' &&
       context.heightDeltaMeters !== undefined &&
-      context.heightDeltaMeters > 0
+      context.heightDeltaMeters > COACHING_THRESHOLDS.minimumHeightClaimMeters
     ) {
       claims.push({
         text: `${context.enemyName ?? 'The enemy'} appears to have had a ${Math.round(context.heightDeltaMeters)}m height advantage.`,
@@ -295,20 +750,13 @@ export class CoachingDecisionEngineService {
         evidence: ['Enemy z-position was higher than player z-position'],
       });
     }
-
     const zonePressureClaim = this.buildZonePressureClaim(context);
-    if (zonePressureClaim) {
-      claims.push(zonePressureClaim);
-    }
-
+    if (zonePressureClaim) claims.push(zonePressureClaim);
     return claims;
   }
 
-  private buildZonePressureClaim(context: FightContext): FightContextClaim | null {
-    if (!this.hasMaterialZonePressure(context)) {
-      return null;
-    }
-
+  private buildZonePressureClaim(context: FightContext): CoachingClaim | null {
+    if (!this.hasMaterialZonePressure(context)) return null;
     const damage = Math.round(context.blueZoneDamage.damage);
     return {
       text: `You took ${damage} blue-zone damage in the ${context.blueZoneDamage.windowSeconds}s before this fight, so the rotate was already costing health before the duel.`,
@@ -326,22 +774,6 @@ export class CoachingDecisionEngineService {
     return score;
   }
 
-  private isBadReset(context: FightContext): boolean {
-    const heavyDamage = this.getHeavyDamage(context);
-    const resetWindow = this.getResetWindowSeconds(context);
-    const hadTimeToReset = resetWindow !== undefined && resetWindow >= MIN_RESET_WINDOW_SECONDS;
-    const noMeaningfulReposition =
-      context.repositionDistanceMeters === undefined || context.repositionDistanceMeters < 15;
-    return Boolean(
-      heavyDamage && hadTimeToReset && context.repeatedSameEnemy && noMeaningfulReposition
-    );
-  }
-
-  private getResetWindowSeconds(context: FightContext): number | undefined {
-    const heavyDamage = this.getHeavyDamage(context);
-    return heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
-  }
-
   private hasIsolatedTrade(context: FightContext): boolean {
     return (
       context.tradeRangeConfidence !== 'low' &&
@@ -353,7 +785,10 @@ export class CoachingDecisionEngineService {
   private hasLowDamageConversion(context: FightContext): boolean {
     const damageTaken = context.damageTaken.reduce((sum, event) => sum + event.damage, 0);
     const damageDealt = context.damageDealt.reduce((sum, event) => sum + event.damage, 0);
-    return damageTaken >= HEAVY_DAMAGE_THRESHOLD && damageDealt < damageTaken / 2;
+    return (
+      damageTaken >= COACHING_THRESHOLDS.heavyDamage &&
+      damageDealt < damageTaken * COACHING_THRESHOLDS.lowDamageConversionRatio
+    );
   }
 
   private contextMatchesProfile(context: FightContext, profileName: string): boolean {
@@ -365,14 +800,10 @@ export class CoachingDecisionEngineService {
   }
 
   private hasMaterialZonePressure(context: FightContext): boolean {
-    return context.blueZoneDamage.damage >= MATERIAL_BLUE_ZONE_DAMAGE;
+    return context.blueZoneDamage.damage >= COACHING_THRESHOLDS.materialBlueZoneDamage;
   }
 
-  private getHeavyDamage(context: FightContext) {
-    return context.damageTaken.find((event) => event.damage >= HEAVY_DAMAGE_THRESHOLD);
-  }
-
-  private lowestClaimConfidence(claims: FightContextClaim[]): CoachingRating {
+  private lowestClaimConfidence(claims: CoachingClaim[]): CoachingRating {
     if (claims.some((claim) => claim.confidence === 'low')) return 'low';
     if (claims.some((claim) => claim.confidence === 'medium')) return 'medium';
     return 'high';

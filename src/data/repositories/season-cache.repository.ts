@@ -1,63 +1,90 @@
 import type { PrismaClient } from '../../../generated/prisma/client';
 
-export interface UpsertSeasonCacheData {
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface SeasonCacheKey {
   platform: string;
-  accountId: string;
   seasonId: string;
   gameMode: string;
+}
+
+export interface SeasonStats {
   kd: number;
   adr: number;
+}
+
+export interface SeasonCacheLookupResult {
+  freshStats: Map<string, SeasonStats>;
+  missingAccountIds: string[];
+}
+
+export interface SeasonCacheWrite extends SeasonStats {
+  accountId: string;
   wins: number;
   games: number;
 }
 
 export class SeasonCacheRepository {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    private readonly now: () => number = Date.now
+  ) {}
 
-  public async findByAccountIds(
-    accountIds: string[],
-    platform: string,
-    seasonId: string,
-    gameMode: string
-  ) {
-    return this.prisma.playerSeasonCache.findMany({
+  public async findFreshStats(
+    key: SeasonCacheKey,
+    accountIds: string[]
+  ): Promise<SeasonCacheLookupResult> {
+    const cutoff = new Date(this.now() - CACHE_TTL_MS);
+    const rows = await this.prisma.playerSeasonCache.findMany({
       where: {
         accountId: { in: accountIds },
-        platform,
-        seasonId,
-        gameMode,
+        platform: key.platform,
+        seasonId: key.seasonId,
+        gameMode: key.gameMode,
+        cachedAt: { gt: cutoff },
       },
+      select: { accountId: true, kd: true, adr: true },
     });
+    const freshStats = new Map(
+      rows.map((row) => [row.accountId, { kd: row.kd, adr: row.adr }])
+    );
+
+    return {
+      freshStats,
+      missingAccountIds: accountIds.filter((accountId) => !freshStats.has(accountId)),
+    };
   }
 
-  public async upsertStats(stats: UpsertSeasonCacheData[]): Promise<void> {
+  public async upsertStats(key: SeasonCacheKey, stats: SeasonCacheWrite[]): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      for (const s of stats) {
+      const cachedAt = new Date(this.now());
+      for (const stat of stats) {
         await tx.playerSeasonCache.upsert({
           where: {
             platform_accountId_seasonId_gameMode: {
-              platform: s.platform,
-              accountId: s.accountId,
-              seasonId: s.seasonId,
-              gameMode: s.gameMode,
+              platform: key.platform,
+              accountId: stat.accountId,
+              seasonId: key.seasonId,
+              gameMode: key.gameMode,
             },
           },
           update: {
-            kd: s.kd,
-            adr: s.adr,
-            wins: s.wins,
-            games: s.games,
-            cachedAt: new Date(),
+            kd: stat.kd,
+            adr: stat.adr,
+            wins: stat.wins,
+            games: stat.games,
+            cachedAt,
           },
           create: {
-            platform: s.platform,
-            accountId: s.accountId,
-            seasonId: s.seasonId,
-            gameMode: s.gameMode,
-            kd: s.kd,
-            adr: s.adr,
-            wins: s.wins,
-            games: s.games,
+            platform: key.platform,
+            accountId: stat.accountId,
+            seasonId: key.seasonId,
+            gameMode: key.gameMode,
+            kd: stat.kd,
+            adr: stat.adr,
+            wins: stat.wins,
+            games: stat.games,
+            cachedAt,
           },
         });
       }

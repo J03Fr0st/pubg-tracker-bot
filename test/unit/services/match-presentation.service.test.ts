@@ -2,6 +2,7 @@ import { PubgClient, type TelemetryEvent } from '@j03fr0st/pubg-ts';
 import { EmbedBuilder } from 'discord.js';
 import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
+import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
 import {
   type MatchPresentationDependencies,
@@ -27,14 +28,15 @@ function createDependencies(): MatchPresentationDependencies {
       new SeasonCacheRepository(prisma)
     ),
     coachingPipeline: new CoachingPipelineService({
-      analyze: () => [],
+      decisionEngine: new CoachingDecisionEngineService(),
       narrate: async () => ({ sections: [] }),
     }),
   };
 }
 
-function createPlayerAnalysis(playerName: string): PlayerAnalysis {
+function createPlayerAnalysis(pubgId: string, playerName: string): PlayerAnalysis {
   return {
+    pubgId,
     playerName,
     matchStartTime: new Date('2026-07-14T08:00:00.000Z'),
     killEvents: [],
@@ -55,10 +57,10 @@ function createPlayerAnalysis(playerName: string): PlayerAnalysis {
   };
 }
 
-function createMatchAnalysis(matchId: string, playerName: string): MatchAnalysis {
+function createMatchAnalysis(matchId: string, pubgId: string, playerName: string): MatchAnalysis {
   return {
     matchId,
-    playerAnalyses: new Map([[playerName, createPlayerAnalysis(playerName)]]),
+    playerAnalyses: new Map([[pubgId, createPlayerAnalysis(pubgId, playerName)]]),
     processingTimeMs: 5,
     totalEventsProcessed: 0,
   };
@@ -81,7 +83,7 @@ describe('MatchPresentationService', () => {
       matchId: 'basic-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'BasicPlayer',
           pubgId: 'account.basic',
@@ -115,6 +117,67 @@ describe('MatchPresentationService', () => {
     expect(coaching).not.toHaveBeenCalled();
   });
 
+  it('uses roster participants for totals and order but enhances only monitored players', async () => {
+    const deps = createDependencies();
+    const matchAnalysis = createMatchAnalysis('role-match', 'account.monitored', 'MonitoredPlayer');
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis,
+      rawEvents: [],
+    });
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    const coaching = jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
+    const service = new MatchPresentationService(deps);
+    const monitored = {
+      name: 'MonitoredPlayer',
+      pubgId: 'account.monitored',
+      rosterId: 'roster-1',
+      stats: makeMatchParticipantStats({ kills: 2, damageDealt: 200 }),
+    };
+    const teammate = {
+      name: 'RosterTeammate',
+      pubgId: 'account.teammate',
+      rosterId: 'roster-1',
+      stats: makeMatchParticipantStats({ kills: 1, damageDealt: 100 }),
+    };
+    const summary = makeMatchSummary({
+      matchId: 'role-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/role-match',
+      rosterParticipants: [monitored, teammate],
+      monitoredPlayers: [monitored],
+      lobbyParticipants: [
+        monitored,
+        teammate,
+        {
+          name: 'LobbyOpponent',
+          pubgId: 'account.opponent',
+          rosterId: 'roster-2',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+
+    expect(embeds[0].data.description).toContain('👥 Squad Size: **2 players**');
+    expect(embeds[0].data.description).toContain('⚔️ Total Kills: **3**');
+    expect(embeds[0].data.description).toContain('💥 Total Damage: **300**');
+    expect(embeds.slice(1, 3).map((embed) => embed.data.title)).toEqual([
+      'Player: MonitoredPlayer',
+      'Player: RosterTeammate',
+    ]);
+    expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
+    expect(embeds[2].data.description).toContain('⚔️ Kills: 1');
+    expect(embeds[2].data.description).not.toContain('⚔️ **COMBAT STATS**');
+    expect(coaching).toHaveBeenCalledWith({
+      matchAnalysis,
+      monitoredPlayers: [monitored],
+      telemetryEvents: [],
+    });
+  });
+
   it('creates enhanced player embeds from live telemetry', async () => {
     const deps = createDependencies();
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
@@ -122,7 +185,7 @@ describe('MatchPresentationService', () => {
     const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry').mockResolvedValue([]);
     const processTelemetry = jest
       .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
-      .mockResolvedValue(createMatchAnalysis('live-match', 'LivePlayer'));
+      .mockResolvedValue(createMatchAnalysis('live-match', 'account.live', 'LivePlayer'));
     jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
     jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
     const service = new MatchPresentationService(deps);
@@ -131,7 +194,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/live-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'LivePlayer',
           pubgId: 'account.live',
@@ -144,9 +207,12 @@ describe('MatchPresentationService', () => {
 
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
     expect(liveTelemetry).toHaveBeenCalledWith('live-match');
-    expect(processTelemetry).toHaveBeenCalledWith([], 'live-match', summary.playedAt, [
-      'LivePlayer',
-    ]);
+    expect(processTelemetry).toHaveBeenCalledWith(
+      [],
+      'live-match',
+      summary.playedAt,
+      summary.monitoredPlayers
+    );
   });
 
   it('keeps enhanced delivery nonblocking when saving the live telemetry cache fails', async () => {
@@ -158,7 +224,7 @@ describe('MatchPresentationService', () => {
         common: { isGame: 1 },
       },
     ];
-    const matchAnalysis = createMatchAnalysis('cache-save-failure', 'LivePlayer');
+    const matchAnalysis = createMatchAnalysis('cache-save-failure', 'account.live', 'LivePlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
     const saveTelemetry = jest
       .spyOn(deps.telemetryRepository, 'saveTelemetry')
@@ -174,7 +240,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-save-failure',
-      players: [
+      rosterParticipants: [
         {
           name: 'LivePlayer',
           pubgId: 'account.live',
@@ -191,7 +257,7 @@ describe('MatchPresentationService', () => {
 
   it('renders identical full embed data from the same live and cached telemetry fixture', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cache-parity', 'ParityPlayer');
+    const matchAnalysis = createMatchAnalysis('cache-parity', 'account.parity', 'ParityPlayer');
     const rawEvents: TelemetryEvent[] = [];
     jest
       .spyOn(deps.telemetryRepository, 'getTelemetry')
@@ -208,7 +274,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-parity',
-      players: [
+      rosterParticipants: [
         {
           name: 'ParityPlayer',
           pubgId: 'account.parity',
@@ -225,7 +291,7 @@ describe('MatchPresentationService', () => {
 
   it('uses cached telemetry without a live fetch and still creates coaching', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cached-match', 'CachedPlayer');
+    const matchAnalysis = createMatchAnalysis('cached-match', 'account.cached', 'CachedPlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -247,7 +313,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cached-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CachedPlayer',
           pubgId: 'account.cached',
@@ -262,13 +328,91 @@ describe('MatchPresentationService', () => {
     expect(embeds.at(-1)?.data.description).toContain('Hold the stronger angle.');
     expect(liveTelemetry).not.toHaveBeenCalled();
     expect(processTelemetry).not.toHaveBeenCalled();
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, ['CachedPlayer'], [], []);
+    expect(coaching).toHaveBeenCalledWith({
+      matchAnalysis,
+      monitoredPlayers: summary.monitoredPlayers,
+      telemetryEvents: [],
+    });
+  });
+
+  it('rebuilds an incomplete cache hit from cached events for all monitored players', async () => {
+    const deps = createDependencies();
+    const rawEvents: TelemetryEvent[] = [
+      {
+        _D: '2026-07-14T08:00:00.000Z',
+        _T: 'FixtureEvent',
+        common: { isGame: 1 },
+      },
+    ];
+    const cachedAnalysis = createMatchAnalysis(
+      'partial-cache-match',
+      'account.cached',
+      'CachedPlayer'
+    );
+    const rebuiltAnalysis = createMatchAnalysis(
+      'partial-cache-match',
+      'account.cached',
+      'CachedPlayer'
+    );
+    rebuiltAnalysis.playerAnalyses.set(
+      'account.missing',
+      createPlayerAnalysis('account.missing', 'MissingPlayer')
+    );
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis: cachedAnalysis,
+      rawEvents,
+    });
+    const saveTelemetry = jest
+      .spyOn(deps.telemetryRepository, 'saveTelemetry')
+      .mockResolvedValue(undefined);
+    const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry');
+    const processTelemetry = jest
+      .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
+      .mockResolvedValue(rebuiltAnalysis);
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
+    const service = new MatchPresentationService(deps);
+    const cachedPlayer = {
+      name: 'CachedPlayer',
+      pubgId: 'account.cached',
+      stats: makeMatchParticipantStats(),
+    };
+    const missingPlayer = {
+      name: 'MissingPlayer',
+      pubgId: 'account.missing',
+      stats: makeMatchParticipantStats(),
+    };
+    const summary = makeMatchSummary({
+      matchId: 'partial-cache-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/partial-cache-match',
+      rosterParticipants: [cachedPlayer, missingPlayer],
+      monitoredPlayers: [cachedPlayer, missingPlayer],
+      lobbyParticipants: [],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+
+    expect(embeds.slice(1, 3).map((embed) => embed.data.description)).toEqual([
+      expect.stringContaining('⚔️ **COMBAT STATS**'),
+      expect.stringContaining('⚔️ **COMBAT STATS**'),
+    ]);
+    expect(liveTelemetry).not.toHaveBeenCalled();
+    expect(processTelemetry).toHaveBeenCalledWith(
+      rawEvents,
+      'partial-cache-match',
+      summary.playedAt,
+      summary.monitoredPlayers
+    );
+    expect(saveTelemetry).toHaveBeenCalledWith(rawEvents, rebuiltAnalysis);
   });
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('opponent-match', 'TrackedPlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('TrackedPlayer');
+    const matchAnalysis = createMatchAnalysis('opponent-match', 'account.tracked', 'TrackedPlayer');
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.tracked');
     if (!playerAnalysis) {
       throw new Error('Expected tracked player analysis');
     }
@@ -312,14 +456,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/opponent-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'TrackedPlayer',
           pubgId: 'account.tracked',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -332,7 +476,7 @@ describe('MatchPresentationService', () => {
 
   it('uses summary lobby players, counts bots, and omits humans without stats', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('lobby-match', 'LobbyPlayer');
+    const matchAnalysis = createMatchAnalysis('lobby-match', 'account.ranked', 'LobbyPlayer');
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -353,8 +497,8 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/lobby-match',
-      players: [rankedPlayer],
-      lobbyPlayers: [
+      rosterParticipants: [rankedPlayer],
+      lobbyParticipants: [
         rankedPlayer,
         {
           name: 'MissingStats',
@@ -379,8 +523,12 @@ describe('MatchPresentationService', () => {
 
   it('keeps long enhanced timelines within the Discord description limit', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('timeline-match', 'TimelinePlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('TimelinePlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'timeline-match',
+      'account.timeline',
+      'TimelinePlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.timeline');
     if (!playerAnalysis) {
       throw new Error('Expected timeline player analysis');
     }
@@ -413,14 +561,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/timeline-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'TimelinePlayer',
           pubgId: 'account.timeline',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -450,7 +598,7 @@ describe('MatchPresentationService', () => {
     const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry').mockResolvedValue([]);
     jest
       .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
-      .mockResolvedValue(createMatchAnalysis('corrupt-match', 'CorruptPlayer'));
+      .mockResolvedValue(createMatchAnalysis('corrupt-match', 'account.corrupt', 'CorruptPlayer'));
     jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
     jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
     const warning = jest.spyOn(logger, 'warn').mockImplementation();
@@ -460,14 +608,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/corrupt-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CorruptPlayer',
           pubgId: 'account.corrupt',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -481,8 +629,12 @@ describe('MatchPresentationService', () => {
 
   it('warns and treats a cache lookup failure as a live telemetry miss', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('cache-error-match', 'CacheErrorPlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('CacheErrorPlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'cache-error-match',
+      'account.cache-error',
+      'CacheErrorPlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.cache-error');
     if (!playerAnalysis) {
       throw new Error('Expected cache error player analysis');
     }
@@ -523,14 +675,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/cache-error-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'CacheErrorPlayer',
           pubgId: 'account.cache-error',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [
+      lobbyParticipants: [
         {
           name: 'LobbyEnemy',
           pubgId: 'account.lobby-enemy',
@@ -572,7 +724,7 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/failed-telemetry-match',
-      players: [
+      rosterParticipants: [
         {
           name: 'FallbackPlayer',
           pubgId: 'account.fallback',
@@ -601,12 +753,16 @@ describe('MatchPresentationService', () => {
       matchId: 'pristine-fallback',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [player],
-      lobbyPlayers: [],
+      rosterParticipants: [player],
+      lobbyParticipants: [],
     });
     const expected = await service.createEmbeds(basicSummary);
-    const matchAnalysis = createMatchAnalysis('pristine-fallback', 'PristinePlayer');
-    const playerAnalysis = matchAnalysis.playerAnalyses.get('PristinePlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'pristine-fallback',
+      'account.pristine',
+      'PristinePlayer'
+    );
+    const playerAnalysis = matchAnalysis.playerAnalyses.get('account.pristine');
     if (!playerAnalysis) {
       throw new Error('Expected pristine player analysis');
     }
@@ -645,8 +801,8 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/pristine-fallback',
-      players: [player],
-      lobbyPlayers: [],
+      rosterParticipants: [player],
+      lobbyParticipants: [],
     });
 
     const actual = await service.createEmbeds(enhancedSummary);
@@ -657,7 +813,11 @@ describe('MatchPresentationService', () => {
 
   it('keeps match and enhanced player embeds when coaching fails', async () => {
     const deps = createDependencies();
-    const matchAnalysis = createMatchAnalysis('coaching-failure', 'CoachedPlayer');
+    const matchAnalysis = createMatchAnalysis(
+      'coaching-failure',
+      'account.coached',
+      'CoachedPlayer'
+    );
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
@@ -672,14 +832,14 @@ describe('MatchPresentationService', () => {
       mapName: 'Baltic_Main',
       gameMode: 'squad',
       telemetryUrl: 'https://telemetry.example/coaching-failure',
-      players: [
+      rosterParticipants: [
         {
           name: 'CoachedPlayer',
           pubgId: 'account.coached',
           stats: makeMatchParticipantStats(),
         },
       ],
-      lobbyPlayers: [],
+      lobbyParticipants: [],
     });
 
     const embeds = await service.createEmbeds(summary);
@@ -698,7 +858,7 @@ describe('MatchPresentationService', () => {
       matchId: 'stable-format-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'FormatPlayer',
           pubgId: 'account.format',
@@ -725,7 +885,7 @@ describe('MatchPresentationService', () => {
       matchId: 'empty-catalog-labels',
       mapName: 'Unknown_Main',
       gameMode: 'unknown-mode',
-      players: [
+      rosterParticipants: [
         {
           name: 'FormatPlayer',
           pubgId: 'account.format',

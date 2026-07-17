@@ -22,10 +22,14 @@ export interface MatchParticipantStats {
   winPlace: number;
 }
 
-export interface MatchParticipant {
-  participantId: string;
+export interface MatchPlayerIdentity {
   pubgId: string;
   name: string;
+  rosterId: string | null;
+}
+
+export interface MatchParticipant extends MatchPlayerIdentity {
+  participantId: string;
   stats: MatchParticipantStats;
 }
 
@@ -50,9 +54,7 @@ export interface InterpretedMatch {
   rosters: InterpretedRoster[];
 }
 
-export interface MatchSummaryPlayer {
-  name: string;
-  pubgId: string;
+export interface MatchSummaryParticipant extends MatchPlayerIdentity {
   stats: MatchParticipantStats;
 }
 
@@ -61,8 +63,9 @@ export interface MatchSummary {
   mapName: string;
   gameMode: string;
   playedAt: Date;
-  players: MatchSummaryPlayer[];
-  lobbyPlayers: MatchSummaryPlayer[];
+  rosterParticipants: MatchSummaryParticipant[];
+  monitoredPlayers: MatchSummaryParticipant[];
+  lobbyParticipants: MatchSummaryParticipant[];
   teamRank?: number;
   telemetryUrl?: string;
 }

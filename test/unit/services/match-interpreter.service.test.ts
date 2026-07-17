@@ -31,25 +31,44 @@ describe('MatchInterpreter', () => {
     expect(match).not.toHaveProperty('telemetryUrl');
   });
 
-  it('builds a summary containing the monitored roster and full lobby', () => {
+  it('separates monitored, roster, and lobby participants by PUBG account ID', () => {
     const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-      'Player1',
+      'account.1',
     ]);
 
-    expect(summary?.players.map((player) => player.name)).toEqual(['Player1', 'TeamMate']);
-    expect(summary?.lobbyPlayers).toHaveLength(3);
+    expect(summary).not.toBeNull();
+    expect(summary?.monitoredPlayers).toEqual([
+      expect.objectContaining({
+        pubgId: 'account.1',
+        name: 'Player1',
+        rosterId: 'roster-1',
+      }),
+    ]);
+    expect(
+      summary?.rosterParticipants.map(({ pubgId, rosterId }) => ({ pubgId, rosterId }))
+    ).toEqual([
+      { pubgId: 'account.1', rosterId: 'roster-1' },
+      { pubgId: 'account.2', rosterId: 'roster-1' },
+    ]);
+    expect(summary?.lobbyParticipants.map((participant) => participant.pubgId)).toEqual([
+      'account.1',
+      'account.2',
+      'account.3',
+    ]);
     expect(summary?.teamRank).toBe(3);
+    expect(summary).not.toHaveProperty('players');
+    expect(summary).not.toHaveProperty('lobbyPlayers');
   });
 
-  it('returns null when no monitored player participated', () => {
+  it('returns null when no monitored PUBG account participated', () => {
     const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-      'Absent',
+      'account.absent',
     ]);
 
     expect(summary).toBeNull();
   });
 
-  it('includes a monitored participant without a roster', () => {
+  it('keeps a monitored participant without a roster and records rosterId null', () => {
     const response = makeMatchResponse();
     const roster = response.included.find(
       (item) => item.type === 'roster' && item.id === 'roster-1'
@@ -60,30 +79,50 @@ describe('MatchInterpreter', () => {
       );
     }
 
-    const summary = interpreter.createSummary(interpreter.interpret(response), ['Player1']);
+    const summary = interpreter.createSummary(interpreter.interpret(response), ['account.1']);
 
-    expect(summary?.players.map((player) => player.name)).toEqual(['Player1']);
+    expect(summary?.monitoredPlayers).toEqual([
+      expect.objectContaining({ pubgId: 'account.1', rosterId: null }),
+    ]);
+    expect(summary?.rosterParticipants).toEqual([
+      expect.objectContaining({ pubgId: 'account.1', rosterId: null }),
+    ]);
     expect(summary?.teamRank).toBe(3);
   });
 
-  it('deduplicates monitored names while selecting every monitored roster', () => {
+  it('deduplicates monitored account IDs while selecting every monitored roster', () => {
     const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-      'Player1',
-      'Player1',
-      'Opponent',
+      'account.1',
+      'account.1',
+      'account.3',
     ]);
 
-    expect(summary?.players.map((player) => player.name)).toEqual([
-      'Player1',
-      'TeamMate',
-      'Opponent',
+    expect(summary?.monitoredPlayers.map((participant) => participant.pubgId)).toEqual([
+      'account.1',
+      'account.3',
+    ]);
+    expect(summary?.rosterParticipants.map((participant) => participant.pubgId)).toEqual([
+      'account.1',
+      'account.2',
+      'account.3',
+    ]);
+  });
+
+  it('does not select a renamed account by its old display name', () => {
+    const match = interpreter.interpret(makeMatchResponse());
+    match.participants[0].name = 'RenamedPlayer';
+
+    const summary = interpreter.createSummary(match, ['account.1']);
+
+    expect(summary?.monitoredPlayers).toEqual([
+      expect.objectContaining({ pubgId: 'account.1', name: 'RenamedPlayer' }),
     ]);
   });
 
   it('omits team rank when monitored players have different placements', () => {
     const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-      'Player1',
-      'Opponent',
+      'account.1',
+      'account.3',
     ]);
 
     expect(summary?.teamRank).toBeUndefined();

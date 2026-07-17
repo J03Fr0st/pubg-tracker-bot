@@ -5,6 +5,7 @@ import { PlayerRepository } from '../../src/data/repositories/player.repository'
 import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
 import { SeasonCacheRepository } from '../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
+import { CoachingDecisionEngineService } from '../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
 import { MatchInterpreter } from '../../src/services/match-interpreter.service';
@@ -56,7 +57,7 @@ function createPresentation(): MatchPresentationService {
       new SeasonCacheRepository(prisma)
     ),
     coachingPipeline: new CoachingPipelineService({
-      analyze: () => [],
+      decisionEngine: new CoachingDecisionEngineService(),
       narrate: async () => ({ sections: [] }),
     }),
   };
@@ -105,7 +106,7 @@ function createSummary() {
     matchId: 'channel-match',
     mapName: 'Baltic_Main',
     gameMode: 'squad',
-    players: [
+    rosterParticipants: [
       {
         name: 'ChannelPlayer',
         pubgId: 'account.channel',
@@ -162,7 +163,7 @@ function createProcessMatchInteraction() {
 function createExpectedManualSummary() {
   const interpreter = new MatchInterpreter();
   const summary = interpreter.createSummary(interpreter.interpret(makeMatchResponse()), [
-    'Player1',
+    'account.1',
   ]);
   if (!summary) {
     throw new Error('Expected monitored player summary');
@@ -301,7 +302,7 @@ describe('Discord match presentation gateway', () => {
       matchId: 'batch-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'BatchPlayer',
           pubgId: 'account.batch',
@@ -316,6 +317,41 @@ describe('Discord match presentation gateway', () => {
     expect(channel.send).toHaveBeenCalledTimes(2);
     expect(channel.send.mock.calls[0][0]).toEqual({ embeds: embeds.slice(0, 10) });
     expect(channel.send.mock.calls[1][0]).toEqual({ embeds: embeds.slice(10) });
+  });
+
+  it('rejects automatic delivery when presentation produces no embeds', async () => {
+    const presentation = createPresentation();
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([]);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toEqual(
+      new Error('Match summary presentation produced no embeds')
+    );
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
+  it('stops automatic delivery on the first failed batch', async () => {
+    const presentation = createPresentation();
+    const embeds = Array.from({ length: 21 }, (_, index) =>
+      new EmbedBuilder().setTitle(`Embed ${index + 1}`)
+    );
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    const deliveryError = new Error('second batch failed');
+    channel.send
+      .mockResolvedValueOnce({ id: 'message-1' })
+      .mockRejectedValueOnce(deliveryError)
+      .mockResolvedValueOnce({ id: 'message-3' });
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toBe(deliveryError);
+
+    expect(channel.send).toHaveBeenCalledTimes(2);
+    expect(channel.send.mock.calls[0][0]).toEqual({ embeds: embeds.slice(0, 10) });
+    expect(channel.send.mock.calls[1][0]).toEqual({ embeds: embeds.slice(10, 20) });
   });
 
   it('accepts an exact 6000-character aggregate in one automatic message', async () => {
@@ -366,6 +402,25 @@ describe('Discord match presentation gateway', () => {
     expect(channel.send).not.toHaveBeenCalled();
   });
 
+  it('validates later embeds before sending an earlier valid batch', async () => {
+    const presentation = createPresentation();
+    const valid = Array.from({ length: 10 }, (_, index) =>
+      new EmbedBuilder().setTitle(`Valid embed ${index + 1}`)
+    );
+    const oversized = new EmbedBuilder()
+      .setDescription('D'.repeat(4096))
+      .setFooter({ text: 'F'.repeat(1905) });
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([...valid, oversized]);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toThrow(
+      "Embed text length 6001 exceeds Discord's 6000-character message limit"
+    );
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
   it('sends real basic presentation output through the gateway', async () => {
     const bot = createBot(createPresentation());
     const channel = createTextChannel();
@@ -374,7 +429,7 @@ describe('Discord match presentation gateway', () => {
       matchId: 'smoke-match',
       mapName: 'Baltic_Main',
       gameMode: 'squad',
-      players: [
+      rosterParticipants: [
         {
           name: 'SmokePlayer',
           pubgId: 'account.smoke',
@@ -421,6 +476,49 @@ describe('Discord match presentation gateway', () => {
     const calls = [...interaction.editReply.mock.calls, ...interaction.followUp.mock.calls];
     expect(calls.flatMap(([payload]) => payload.embeds)).toEqual(embeds);
     expect(calls).toHaveLength(3);
+  });
+
+  it('reports the same empty-presentation error for manual processmatch', async () => {
+    const presentation = createPresentation();
+    const createEmbeds = jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([]);
+    createBot(presentation);
+    jest.mocked(latestPubgClient().matches.getMatch).mockResolvedValue(makeMatchResponse());
+    jest.spyOn(PlayerRepository.prototype, 'getAllPlayers').mockResolvedValue([
+      {
+        id: 'player-1',
+        pubgId: 'account.1',
+        name: 'Player1',
+        shardId: 'steam',
+        patchVersion: '36.1.1',
+        titleId: 'bluehole-pubg',
+        lastMatchAt: null,
+        createdAt: new Date('2026-07-14T08:00:00.000Z'),
+        updatedAt: new Date('2026-07-14T08:00:00.000Z'),
+      },
+    ]);
+    const interaction = createProcessMatchInteraction();
+
+    await interactionHandler()(interaction);
+
+    expect(createEmbeds).toHaveBeenCalledWith(createExpectedManualSummary());
+    expect(interaction.followUp).not.toHaveBeenCalled();
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply).toHaveBeenCalledWith({
+      embeds: [
+        expect.objectContaining({
+          data: expect.objectContaining({
+            title: '❌ Error Processing Match',
+            fields: expect.arrayContaining([
+              expect.objectContaining({
+                name: 'Error Details',
+                value: 'Match summary presentation produced no embeds',
+                inline: false,
+              }),
+            ]),
+          }),
+        }),
+      ],
+    });
   });
 
   it('explains Missing Access returned while sending a batch', async () => {

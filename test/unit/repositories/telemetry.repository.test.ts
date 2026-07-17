@@ -9,14 +9,17 @@ const mockPrisma = {
   },
 } as unknown as PrismaClient;
 
+const PLAYER_ID = 'account.player-1';
+
 const makeAnalysis = (): MatchAnalysis => ({
   matchId: 'match-1',
   processingTimeMs: 42,
   totalEventsProcessed: 3,
   playerAnalyses: new Map([
     [
-      'Player1',
+      PLAYER_ID,
       {
+        pubgId: PLAYER_ID,
         playerName: 'Player1',
         matchStartTime: new Date('2026-07-14T08:00:00.000Z'),
         killEvents: [],
@@ -48,12 +51,12 @@ const makeAnalysis = (): MatchAnalysis => ({
 });
 
 const serializedPlayers = () => ({
-  Player1: {
-    ...makeAnalysis().playerAnalyses.get('Player1'),
+  [PLAYER_ID]: {
+    ...makeAnalysis().playerAnalyses.get(PLAYER_ID),
     matchStartTime: '2026-07-14T08:00:00.000Z',
     killChains: [
       {
-        ...makeAnalysis().playerAnalyses.get('Player1')?.killChains[0],
+        ...makeAnalysis().playerAnalyses.get(PLAYER_ID)?.killChains[0],
         startTime: '2026-07-14T08:05:00.000Z',
       },
     ],
@@ -65,43 +68,25 @@ describe('TelemetryRepository', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('writes a versioned cache envelope', async () => {
-    (mockPrisma.matchTelemetry.upsert as jest.Mock).mockResolvedValue({});
-
-    await repo.saveTelemetry([{ _T: 'LogMatchStart' } as never], makeAnalysis());
-
-    expect(mockPrisma.matchTelemetry.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { matchId: 'match-1' },
-        create: expect.objectContaining({
-          matchId: 'match-1',
-          playerAnalyses: expect.objectContaining({ version: 1, matchId: 'match-1' }),
-        }),
-      })
-    );
-  });
-
-  it('serializes analysis dates in the cache envelope', async () => {
+  it('writes a version 2 envelope keyed by PUBG account ID', async () => {
     (mockPrisma.matchTelemetry.upsert as jest.Mock).mockResolvedValue({});
 
     await repo.saveTelemetry([{ _T: 'LogMatchStart' } as never], makeAnalysis());
 
     const upsert = (mockPrisma.matchTelemetry.upsert as jest.Mock).mock.calls[0][0];
+    expect(upsert.create.playerAnalyses).toMatchObject({
+      version: 2,
+      matchId: 'match-1',
+      players: {
+        [PLAYER_ID]: {
+          pubgId: PLAYER_ID,
+          playerName: 'Player1',
+          matchStartTime: '2026-07-14T08:00:00.000Z',
+          killChains: [expect.objectContaining({ startTime: '2026-07-14T08:05:00.000Z' })],
+        },
+      },
+    });
     expect(upsert.update.playerAnalyses).toEqual(upsert.create.playerAnalyses);
-    expect(mockPrisma.matchTelemetry.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: expect.objectContaining({
-          playerAnalyses: expect.objectContaining({
-            players: {
-              Player1: expect.objectContaining({
-                matchStartTime: '2026-07-14T08:00:00.000Z',
-                killChains: [expect.objectContaining({ startTime: '2026-07-14T08:05:00.000Z' })],
-              }),
-            },
-          }),
-        }),
-      })
-    );
   });
 
   it('returns a cache miss when no persisted telemetry exists', async () => {
@@ -116,44 +101,11 @@ describe('TelemetryRepository', () => {
     });
   });
 
-  it('hydrates the legacy unversioned player map', async () => {
-    (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
-      rawEvents: [],
-      playerAnalyses: serializedPlayers(),
-    });
-
-    await expect(repo.getTelemetry('match-legacy')).resolves.toMatchObject({ kind: 'hit' });
-  });
-
-  it('hydrates a legacy player named version without treating it as an envelope', async () => {
-    const rawEvents = [{ _T: 'LogMatchStart' }];
-    const legacyPlayer = { ...serializedPlayers().Player1, playerName: 'version' };
-    (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
-      rawEvents,
-      playerAnalyses: { version: legacyPlayer },
-    });
-
-    const result = await repo.getTelemetry('match-legacy-version');
-
-    expect(result.kind).toBe('hit');
-    if (result.kind !== 'hit') throw new Error('expected cache hit');
-    expect(result.rawEvents).toEqual(rawEvents);
-    expect(result.matchAnalysis.matchId).toBe('match-legacy-version');
-    expect(result.matchAnalysis.processingTimeMs).toBe(0);
-    expect(result.matchAnalysis.totalEventsProcessed).toBe(1);
-    expect([...result.matchAnalysis.playerAnalyses.keys()]).toEqual(['version']);
-    expect(result.matchAnalysis.playerAnalyses.get('version')?.playerName).toBe('version');
-    expect(result.matchAnalysis.playerAnalyses.get('version')?.matchStartTime).toBeInstanceOf(Date);
-    expect(
-      result.matchAnalysis.playerAnalyses.get('version')?.killChains[0].startTime
-    ).toBeInstanceOf(Date);
-  });
-
-  it('hydrates Date fields from a version 1 row', async () => {
+  it('hydrates a version 2 row into an account-keyed analysis map', async () => {
     (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
       rawEvents: [{ _T: 'LogMatchStart' }],
       playerAnalyses: {
-        version: 1,
+        version: 2,
         matchId: 'match-1',
         processingTimeMs: 42,
         totalEventsProcessed: 3,
@@ -165,22 +117,86 @@ describe('TelemetryRepository', () => {
 
     expect(result.kind).toBe('hit');
     if (result.kind !== 'hit') throw new Error('expected cache hit');
-    expect(result.matchAnalysis.playerAnalyses.get('Player1')?.matchStartTime).toBeInstanceOf(Date);
+    expect([...result.matchAnalysis.playerAnalyses.keys()]).toEqual([PLAYER_ID]);
+    expect(result.matchAnalysis.playerAnalyses.get(PLAYER_ID)).toMatchObject({
+      pubgId: PLAYER_ID,
+      playerName: 'Player1',
+    });
+    expect(result.matchAnalysis.playerAnalyses.get(PLAYER_ID)?.matchStartTime).toBeInstanceOf(Date);
     expect(
-      result.matchAnalysis.playerAnalyses.get('Player1')?.killChains[0].startTime
+      result.matchAnalysis.playerAnalyses.get(PLAYER_ID)?.killChains[0].startTime
     ).toBeInstanceOf(Date);
   });
 
   it.each([
-    [{ version: 99 }, 'unsupported telemetry cache version 99'],
-    [{ version: 1, matchId: 'match-1', players: [] }, 'players must be an object'],
+    ['unversioned', serializedPlayers()],
     [
+      'unversioned player named version',
+      {
+        version: {
+          ...serializedPlayers()[PLAYER_ID],
+          pubgId: 'account.version-player',
+          playerName: 'version',
+        },
+      },
+    ],
+    [
+      'version 1',
       {
         version: 1,
         matchId: 'match-1',
+        processingTimeMs: 42,
+        totalEventsProcessed: 3,
+        players: { Player1: serializedPlayers()[PLAYER_ID] },
+      },
+    ],
+  ])('returns a cache miss for %s identity data', async (_label, playerAnalyses) => {
+    (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
+      rawEvents: [],
+      playerAnalyses,
+    });
+
+    await expect(repo.getTelemetry('match-1')).resolves.toEqual({ kind: 'miss' });
+  });
+
+  it.each([0, 3, 99, 'future'])(
+    'classifies unsupported cache version %s as corrupt',
+    async (version) => {
+      (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
+        rawEvents: [],
+        playerAnalyses: { version },
+      });
+
+      await expect(repo.getTelemetry('match-1')).resolves.toEqual({
+        kind: 'corrupt',
+        reason: `unsupported telemetry cache version ${String(version)}`,
+      });
+    }
+  );
+
+  it.each([
+    [
+      {
+        version: 2,
+        matchId: 'match-1',
         processingTimeMs: 0,
         totalEventsProcessed: 0,
-        players: { Player1: { ...serializedPlayers().Player1, matchStartTime: 'not-a-date' } },
+        players: [],
+      },
+      'players must be an object',
+    ],
+    [
+      {
+        version: 2,
+        matchId: 'match-1',
+        processingTimeMs: 0,
+        totalEventsProcessed: 0,
+        players: {
+          [PLAYER_ID]: {
+            ...serializedPlayers()[PLAYER_ID],
+            matchStartTime: 'not-a-date',
+          },
+        },
       },
       'invalid matchStartTime',
     ],
@@ -196,7 +212,13 @@ describe('TelemetryRepository', () => {
   it('classifies raw events without a string _T as corrupt', async () => {
     (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
       rawEvents: [{}],
-      playerAnalyses: serializedPlayers(),
+      playerAnalyses: {
+        version: 2,
+        matchId: 'match-1',
+        processingTimeMs: 42,
+        totalEventsProcessed: 3,
+        players: serializedPlayers(),
+      },
     });
 
     await expect(repo.getTelemetry('match-1')).resolves.toEqual({
@@ -206,6 +228,7 @@ describe('TelemetryRepository', () => {
   });
 
   it.each([
+    ['pubgId', 'account.wrong', `player key ${PLAYER_ID} does not match pubgId account.wrong`],
     ['killEvents', {}, 'killEvents must be an array'],
     ['knockdownEvents', {}, 'knockdownEvents must be an array'],
     ['damageEvents', {}, 'damageEvents must be an array'],
@@ -225,7 +248,13 @@ describe('TelemetryRepository', () => {
     (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
       rawEvents: [],
       playerAnalyses: {
-        Player1: { ...serializedPlayers().Player1, [field]: invalidValue },
+        version: 2,
+        matchId: 'match-1',
+        processingTimeMs: 42,
+        totalEventsProcessed: 3,
+        players: {
+          [PLAYER_ID]: { ...serializedPlayers()[PLAYER_ID], [field]: invalidValue },
+        },
       },
     });
 
@@ -245,13 +274,19 @@ describe('TelemetryRepository', () => {
   ])(
     'classifies an invalid %s kill-chain field as corrupt',
     async (field, invalidValue, reason) => {
-      const player = serializedPlayers().Player1;
+      const player = serializedPlayers()[PLAYER_ID];
       (mockPrisma.matchTelemetry.findUnique as jest.Mock).mockResolvedValue({
         rawEvents: [],
         playerAnalyses: {
-          Player1: {
-            ...player,
-            killChains: [{ ...player.killChains[0], [field]: invalidValue }],
+          version: 2,
+          matchId: 'match-1',
+          processingTimeMs: 42,
+          totalEventsProcessed: 3,
+          players: {
+            [PLAYER_ID]: {
+              ...player,
+              killChains: [{ ...player.killChains[0], [field]: invalidValue }],
+            },
           },
         },
       });

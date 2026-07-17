@@ -3,8 +3,8 @@ import type { Prisma, PrismaClient } from '../../../generated/prisma/client';
 import type { KillChain, MatchAnalysis, PlayerAnalysis } from '../../types/analytics-results.types';
 import type { TelemetryCacheReadResult } from '../../types/telemetry-cache.types';
 
-interface StoredTelemetryAnalysisV1 {
-  version: 1;
+interface StoredTelemetryAnalysisV2 {
+  version: 2;
   matchId: string;
   processingTimeMs: number;
   totalEventsProcessed: number;
@@ -28,6 +28,7 @@ function parseDate(value: unknown, field: string): Date | string {
 
 function hydratePlayer(value: unknown): PlayerAnalysis | string {
   if (!isRecord(value)) return 'player analysis must be an object';
+  if (typeof value.pubgId !== 'string') return 'pubgId must be a string';
   if (typeof value.playerName !== 'string') return 'playerName must be a string';
   const matchStartTime = parseDate(value.matchStartTime, 'matchStartTime');
   if (typeof matchStartTime === 'string') return matchStartTime;
@@ -97,8 +98,8 @@ export class TelemetryRepository {
     matchAnalysis: MatchAnalysis
   ): Promise<void> {
     const players = Object.fromEntries(
-      [...matchAnalysis.playerAnalyses].map(([name, analysis]) => [
-        name,
+      [...matchAnalysis.playerAnalyses].map(([pubgId, analysis]) => [
+        pubgId,
         {
           ...analysis,
           matchStartTime: analysis.matchStartTime.toISOString(),
@@ -109,8 +110,8 @@ export class TelemetryRepository {
         },
       ])
     );
-    const stored: StoredTelemetryAnalysisV1 = {
-      version: 1,
+    const stored: StoredTelemetryAnalysisV2 = {
+      version: 2,
       matchId: matchAnalysis.matchId,
       processingTimeMs: matchAnalysis.processingTimeMs,
       totalEventsProcessed: matchAnalysis.totalEventsProcessed,
@@ -137,65 +138,62 @@ export class TelemetryRepository {
       select: { rawEvents: true, playerAnalyses: true },
     });
     if (!row) return { kind: 'miss' };
+    if (!isRecord(row.playerAnalyses)) {
+      return { kind: 'corrupt', reason: 'playerAnalyses must be an object' };
+    }
+
+    const stored = row.playerAnalyses;
+    if (stored.version === undefined || isRecord(stored.version) || stored.version === 1) {
+      return { kind: 'miss' };
+    }
+    if (stored.version !== 2) {
+      return {
+        kind: 'corrupt',
+        reason: `unsupported telemetry cache version ${String(stored.version)}`,
+      };
+    }
     if (!Array.isArray(row.rawEvents)) {
       return { kind: 'corrupt', reason: 'rawEvents must be an array' };
     }
     if (!row.rawEvents.every((event) => isRecord(event) && typeof event._T === 'string')) {
       return { kind: 'corrupt', reason: 'rawEvents entries must contain a string _T' };
     }
-    if (!isRecord(row.playerAnalyses)) {
-      return { kind: 'corrupt', reason: 'playerAnalyses must be an object' };
+    if (typeof stored.matchId !== 'string') {
+      return { kind: 'corrupt', reason: 'matchId must be a string' };
     }
-
-    const stored = row.playerAnalyses;
-    const version = typeof stored.version === 'number' ? stored.version : undefined;
-    if (version !== undefined && version !== 1) {
-      return { kind: 'corrupt', reason: `unsupported telemetry cache version ${String(version)}` };
+    if (typeof stored.processingTimeMs !== 'number' || !Number.isFinite(stored.processingTimeMs)) {
+      return { kind: 'corrupt', reason: 'processingTimeMs must be a finite number' };
     }
-    const versioned = version === 1;
-    const players = versioned ? stored.players : stored;
-    if (!isRecord(players)) {
+    if (
+      typeof stored.totalEventsProcessed !== 'number' ||
+      !Number.isFinite(stored.totalEventsProcessed)
+    ) {
+      return { kind: 'corrupt', reason: 'totalEventsProcessed must be a finite number' };
+    }
+    if (!isRecord(stored.players)) {
       return { kind: 'corrupt', reason: 'players must be an object' };
     }
 
-    let hydratedMatchId = matchId;
-    let processingTimeMs = 0;
-    let totalEventsProcessed = row.rawEvents.length;
-    if (versioned) {
-      if (typeof stored.matchId !== 'string') {
-        return { kind: 'corrupt', reason: 'matchId must be a string' };
-      }
-      if (
-        typeof stored.processingTimeMs !== 'number' ||
-        !Number.isFinite(stored.processingTimeMs)
-      ) {
-        return { kind: 'corrupt', reason: 'processingTimeMs must be a finite number' };
-      }
-      if (
-        typeof stored.totalEventsProcessed !== 'number' ||
-        !Number.isFinite(stored.totalEventsProcessed)
-      ) {
-        return { kind: 'corrupt', reason: 'totalEventsProcessed must be a finite number' };
-      }
-      hydratedMatchId = stored.matchId;
-      processingTimeMs = stored.processingTimeMs;
-      totalEventsProcessed = stored.totalEventsProcessed;
-    }
-
     const playerAnalyses = new Map<string, PlayerAnalysis>();
-    for (const [name, rawPlayer] of Object.entries(players)) {
+    for (const [pubgId, rawPlayer] of Object.entries(stored.players)) {
       const player = hydratePlayer(rawPlayer);
       if (typeof player === 'string') return { kind: 'corrupt', reason: player };
-      playerAnalyses.set(name, player);
+      if (player.pubgId !== pubgId) {
+        return {
+          kind: 'corrupt',
+          reason: `player key ${pubgId} does not match pubgId ${player.pubgId}`,
+        };
+      }
+      playerAnalyses.set(pubgId, player);
     }
 
     return {
       kind: 'hit',
       rawEvents: row.rawEvents as unknown as TelemetryEvent[],
       matchAnalysis: {
-        matchId: hydratedMatchId,
-        processingTimeMs,
-        totalEventsProcessed,
+        matchId: stored.matchId,
+        processingTimeMs: stored.processingTimeMs,
+        totalEventsProcessed: stored.totalEventsProcessed,
         playerAnalyses,
       },
     };

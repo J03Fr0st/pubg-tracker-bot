@@ -116,12 +116,16 @@ Optional 1-to-1 with `matches`. Telemetry processing can fail without blocking m
 | id | String (UUID) | PK |
 | matchId | String | Unique → matches.matchId |
 | rawEvents | Json | JSONB: full `TelemetryEvent[]` array |
-| playerAnalyses | Json | JSONB: `Record<playerName, PlayerAnalysis>` |
+| playerAnalyses | Json | JSONB: version 2 analysis envelope keyed by PUBG account ID |
 | processedAt | DateTime | auto |
 
-Telemetry cache JSON is a versioned persistence format, not a domain value. `TelemetryRepository`
-serializes and validates it, hydrates all `Date` fields, supports the legacy unversioned row shape,
-and returns an explicit hit/miss/corrupt result. Callers never cast JSON to `PlayerAnalysis`.
+Telemetry cache JSON is a versioned persistence format, not a domain value. New writes use
+version `2`, and the `players` object is keyed by stable PUBG account ID; each stored
+`PlayerAnalysis` also contains the same `pubgId` and a display-only `playerName`.
+`TelemetryRepository` serializes, validates, and hydrates version `2` rows and returns an explicit
+hit/miss/corrupt result. Version `1` and unversioned rows used player names as identity, so reads
+return a miss and the normal live path lazily rebuilds them as version `2`. Unsupported versions
+remain corrupt. Callers never cast JSON to `PlayerAnalysis`.
 
 ---
 
@@ -166,10 +170,10 @@ MatchMonitorService polls PUBG API
 
 DiscordBotService.sendMatchSummary()
   → Check match_telemetry for cached playerAnalyses
-  → [HIT]  Use cached PlayerAnalysis → build embeds
+  → [HIT]  Use cached account-keyed PlayerAnalysis → build embeds
   → [MISS] Fetch raw telemetry from telemetryUrl (HTTP)
            → TelemetryProcessorService.processMatchTelemetry()
-           → Save rawEvents + playerAnalyses to match_telemetry
+           → Save rawEvents + account-keyed PlayerAnalysis to match_telemetry
            → Build embeds from fresh analysis
 ```
 
@@ -179,7 +183,7 @@ User runs /process-match <matchId>
   → Check matches table for existing record
   → [EXISTS] Load participants from DB (no PUBG API call)
   → [MISSING] Fetch from PUBG API → save to DB → continue
-  → Follow same telemetry cache path above
+  → Follow same account-keyed PlayerAnalysis telemetry cache path above
 ```
 
 ### Error handling

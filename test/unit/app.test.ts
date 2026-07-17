@@ -12,7 +12,6 @@ import { CoachingDecisionEngineService } from '../../src/services/coaching-decis
 import { CoachingNarratorService } from '../../src/services/coaching-narrator.service';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
-import { FightContextBuilderService } from '../../src/services/fight-context-builder.service';
 import { MatchInterpreter } from '../../src/services/match-interpreter.service';
 import { MatchMonitorService } from '../../src/services/match-monitor.service';
 import { MatchPresentationService } from '../../src/services/match-presentation.service';
@@ -51,7 +50,6 @@ jest.mock('../../src/services/coaching-decision-engine.service');
 jest.mock('../../src/services/coaching-narrator.service');
 jest.mock('../../src/services/coaching-pipeline.service');
 jest.mock('../../src/services/discord-bot.service');
-jest.mock('../../src/services/fight-context-builder.service');
 jest.mock('../../src/services/match-interpreter.service');
 jest.mock('../../src/services/match-monitor.service');
 jest.mock('../../src/services/match-presentation.service');
@@ -100,7 +98,6 @@ describe('createApplication', () => {
     const seasonCacheRepository = jest.mocked(SeasonCacheRepository).mock.instances[0];
     const playerStatsService = jest.mocked(PlayerStatsService).mock.instances[0];
     const telemetryProcessor = jest.mocked(TelemetryProcessorService).mock.instances[0];
-    const fightContextBuilder = jest.mocked(FightContextBuilderService).mock.instances[0];
     const coachingDecisionEngine = jest.mocked(CoachingDecisionEngineService).mock.instances[0];
     const llmClient = jest.mocked(OpenRouterCoachingLlmClient).mock.instances[0];
     const coachingNarrator = jest.mocked(CoachingNarratorService).mock.instances[0];
@@ -137,8 +134,6 @@ describe('createApplication', () => {
     );
     expect(TelemetryProcessorService).toHaveBeenCalledTimes(1);
     expect(TelemetryProcessorService).toHaveBeenCalledWith();
-    expect(FightContextBuilderService).toHaveBeenCalledTimes(1);
-    expect(FightContextBuilderService).toHaveBeenCalledWith();
     expect(CoachingDecisionEngineService).toHaveBeenCalledTimes(1);
     expect(CoachingDecisionEngineService).toHaveBeenCalledWith();
     expect(OpenRouterCoachingLlmClient).toHaveBeenCalledTimes(1);
@@ -154,7 +149,7 @@ describe('createApplication', () => {
     });
     expect(CoachingPipelineService).toHaveBeenCalledTimes(1);
     expect(CoachingPipelineService).toHaveBeenCalledWith({
-      analyze: expect.any(Function),
+      decisionEngine: coachingDecisionEngine,
       narrate: expect.any(Function),
     });
     expect(MatchInterpreter).toHaveBeenCalledTimes(1);
@@ -222,7 +217,6 @@ describe('createApplication', () => {
     expect(jest.mocked(matchMonitor?.stopMonitoring)).toHaveBeenCalledTimes(1);
     expect(prisma.$disconnect).toHaveBeenCalledTimes(1);
 
-    expect(fightContextBuilder).toBeDefined();
     expect(coachingDecisionEngine).toBeDefined();
     expect(coachingNarrator).toBeDefined();
   });

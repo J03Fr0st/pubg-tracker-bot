@@ -1,3 +1,7 @@
+import type { TelemetryEvent } from '@j03fr0st/pubg-ts';
+import type { MatchAnalysis } from './analytics-results.types';
+import type { MatchPlayerIdentity } from './match.types';
+
 export type CoachingCategory =
   | 'decisive-mistake'
   | 'player-fingerprint'
@@ -10,76 +14,18 @@ export type CoachingCategory =
   | 'survival';
 
 export type CoachingRating = 'low' | 'medium' | 'high';
-
 export type CoachingInsightKind = 'decisive-mistake' | 'pattern' | 'player-fingerprint';
 
-export type FightOutcome = 'knock' | 'death';
-
-export interface TelemetryPosition {
-  x: number;
-  y: number;
-  z?: number;
+export interface CoachingAnalysisInput {
+  matchAnalysis: MatchAnalysis;
+  monitoredPlayers: readonly MatchPlayerIdentity[];
+  telemetryEvents: readonly TelemetryEvent[];
 }
 
-export interface FightContextClaim {
+export interface CoachingClaim {
   text: string;
   confidence: CoachingRating;
   evidence: string[];
-}
-
-export interface FightDamageEvent {
-  timestamp: Date;
-  matchTimeSeconds: number;
-  attackerName?: string;
-  victimName?: string;
-  damage: number;
-  position?: TelemetryPosition;
-}
-
-export interface FightResetEvent {
-  timestamp: Date;
-  matchTimeSeconds: number;
-  itemId?: string;
-  healAmount?: number;
-}
-
-export interface ZonePressureEvidence {
-  damage: number;
-  events: FightDamageEvent[];
-  windowSeconds: number;
-}
-
-export interface FightContext {
-  playerName: string;
-  enemyName?: string;
-  outcome: FightOutcome;
-  timestamp: Date;
-  matchTimeSeconds: number;
-  decisiveWeapon?: string;
-  decisiveDamageTypeCategory?: string;
-  decisiveDamageReason?: string;
-  killerName?: string;
-  finisherName?: string;
-  damageTaken: FightDamageEvent[];
-  damageDealt: FightDamageEvent[];
-  resetEvents: FightResetEvent[];
-  blueZoneDamage: ZonePressureEvidence;
-  playerPosition?: TelemetryPosition;
-  enemyPosition?: TelemetryPosition;
-  closestTeammateName?: string;
-  closestTeammatePosition?: TelemetryPosition;
-  closestTeammateDistanceMeters?: number;
-  closestTeammateToEnemyDistanceMeters?: number;
-  teammateAngleFromPlayerToEnemyDegrees?: number;
-  closestTeammateDamageToEnemy: FightDamageEvent[];
-  enemyDistanceMeters?: number;
-  tradeRangeConfidence: CoachingRating;
-  repositionDistanceMeters?: number;
-  repositionConfidence: CoachingRating;
-  heightDeltaMeters?: number;
-  heightConfidence: CoachingRating;
-  repeatedSameEnemy: boolean;
-  claims: FightContextClaim[];
 }
 
 export interface CoachingInsight {
@@ -94,7 +40,7 @@ export interface CoachingInsight {
   evidence: string[];
   recommendation: string;
   betterPlay?: string[];
-  claims?: FightContextClaim[];
+  claims?: CoachingClaim[];
 }
 
 export interface CoachingNarrationSection {
@@ -108,18 +54,10 @@ export interface CoachingNarration {
 }
 
 export interface CoachingLlmClient {
-  narrate(insights: CoachingInsight[]): Promise<CoachingNarration>;
+  narrate(insights: CoachingInsight[]): Promise<unknown>;
 }
 
 export interface CoachingNarratorOptions {
   enabled: boolean;
   maxLineLength: number;
-}
-
-export interface OpenRouterChatResponse {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
 }

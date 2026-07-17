@@ -116,18 +116,14 @@ export class DiscordBotService {
   public async sendMatchSummary(channelId: string, summary: MatchSummary): Promise<void> {
     const channel = await this.fetchTextChannel(channelId);
     const embeds = await this.deps.matchPresentation.createEmbeds(summary);
-    if (embeds.length === 0) {
-      error('No embeds were created for match summary');
-      return;
-    }
 
-    for (const batch of this.createEmbedBatches(embeds)) {
+    await this.sendEmbedBatches(embeds, async (batch) => {
       try {
-        await channel.send({ embeds: batch });
+        return await channel.send({ embeds: batch });
       } catch (err) {
         this.throwDiscordChannelAccessError(channelId, err, channel);
       }
-    }
+    });
   }
 
   public async validateChannelAccess(channelId: string): Promise<void> {
@@ -560,30 +556,26 @@ export class DiscordBotService {
       const monitoredPlayers = await this.deps.playerRepository.getAllPlayers();
       const summary = this.deps.matchInterpreter.createSummary(
         interpreted,
-        monitoredPlayers.map((player) => player.name)
+        monitoredPlayers.map((player) => player.pubgId)
       );
       if (!summary) {
         await interaction.editReply({ embeds: [this.createNoMonitoredPlayersEmbed(matchId)] });
         return;
       }
 
-      debug(`Built match summary with ${summary.players.length} roster players for ${matchId}`);
+      debug(
+        `Built match summary with ${summary.rosterParticipants.length} roster players for ${matchId}`
+      );
       const embeds = await this.deps.matchPresentation.createEmbeds(summary);
 
-      if (embeds && embeds.length > 0) {
-        const batches = this.createEmbedBatches(embeds);
-        for (const [index, batch] of batches.entries()) {
-          if (index === 0) {
-            await interaction.editReply({ embeds: batch });
-          } else {
-            await interaction.followUp({ embeds: batch });
-          }
+      await this.sendEmbedBatches(embeds, (batch, index) => {
+        if (index === 0) {
+          return interaction.editReply({ embeds: batch });
         }
+        return interaction.followUp({ embeds: batch });
+      });
 
-        success(`Successfully processed match ${matchId} for user ${userName}`);
-      } else {
-        throw new Error('Failed to create match summary embeds');
-      }
+      success(`Successfully processed match ${matchId} for user ${userName}`);
     } catch (err) {
       const errorObj = err as Error;
       error(`Error processing match ${matchId} for user ${userName}: ${errorObj.message}`);
@@ -598,6 +590,20 @@ export class DiscordBotService {
         .setTimestamp()
         .setFooter({ text: 'PUBG Tracker Bot' });
       await interaction.editReply({ embeds: [errorEmbed] });
+    }
+  }
+
+  private async sendEmbedBatches(
+    embeds: EmbedBuilder[],
+    sendBatch: (batch: EmbedBuilder[], index: number) => Promise<unknown>
+  ): Promise<void> {
+    if (embeds.length === 0) {
+      throw new Error('Match summary presentation produced no embeds');
+    }
+
+    const batches = this.createEmbedBatches(embeds);
+    for (const [index, batch] of batches.entries()) {
+      await sendBatch(batch, index);
     }
   }
 

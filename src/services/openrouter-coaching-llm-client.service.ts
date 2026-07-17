@@ -1,9 +1,4 @@
-import type {
-  CoachingInsight,
-  CoachingLlmClient,
-  CoachingNarration,
-  OpenRouterChatResponse,
-} from '../types/coaching.types';
+import type { CoachingInsight, CoachingLlmClient } from '../types/coaching.types';
 
 interface OpenRouterCoachingLlmClientOptions {
   apiKey: string;
@@ -12,11 +7,13 @@ interface OpenRouterCoachingLlmClientOptions {
 }
 
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const MISSING_CONTENT_ERROR = 'OpenRouter coaching response did not include message content';
+const INVALID_JSON_ERROR = 'OpenRouter coaching response was not valid JSON';
 
 export class OpenRouterCoachingLlmClient implements CoachingLlmClient {
   public constructor(private readonly options: OpenRouterCoachingLlmClientOptions) {}
 
-  public async narrate(insights: CoachingInsight[]): Promise<CoachingNarration> {
+  public async narrate(insights: CoachingInsight[]): Promise<unknown> {
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), this.options.timeoutMs);
 
@@ -67,20 +64,42 @@ export class OpenRouterCoachingLlmClient implements CoachingLlmClient {
         throw new Error(`OpenRouter request failed: ${response.status} ${text}`);
       }
 
-      const json = (await response.json()) as OpenRouterChatResponse;
-      const content = json.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error('OpenRouter coaching response did not include message content');
+      let envelope: unknown;
+      try {
+        envelope = await response.json();
+      } catch {
+        throw new Error(INVALID_JSON_ERROR);
       }
 
+      const content = this.extractMessageContent(envelope);
       try {
-        return JSON.parse(content) as CoachingNarration;
+        const parsed: unknown = JSON.parse(content);
+        return parsed;
       } catch {
-        throw new Error('OpenRouter coaching response was not valid JSON');
+        throw new Error(INVALID_JSON_ERROR);
       }
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private extractMessageContent(envelope: unknown): string {
+    if (!this.isRecord(envelope) || !Array.isArray(envelope.choices)) {
+      throw new Error(MISSING_CONTENT_ERROR);
+    }
+    const firstChoice = envelope.choices[0];
+    if (!this.isRecord(firstChoice) || !this.isRecord(firstChoice.message)) {
+      throw new Error(MISSING_CONTENT_ERROR);
+    }
+    const content = firstChoice.message.content;
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      throw new Error(MISSING_CONTENT_ERROR);
+    }
+    return content;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private formatMatchTime(seconds: number): string {
