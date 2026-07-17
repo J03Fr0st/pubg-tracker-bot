@@ -235,4 +235,168 @@ describe('CoachingNarratorService', () => {
       [untitledInsight]
     );
   });
+
+  it('accepts a fully bounded narration assembled only from supplied content', async () => {
+    const narration = await new CoachingNarratorService(makeLlmClient(validNarration), options).narrate([
+      insight,
+    ]);
+
+    expect(narration).toEqual(validNarration);
+  });
+
+  it.each([
+    [
+      'a lowercase unknown player or name token',
+      {
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, 'Alice and charlie.'],
+          },
+        ],
+      },
+    ],
+    [
+      'unsupported added tactical advice',
+      {
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, 'Do this: throw smoke.'],
+          },
+        ],
+      },
+    ],
+    [
+      'missing evidence',
+      {
+        sections: [
+          {
+            playerName: 'Alice',
+            title: 'Decisive mistake',
+            lines: ['Do this: break line of sight.'],
+          },
+        ],
+      },
+    ],
+    [
+      'one omitted evidence statement',
+      {
+        sections: [
+          {
+            playerName: 'Alice',
+            title: 'Decisive mistake',
+            lines: [
+              '2:00 - Decisive mistake: Alice took 80 damage from Bob.',
+              'Do this: break line of sight.',
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      'all supplied Better Play actions missing',
+      {
+        sections: [
+          {
+            playerName: 'Alice',
+            title: 'Decisive mistake',
+            lines: validNarration.sections[0].lines.slice(0, 2),
+          },
+        ],
+      },
+    ],
+    [
+      'contradictory explicit severity',
+      {
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, 'Severity is low.'],
+          },
+        ],
+      },
+    ],
+    [
+      'contradictory explicit confidence using a token allowed by severity',
+      {
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, 'Confidence is high.'],
+          },
+        ],
+      },
+    ],
+  ])('falls back when model narration contains %s', async (_caseName, value) => {
+    await expectTemplateFallback(value);
+  });
+
+  it('accepts explicit severity and confidence wording when both match the insight', async () => {
+    const value = {
+      sections: [
+        {
+          ...validNarration.sections[0],
+          lines: [
+            ...validNarration.sections[0].lines,
+            'High severity and confidence is medium.',
+          ],
+        },
+      ],
+    };
+
+    await expect(
+      new CoachingNarratorService(makeLlmClient(value), options).narrate([insight])
+    ).resolves.toEqual(value);
+  });
+
+  it('requires the recommendation when Better Play is absent', async () => {
+    const insightWithoutBetterPlay: CoachingInsight = {
+      ...insight,
+      betterPlay: undefined,
+    };
+    const withoutAction = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: validNarration.sections[0].lines.slice(0, 2),
+        },
+      ],
+    };
+    const withRecommendation = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: validNarration.sections[0].lines,
+        },
+      ],
+    };
+
+    await expectTemplateFallback(withoutAction, [insightWithoutBetterPlay]);
+    await expect(
+      new CoachingNarratorService(makeLlmClient(withRecommendation), options).narrate([
+        insightWithoutBetterPlay,
+      ])
+    ).resolves.toEqual(withRecommendation);
+  });
+
+  it('requires the recommendation when Better Play is empty', async () => {
+    const insightWithEmptyBetterPlay: CoachingInsight = {
+      ...insight,
+      betterPlay: [],
+    };
+    const withoutAction = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: validNarration.sections[0].lines.slice(0, 2),
+        },
+      ],
+    };
+
+    await expectTemplateFallback(withoutAction, [insightWithEmptyBetterPlay]);
+  });
 });

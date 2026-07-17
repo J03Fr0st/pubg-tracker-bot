@@ -4,6 +4,7 @@ import type {
   CoachingNarration,
   CoachingNarrationSection,
   CoachingNarratorOptions,
+  CoachingRating,
 } from '../types/coaching.types';
 import { debug } from '../utils/logger';
 
@@ -11,6 +12,36 @@ const DEFAULT_OPTIONS: CoachingNarratorOptions = {
   enabled: false,
   maxLineLength: 240,
 };
+
+const CONNECTIVE_TOKENS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'but',
+  'do',
+  'for',
+  'from',
+  'in',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'that',
+  'the',
+  'then',
+  'this',
+  'to',
+  'with',
+  'you',
+  'your',
+]);
+
+const COACHING_RATINGS: CoachingRating[] = ['low', 'medium', 'high'];
 
 type NarrationValidationResult =
   | { ok: true; narration: CoachingNarration }
@@ -94,6 +125,11 @@ export class CoachingNarratorService {
         lines.push(rawLine.trim());
       }
 
+      const semanticReason = this.validateSectionContent(lines, insight);
+      if (semanticReason) {
+        return { ok: false, reason: `section ${index} ${semanticReason}` };
+      }
+
       sections.push({
         playerName: insight.playerName,
         title: insight.title,
@@ -104,15 +140,113 @@ export class CoachingNarratorService {
     return { ok: true, narration: { sections } };
   }
 
+  private validateSectionContent(lines: string[], insight: CoachingInsight): string | null {
+    const text = lines.join(' ');
+    const severityReason = this.findContradictoryRating(text, 'severity', insight.severity);
+    if (severityReason) {
+      return severityReason;
+    }
+    const confidenceReason = this.findContradictoryRating(
+      text,
+      'confidence',
+      insight.confidence
+    );
+    if (confidenceReason) {
+      return confidenceReason;
+    }
+
+    const narrationTokens = new Set(this.tokenize(text));
+    const allowedTokens = this.collectAllowedTokens(insight);
+    for (const token of narrationTokens) {
+      if (!allowedTokens.has(token)) {
+        return `contains unsupported token "${token}"`;
+      }
+    }
+
+    if (
+      insight.evidence.length === 0 ||
+      !insight.evidence.every((evidence) =>
+        this.containsAllMeaningfulTokens(evidence, narrationTokens)
+      )
+    ) {
+      return 'does not preserve all supplied evidence';
+    }
+
+    const actions =
+      insight.betterPlay && insight.betterPlay.length > 0
+        ? insight.betterPlay
+        : [insight.recommendation];
+    if (!actions.some((action) => this.containsAllMeaningfulTokens(action, narrationTokens))) {
+      return 'does not include a supplied action';
+    }
+
+    return null;
+  }
+
+  private collectAllowedTokens(insight: CoachingInsight): Set<string> {
+    const allowedTokens = new Set(CONNECTIVE_TOKENS);
+    const sourceText = [
+      insight.playerName,
+      insight.category,
+      insight.title ?? this.toTitleCase(insight.category),
+      this.formatMatchTime(insight.matchTimeSeconds),
+      ...insight.evidence,
+      insight.recommendation,
+      ...(insight.betterPlay ?? []),
+      ...(insight.claims?.flatMap((claim) => [claim.text, ...claim.evidence]) ?? []),
+      'severity',
+      insight.severity,
+      'confidence',
+      insight.confidence,
+    ];
+
+    for (const token of sourceText.flatMap((value) => this.tokenize(value))) {
+      allowedTokens.add(token);
+    }
+    return allowedTokens;
+  }
+
+  private containsAllMeaningfulTokens(source: string, narrationTokens: Set<string>): boolean {
+    const requiredTokens = this.tokenize(source).filter((token) => !CONNECTIVE_TOKENS.has(token));
+    return (
+      requiredTokens.length > 0 && requiredTokens.every((token) => narrationTokens.has(token))
+    );
+  }
+
+  private findContradictoryRating(
+    text: string,
+    label: 'severity' | 'confidence',
+    expected: CoachingRating
+  ): string | null {
+    const normalized = this.tokenize(text).join(' ');
+    for (const rating of COACHING_RATINGS) {
+      if (rating === expected) {
+        continue;
+      }
+      const pattern = new RegExp(
+        `\\b${rating} ${label}\\b|\\b${label} ${rating}\\b|\\b${label} is ${rating}\\b`
+      );
+      if (pattern.test(normalized)) {
+        return `contradicts ${label} ${expected}`;
+      }
+    }
+    return null;
+  }
+
+  private tokenize(text: string): string[] {
+    return text.toLowerCase().replace(/'s\b/g, '').match(/[a-z0-9_]+/g) ?? [];
+  }
+
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private hasExactKeys(value: Record<string, unknown>, expectedKeys: string[]): boolean {
     const actualKeys = Object.keys(value).sort();
+    const sortedExpectedKeys = [...expectedKeys].sort();
     return (
-      actualKeys.length === expectedKeys.length &&
-      actualKeys.every((key, index) => key === [...expectedKeys].sort()[index])
+      actualKeys.length === sortedExpectedKeys.length &&
+      actualKeys.every((key, index) => key === sortedExpectedKeys[index])
     );
   }
 
