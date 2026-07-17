@@ -1,8 +1,16 @@
 import type { PubgClient } from '@j03fr0st/pubg-ts';
-import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
+import {
+  type SeasonCacheKey,
+  type SeasonCacheLookupResult,
+  SeasonCacheRepository,
+} from '../../../src/data/repositories/season-cache.repository';
 import { PlayerStatsService } from '../../../src/services/player-stats.service';
 
 jest.mock('../../../src/data/repositories/season-cache.repository');
+
+function cacheMiss(...accountIds: string[]): SeasonCacheLookupResult {
+  return { freshStats: new Map(), missingAccountIds: accountIds };
+}
 
 describe('PlayerStatsService', () => {
   let service: PlayerStatsService;
@@ -17,7 +25,9 @@ describe('PlayerStatsService', () => {
 
   beforeEach(() => {
     mockRepo = new SeasonCacheRepository({} as never) as jest.Mocked<SeasonCacheRepository>;
-    mockRepo.findByAccountIds = jest.fn().mockResolvedValue([]);
+    mockRepo.findFreshStats = jest.fn().mockImplementation(
+      async (_key: SeasonCacheKey, accountIds: string[]) => cacheMiss(...accountIds)
+    );
     mockRepo.upsertStats = jest.fn().mockResolvedValue(undefined);
 
     mockPubgClient = {
@@ -66,46 +76,35 @@ describe('PlayerStatsService', () => {
       },
     });
 
-    it('returns cached stats when cache is fresh (< 24h)', async () => {
-      const freshCache = {
-        id: '1',
-        platform: 'steam',
-        accountId: 'acc-1',
-        seasonId: 'division.bro.official.pc-2018-28',
-        gameMode: 'squad-fpp',
-        kd: 2.5,
-        adr: 300,
-        wins: 10,
-        games: 50,
-        cachedAt: new Date(), // fresh
-      };
-      mockRepo.findByAccountIds.mockResolvedValue([freshCache]);
+    it('returns fresh repository stats without calling the PUBG stats API', async () => {
+      mockRepo.findFreshStats.mockResolvedValue({
+        freshStats: new Map([['acc-1', { kd: 2.5, adr: 300 }]]),
+        missingAccountIds: [],
+      });
 
       const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');
 
-      expect(results.get('acc-1')).toEqual({ kd: 2.5, adr: 300 });
+      expect(mockRepo.findFreshStats).toHaveBeenCalledWith(
+        {
+          platform: 'steam',
+          seasonId: 'division.bro.official.pc-2018-28',
+          gameMode: 'squad-fpp',
+        },
+        ['acc-1']
+      );
+      expect(results).toEqual(new Map([['acc-1', { kd: 2.5, adr: 300 }]]));
       expect(mockPubgClient.players.getPlayerSeasonStats).not.toHaveBeenCalled();
       expect(mockPubgClient.players.getPlayerSeasonStatsBatch).not.toHaveBeenCalled();
     });
 
-    it('fetches from API when cache is stale (> 24h)', async () => {
-      const staleCache = {
-        id: '1',
-        platform: 'steam',
-        accountId: 'acc-1',
-        seasonId: 'division.bro.official.pc-2018-28',
-        gameMode: 'squad-fpp',
-        kd: 1.0,
-        adr: 200,
-        wins: 5,
-        games: 25,
-        cachedAt: new Date(Date.now() - 25 * 60 * 60 * 1000), // 25 hours ago
-      };
-      mockRepo.findByAccountIds.mockResolvedValue([staleCache]);
-
+    it('fetches only account IDs the repository reports as missing', async () => {
+      mockRepo.findFreshStats.mockResolvedValue({
+        freshStats: new Map([['acc-1', { kd: 1.5, adr: 250 }]]),
+        missingAccountIds: ['acc-2'],
+      });
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
         data: [
-          seasonStatsResponse('acc-1', {
+          seasonStatsResponse('acc-2', {
             kills: 100,
             losses: 40,
             roundsPlayed: 50,
@@ -115,16 +114,22 @@ describe('PlayerStatsService', () => {
         ],
       });
 
-      const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');
+      const results = await service.getSeasonStats(['acc-1', 'acc-2'], 'squad-fpp');
 
-      expect(results.get('acc-1')).toEqual({ kd: 2.5, adr: 300 });
-      expect(mockPubgClient.players.getPlayerSeasonStatsBatch).toHaveBeenCalled();
-      expect(mockRepo.upsertStats).toHaveBeenCalled();
+      expect(results).toEqual(
+        new Map([
+          ['acc-1', { kd: 1.5, adr: 250 }],
+          ['acc-2', { kd: 2.5, adr: 300 }],
+        ])
+      );
+      expect(mockPubgClient.players.getPlayerSeasonStatsBatch).toHaveBeenCalledWith({
+        playerIds: ['acc-2'],
+        seasonId: 'division.bro.official.pc-2018-28',
+        gameMode: 'squad-fpp',
+      });
     });
 
-    it('fetches from API when no cache exists', async () => {
-      mockRepo.findByAccountIds.mockResolvedValue([]);
-
+    it('fetches from API when the repository reports an account as missing', async () => {
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
         data: [seasonStatsResponse('acc-1')],
       });
@@ -140,8 +145,6 @@ describe('PlayerStatsService', () => {
     });
 
     it('skips players with no rounds played in the requested game mode', async () => {
-      mockRepo.findByAccountIds.mockResolvedValue([]);
-
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockResolvedValue({
         data: [
           seasonStatsResponse('acc-1', {
@@ -161,8 +164,6 @@ describe('PlayerStatsService', () => {
     });
 
     it('skips players whose API call fails', async () => {
-      mockRepo.findByAccountIds.mockResolvedValue([]);
-
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockRejectedValue(new Error('API error'));
 
       const results = await service.getSeasonStats(['acc-1'], 'squad-fpp');
@@ -171,7 +172,6 @@ describe('PlayerStatsService', () => {
     });
 
     it('chunks missing season stats into batches of 10', async () => {
-      mockRepo.findByAccountIds.mockResolvedValue([]);
       mockPubgClient.players.getPlayerSeasonStatsBatch.mockImplementation(
         async ({ playerIds }: { playerIds: string[] }) => {
           return {
