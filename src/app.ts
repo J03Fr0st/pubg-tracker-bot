@@ -12,7 +12,6 @@ import { CoachingDecisionEngineService } from './services/coaching-decision-engi
 import { CoachingNarratorService } from './services/coaching-narrator.service';
 import { CoachingPipelineService } from './services/coaching-pipeline.service';
 import { DiscordBotService } from './services/discord-bot.service';
-import { FightContextBuilderService } from './services/fight-context-builder.service';
 import { MatchInterpreter } from './services/match-interpreter.service';
 import { MatchMonitorService } from './services/match-monitor.service';
 import { MatchPresentationService } from './services/match-presentation.service';
@@ -45,7 +44,6 @@ export function createApplication(config: AppConfig): Application {
     seasonCacheRepository
   );
   const telemetryProcessor = new TelemetryProcessorService();
-  const fightContextBuilder = new FightContextBuilderService();
   const coachingDecisionEngine = new CoachingDecisionEngineService();
   const llmClient =
     config.llm.coachingEnabled && config.llm.openRouterApiKey && config.llm.openRouterModel
@@ -60,15 +58,7 @@ export function createApplication(config: AppConfig): Application {
     maxLineLength: 240,
   });
   const coachingPipeline = new CoachingPipelineService({
-    analyze: (analysis, monitoredPlayers, damage, resetEvents) =>
-      coachingDecisionEngine.createInsights(
-        fightContextBuilder.buildFightContexts(
-          analysis,
-          monitoredPlayers,
-          damage,
-          resetEvents
-        )
-      ),
+    decisionEngine: coachingDecisionEngine,
     narrate: (insights) => coachingNarrator.narrate(insights),
   });
   const matchInterpreter = new MatchInterpreter();

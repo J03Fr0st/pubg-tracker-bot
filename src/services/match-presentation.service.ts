@@ -1,12 +1,9 @@
 import {
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
-  type LogHeal,
-  type LogItemUse,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
-  type LogPlayerTakeDamage,
   MAP_NAMES,
   type PubgClient,
   type TelemetryEvent,
@@ -709,23 +706,16 @@ export class MatchPresentationService {
 
   private async createCoachingEmbeds(
     matchAnalysis: MatchAnalysis,
-    monitoredPlayers: MatchSummaryParticipant[],
-    rawEvents: TelemetryEvent[],
+    monitoredPlayers: readonly MatchSummaryParticipant[],
+    rawEvents: readonly TelemetryEvent[],
     matchColor: number
   ): Promise<EmbedBuilder[]> {
-    const damageEvents = rawEvents.filter(
-      (event) => event._T === 'LogPlayerTakeDamage'
-    ) as LogPlayerTakeDamage[];
-    const resetEvents = rawEvents.filter(
-      (event) => event._T === 'LogHeal' || event._T === 'LogItemUse'
-    ) as Array<LogHeal | LogItemUse>;
     try {
-      const result = await this.deps.coachingPipeline.run(
+      const result = await this.deps.coachingPipeline.run({
         matchAnalysis,
         monitoredPlayers,
-        damageEvents,
-        resetEvents
-      );
+        telemetryEvents: rawEvents,
+      });
       if (result.kind === 'empty') {
         return [];
       }

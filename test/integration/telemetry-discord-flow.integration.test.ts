@@ -5,6 +5,7 @@ import { PlayerRepository } from '../../src/data/repositories/player.repository'
 import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
 import { SeasonCacheRepository } from '../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
+import { CoachingDecisionEngineService } from '../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
 import { MatchInterpreter } from '../../src/services/match-interpreter.service';
@@ -56,7 +57,7 @@ function createPresentation(): MatchPresentationService {
       new SeasonCacheRepository(prisma)
     ),
     coachingPipeline: new CoachingPipelineService({
-      analyze: () => [],
+      decisionEngine: new CoachingDecisionEngineService(),
       narrate: async () => ({ sections: [] }),
     }),
   };

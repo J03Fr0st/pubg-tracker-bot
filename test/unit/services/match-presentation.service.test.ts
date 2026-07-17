@@ -2,6 +2,7 @@ import { PubgClient, type TelemetryEvent } from '@j03fr0st/pubg-ts';
 import { EmbedBuilder } from 'discord.js';
 import { SeasonCacheRepository } from '../../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../../src/data/repositories/telemetry.repository';
+import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
 import {
   type MatchPresentationDependencies,
@@ -27,7 +28,7 @@ function createDependencies(): MatchPresentationDependencies {
       new SeasonCacheRepository(prisma)
     ),
     coachingPipeline: new CoachingPipelineService({
-      analyze: () => [],
+      decisionEngine: new CoachingDecisionEngineService(),
       narrate: async () => ({ sections: [] }),
     }),
   };
@@ -170,7 +171,11 @@ describe('MatchPresentationService', () => {
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
     expect(embeds[2].data.description).toContain('⚔️ Kills: 1');
     expect(embeds[2].data.description).not.toContain('⚔️ **COMBAT STATS**');
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, [monitored], [], []);
+    expect(coaching).toHaveBeenCalledWith({
+      matchAnalysis,
+      monitoredPlayers: [monitored],
+      telemetryEvents: [],
+    });
   });
 
   it('creates enhanced player embeds from live telemetry', async () => {
@@ -323,7 +328,11 @@ describe('MatchPresentationService', () => {
     expect(embeds.at(-1)?.data.description).toContain('Hold the stronger angle.');
     expect(liveTelemetry).not.toHaveBeenCalled();
     expect(processTelemetry).not.toHaveBeenCalled();
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, summary.monitoredPlayers, [], []);
+    expect(coaching).toHaveBeenCalledWith({
+      matchAnalysis,
+      monitoredPlayers: summary.monitoredPlayers,
+      telemetryEvents: [],
+    });
   });
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {

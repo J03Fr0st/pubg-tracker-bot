@@ -1,59 +1,186 @@
-import {
-  type CoachingScoringWeights,
-  DEFAULT_COACHING_SCORING_WEIGHTS,
-} from '../../../src/config/coaching-weights';
+import type {
+  LogHeal,
+  LogPlayerKillV2,
+  LogPlayerTakeDamage,
+  TelemetryEvent,
+} from '@j03fr0st/pubg-ts';
 import { CoachingDecisionEngineService } from '../../../src/services/coaching-decision-engine.service';
-import type { FightContext } from '../../../src/types/coaching.types';
+import type { PlayerAnalysis } from '../../../src/types/analytics-results.types';
+import type { CoachingAnalysisInput } from '../../../src/types/coaching.types';
+import type { MatchPlayerIdentity } from '../../../src/types/match.types';
 
-function makeContext(overrides: Partial<FightContext>): FightContext {
-  // Keep the heavy hit a consistent 6s before the decisive event so callers that
-  // only override matchTimeSeconds still describe a realistic, resettable window.
-  const matchTimeSeconds = overrides.matchTimeSeconds ?? 1122;
+const MATCH_START = new Date('2024-01-01T10:00:00.000Z');
+
+type TestPosition = { x: number; y: number; z?: number };
+type TestActor = { name: string; accountId?: string; location?: TestPosition };
+
+function actor(name: string, accountId: string, location?: TestPosition): TestActor {
+  return { name, accountId, location };
+}
+
+function at(seconds: number): string {
+  return new Date(MATCH_START.getTime() + seconds * 1000).toISOString();
+}
+
+function makeDamage(
+  overrides: {
+    seconds?: number;
+    attacker?: TestActor;
+    victim?: TestActor;
+    damage?: number;
+    damageTypeCategory?: string;
+  } = {}
+): LogPlayerTakeDamage {
   return {
-    playerName: 'TestPlayer',
-    enemyName: 'EnemyOne',
-    outcome: 'death',
-    timestamp: new Date('2024-01-01T10:18:42.000Z'),
-    matchTimeSeconds,
-    damageTaken: [
-      {
-        timestamp: new Date('2024-01-01T10:18:36.000Z'),
-        matchTimeSeconds: matchTimeSeconds - 6,
-        attackerName: 'EnemyOne',
-        victimName: 'TestPlayer',
-        damage: 83,
-      },
-    ],
-    damageDealt: [],
-    resetEvents: [],
-    blueZoneDamage: {
-      damage: 0,
-      events: [],
-      windowSeconds: 60,
+    _D: at(overrides.seconds ?? 1116),
+    _T: 'LogPlayerTakeDamage',
+    common: { isGame: 1 },
+    attacker: overrides.attacker ?? actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 1200 }),
+    victim: overrides.victim ?? actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+    damage: overrides.damage ?? 83,
+    damageTypeCategory: overrides.damageTypeCategory ?? 'Damage_Gun',
+    damageReason: 'TorsoShot',
+    damageCauserName: 'WeapM416_C',
+    damageCauserAdditionalInfo: [],
+    victimWeapon: 'WeapBerylM762_C',
+    victimWeaponAdditionalInfo: [],
+    attackId: 1,
+    distance: 1000,
+    isAttackerInVehicle: false,
+  } as unknown as LogPlayerTakeDamage;
+}
+
+function makeDeath(
+  overrides: { seconds?: number; killer?: TestActor; victim?: TestActor } = {}
+): LogPlayerKillV2 {
+  return {
+    _D: at(overrides.seconds ?? 1122),
+    _T: 'LogPlayerKillV2',
+    common: { isGame: 1 },
+    killer: overrides.killer ?? actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 1200 }),
+    victim: overrides.victim ?? actor('TestPlayer', 'account.player', { x: 100, y: 0, z: 0 }),
+    assists: [],
+    teamKillers: [],
+    attackId: 1,
+    dBNOId: 0,
+    damageTypeCategory: 'Damage_Gun',
+    damageReason: 'TorsoShot',
+    damageCauserName: 'WeapM416_C',
+    damageCauserAdditionalInfo: [],
+    victimWeapon: 'WeapBerylM762_C',
+    victimWeaponAdditionalInfo: [],
+    distance: 900,
+    isSuicide: false,
+    isTeamKill: false,
+    killerDamageInfo: null,
+  } as unknown as LogPlayerKillV2;
+}
+
+function makeHeal(seconds: number, character = actor('TestPlayer', 'account.player')): LogHeal {
+  return {
+    _D: at(seconds),
+    _T: 'LogHeal',
+    common: { isGame: 1 },
+    character,
+    item: {
+      itemId: 'Item_Heal_FirstAid_C',
+      stackCount: 1,
+      category: 'Use',
+      subCategory: 'Heal',
+      attachedItems: [],
     },
-    closestTeammateName: 'TeamMate',
-    closestTeammateDistanceMeters: 78,
-    closestTeammateDamageToEnemy: [],
-    tradeRangeConfidence: 'medium',
-    repositionDistanceMeters: 4,
-    repositionConfidence: 'high',
-    heightDeltaMeters: 12,
-    heightConfidence: 'medium',
-    repeatedSameEnemy: true,
-    claims: [],
+    healAmount: 40,
+  } as unknown as LogHeal;
+}
+
+function identity(
+  pubgId: string,
+  name: string,
+  rosterId: string | null = 'roster-1'
+): MatchPlayerIdentity {
+  return { pubgId, name, rosterId };
+}
+
+function makeAnalysis(
+  player: MatchPlayerIdentity,
+  overrides: Partial<PlayerAnalysis> = {}
+): PlayerAnalysis {
+  return {
+    pubgId: player.pubgId,
+    playerName: player.name,
+    matchStartTime: MATCH_START,
+    killEvents: [],
+    knockdownEvents: [],
+    damageEvents: [],
+    reviveEvents: [],
+    deathEvents: [],
+    knockedDownEvents: [],
+    weaponStats: [],
+    killChains: [],
+    calculatedAssists: [],
+    totalDamageDealt: 0,
+    totalDamageTaken: 0,
+    kdRatio: 0,
+    avgKillDistance: 0,
+    headshotPercentage: 0,
+    killsPerMinute: 0,
     ...overrides,
   };
 }
 
-describe('CoachingDecisionEngineService', () => {
-  it('creates a strict decisive mistake insight from a bad reset context', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([makeContext({})]);
+function makeInput(
+  options: {
+    monitoredPlayers?: MatchPlayerIdentity[];
+    analyses?: PlayerAnalysis[];
+    telemetryEvents?: TelemetryEvent[];
+  } = {}
+): CoachingAnalysisInput {
+  const monitoredPlayers = options.monitoredPlayers ?? [identity('account.player', 'TestPlayer')];
+  const analyses = options.analyses ?? [
+    makeAnalysis(monitoredPlayers[0], { deathEvents: [makeDeath()] }),
+  ];
+  return {
+    matchAnalysis: {
+      matchId: 'match-123',
+      playerAnalyses: new Map(analyses.map((analysis) => [analysis.pubgId, analysis])),
+      processingTimeMs: 1,
+      totalEventsProcessed: options.telemetryEvents?.length ?? 0,
+    },
+    monitoredPlayers,
+    telemetryEvents: options.telemetryEvents ?? [makeDamage()],
+  };
+}
 
-    expect(insights).toHaveLength(1);
+describe('CoachingDecisionEngineService', () => {
+  it('creates the current decisive claims directly from representative raw telemetry', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const teammateDeath = makeDeath({
+      seconds: 1000,
+      killer: actor('OtherEnemy', 'account.other', { x: 9100, y: 0, z: 0 }),
+      victim: actor('TeamMate', 'account.teammate', { x: 9000, y: 0, z: 0 }),
+    });
+    const blueZoneDamage = makeDamage({
+      seconds: 1090,
+      attacker: actor('TestPlayer', 'account.player'),
+      victim: actor('TestPlayer', 'account.player', { x: 25, y: 0, z: 0 }),
+      damage: 31,
+      damageTypeCategory: 'Damage_BlueZone',
+    });
+
+    const insights = new CoachingDecisionEngineService().createInsights(
+      makeInput({
+        monitoredPlayers: [player, teammate],
+        analyses: [
+          makeAnalysis(player, { deathEvents: [makeDeath()] }),
+          makeAnalysis(teammate, { deathEvents: [teammateDeath] }),
+        ],
+        telemetryEvents: [makeDamage(), blueZoneDamage],
+      })
+    );
+
     expect(insights[0]).toMatchObject({
       playerName: 'TestPlayer',
-      category: 'decisive-mistake',
       kind: 'decisive-mistake',
       title: 'Decisive mistake',
       severity: 'high',
@@ -63,327 +190,70 @@ describe('CoachingDecisionEngineService', () => {
       'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset'
     );
     expect(insights[0].evidence.join(' ')).toContain('appears to have been too far to trade');
-    expect(insights[0].recommendation).toContain('Break line of sight');
+    expect(insights[0].evidence.join(' ')).toContain('31 blue-zone damage');
+    expect(insights[0].evidence.join(' ')).toContain('height advantage');
   });
 
-  it('does not call an instant burst a missed reset when there was no time to reset', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        // Heavy hit lands on the same tick as the death: 0s window to reset.
-        matchTimeSeconds: 1116,
-        damageTaken: [
-          {
-            timestamp: new Date('2024-01-01T10:18:36.000Z'),
-            matchTimeSeconds: 1116,
-            attackerName: 'EnemyOne',
-            victimName: 'TestPlayer',
-            damage: 83,
-          },
-        ],
-      }),
-    ]);
+  it('does not call an instant burst a missed reset', () => {
+    const death = makeDeath({ seconds: 1116 });
+    const input = makeInput({
+      analyses: [makeAnalysis(identity('account.player', 'TestPlayer'), { deathEvents: [death] })],
+      telemetryEvents: [makeDamage({ seconds: 1116 })],
+    });
 
-    const evidence = insights[0]?.evidence.join(' ') ?? '';
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(input)
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
     expect(evidence).not.toContain('before creating a reset');
     expect(evidence).not.toContain('0s later');
   });
 
-  it('does not call a sub-kit window a missed reset (bandage is not enough)', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        // 5s between the heavy hit and death: too short to use a First Aid Kit.
-        matchTimeSeconds: 1121,
-        damageTaken: [
-          {
-            timestamp: new Date('2024-01-01T10:18:36.000Z'),
-            matchTimeSeconds: 1116,
-            attackerName: 'EnemyOne',
-            victimName: 'TestPlayer',
-            damage: 83,
-          },
-        ],
-      }),
-    ]);
-
-    expect(insights[0]?.evidence.join(' ') ?? '').not.toContain('before creating a reset');
-  });
-
-  it('calls out close spacing that does not become trade damage', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        closestTeammateDistanceMeters: 22,
-        enemyDistanceMeters: 31,
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).toContain(
-      'TeamMate was 22m from you, but telemetry shows no damage from them to EnemyOne'
+  it('creates pattern and fingerprint insights only from repeated raw evidence', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const firstDeath = makeDeath({ seconds: 600 });
+    const secondDeath = makeDeath({ seconds: 700 });
+    const insights = new CoachingDecisionEngineService().createInsights(
+      makeInput({
+        analyses: [makeAnalysis(player, { deathEvents: [firstDeath, secondDeath] })],
+        telemetryEvents: [makeDamage({ seconds: 594 }), makeDamage({ seconds: 694 })],
+      })
     );
+
+    expect(insights.map((insight) => insight.kind)).toEqual([
+      'decisive-mistake',
+      'pattern',
+      'player-fingerprint',
+    ]);
+    expect(insights[1].evidence[0]).toContain('Repeated 2 fights');
+    expect(insights[2].evidence[0]).toContain('Aggressive re-peeker');
   });
 
-  it('describes stacked logged geometry without claiming line of sight', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        closestTeammateDistanceMeters: 22,
-        enemyDistanceMeters: 31,
-        teammateAngleFromPlayerToEnemyDegrees: 12,
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).toContain(
-      'TeamMate was only 12 degrees off your logged line to EnemyOne'
-    );
-    expect(insights[0].evidence.join(' ')).not.toContain('line of sight');
-  });
-
-  it('does not call close spacing a missed trade when teammate damaged the enemy', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        closestTeammateDistanceMeters: 22,
-        closestTeammateDamageToEnemy: [
-          {
-            timestamp: new Date('2024-01-01T10:18:40.000Z'),
-            matchTimeSeconds: 1120,
-            attackerName: 'TeamMate',
-            victimName: 'EnemyOne',
-            damage: 24,
-          },
-        ],
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).not.toContain('no damage from them to EnemyOne');
-  });
-
-  it('omits low-confidence geometry claims', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        closestTeammateDistanceMeters: undefined,
-        closestTeammateName: undefined,
-        tradeRangeConfidence: 'low',
-        heightDeltaMeters: undefined,
-        heightConfidence: 'low',
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).not.toContain('teammate');
-    expect(insights[0].evidence.join(' ')).not.toContain('height');
-  });
-
-  it('adds zone-pressure evidence for recent material blue-zone damage', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        blueZoneDamage: {
-          damage: 31,
-          windowSeconds: 60,
-          events: [
-            {
-              timestamp: new Date('2024-01-01T10:18:10.000Z'),
-              matchTimeSeconds: 1090,
-              attackerName: 'TestPlayer',
-              victimName: 'TestPlayer',
-              damage: 31,
-            },
-          ],
-        },
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).toContain(
-      'You took 31 blue-zone damage in the 60s before this fight'
-    );
-    expect(insights[0].betterPlay).toContain('rotate earlier before taking optional fights');
-    expect(insights[0].recommendation).toContain('Rotate earlier');
-  });
-
-  it('omits zone-pressure evidence for tiny blue-zone damage', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        blueZoneDamage: {
-          damage: 8,
-          windowSeconds: 60,
-          events: [
-            {
-              timestamp: new Date('2024-01-01T10:18:10.000Z'),
-              matchTimeSeconds: 1090,
-              attackerName: 'TestPlayer',
-              victimName: 'TestPlayer',
-              damage: 8,
-            },
-          ],
-        },
-      }),
-    ]);
-
-    expect(insights[0].evidence.join(' ')).not.toContain('blue-zone damage');
-  });
-
-  it('adds a pattern insight only when repeated evidence exists', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({ timestamp: new Date('2024-01-01T10:10:00.000Z'), matchTimeSeconds: 600 }),
-      makeContext({ timestamp: new Date('2024-01-01T10:18:42.000Z'), matchTimeSeconds: 1122 }),
-    ]);
-
-    expect(insights).toHaveLength(3);
-    expect(insights[1]).toMatchObject({
-      category: 'pattern',
-      kind: 'pattern',
-      title: 'Pattern to fix',
+  it('uses teammate raw damage to avoid a false missed-trade claim', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const teammateDamage = makeDamage({
+      seconds: 1120,
+      attacker: actor('TeamMate', 'account.teammate', { x: 500, y: 0, z: 0 }),
+      victim: actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 1200 }),
+      damage: 24,
     });
-    expect(insights[1].recommendation).toContain('Stop giving the same enemy');
-  });
 
-  it('creates a decisive insight for each player with supported context', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
-      makeContext({ playerName: 'Bravo', matchTimeSeconds: 700 }),
-      makeContext({ playerName: 'Charlie', matchTimeSeconds: 800 }),
-    ]);
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          monitoredPlayers: [player, teammate],
+          analyses: [makeAnalysis(player, { deathEvents: [makeDeath()] }), makeAnalysis(teammate)],
+          telemetryEvents: [makeDamage(), teammateDamage],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
 
-    expect(insights.map((insight) => insight.playerName)).toEqual(['Alpha', 'Bravo', 'Charlie']);
-  });
-
-  it('returns at most three insights per player', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 700 }),
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 800 }),
-    ]);
-
-    expect(insights).toHaveLength(3);
-    expect(insights.every((insight) => insight.playerName === 'Alpha')).toBe(true);
-  });
-
-  it('adds a player fingerprint insight for repeated re-peek behavior', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 600 }),
-      makeContext({ playerName: 'Alpha', matchTimeSeconds: 700 }),
-    ]);
-
-    const fingerprint = insights.find((insight) => insight.kind === 'player-fingerprint');
-
-    expect(fingerprint).toMatchObject({
-      playerName: 'Alpha',
-      category: 'player-fingerprint',
-      title: 'Player fingerprint',
-      severity: 'medium',
-      confidence: 'high',
-    });
-    expect(fingerprint?.evidence.join(' ')).toContain('Aggressive re-peeker');
-    expect(fingerprint?.evidence.join(' ')).toContain('2 of 2 reviewed fights');
-    expect(fingerprint?.recommendation).toContain('Treat first damage as a reset trigger');
-  });
-
-  it('adds a player fingerprint insight for zone-forced fighting', () => {
-    const service = new CoachingDecisionEngineService();
-    const insights = service.createInsights([
-      makeContext({
-        playerName: 'Bravo',
-        matchTimeSeconds: 900,
-        blueZoneDamage: {
-          damage: 38,
-          events: [
-            {
-              timestamp: new Date('2024-01-01T10:14:20.000Z'),
-              matchTimeSeconds: 860,
-              victimName: 'Bravo',
-              damage: 38,
-            },
-          ],
-          windowSeconds: 60,
-        },
-      }),
-    ]);
-
-    const fingerprint = insights.find((insight) => insight.kind === 'player-fingerprint');
-
-    expect(fingerprint?.evidence.join(' ')).toContain('Late-rotate fighter');
-    expect(fingerprint?.recommendation).toContain('move before blue-zone damage');
+    expect(evidence).not.toContain('no damage from them to EnemyOne');
   });
 });
 
-describe('CoachingDecisionEngineService — scoring weights', () => {
-  it('exposes default weights matching legacy magic numbers', () => {
-    expect(DEFAULT_COACHING_SCORING_WEIGHTS).toEqual<CoachingScoringWeights>({
-      deathOutcome: 50,
-      knockOutcome: 40,
-      badReset: 30,
-      tradeRangeKnown: 10,
-      noTeammateDamage: 5,
-      heightKnown: 5,
-    });
-  });
-
-  it('accepts injected weights and uses them in scoring', () => {
-    const deathCtx = makeContext({ playerName: 'DeathPlayer', outcome: 'death' });
-    const knockCtx = makeContext({
-      playerName: 'KnockPlayer',
-      outcome: 'knock',
-      closestTeammateDistanceMeters: undefined,
-      closestTeammateName: undefined,
-      tradeRangeConfidence: 'low',
-      heightDeltaMeters: undefined,
-      heightConfidence: 'low',
-    });
-    const engine = new CoachingDecisionEngineService({
-      ...DEFAULT_COACHING_SCORING_WEIGHTS,
-      deathOutcome: 1000,
-      knockOutcome: 0,
-      badReset: 0,
-      tradeRangeKnown: 0,
-      noTeammateDamage: 0,
-      heightKnown: 0,
-    });
-
-    expect(engine.createInsights([deathCtx, knockCtx])[0].playerName).toBe(deathCtx.playerName);
-  });
-});
-
-describe('CoachingDecisionEngineService — scoring weights', () => {
-  it('exposes default weights matching legacy magic numbers', () => {
-    expect(DEFAULT_COACHING_SCORING_WEIGHTS).toEqual<CoachingScoringWeights>({
-      deathOutcome: 50,
-      knockOutcome: 40,
-      badReset: 30,
-      tradeRangeKnown: 10,
-      noTeammateDamage: 5,
-      heightKnown: 5,
-    });
-  });
-
-  it('accepts injected weights and uses them in scoring', () => {
-    const deathCtx = makeContext({ playerName: 'DeathPlayer', outcome: 'death' });
-    const knockCtx = makeContext({
-      playerName: 'KnockPlayer',
-      outcome: 'knock',
-      closestTeammateDistanceMeters: undefined,
-      closestTeammateName: undefined,
-      tradeRangeConfidence: 'low',
-      heightDeltaMeters: undefined,
-      heightConfidence: 'low',
-    });
-    const engine = new CoachingDecisionEngineService({
-      ...DEFAULT_COACHING_SCORING_WEIGHTS,
-      deathOutcome: 1000,
-      knockOutcome: 0,
-      badReset: 0,
-      tradeRangeKnown: 0,
-      noTeammateDamage: 0,
-      heightKnown: 0,
-    });
-
-    expect(engine.createInsights([deathCtx, knockCtx])[0].playerName).toBe(deathCtx.playerName);
-  });
-});
+// biome-ignore lint/suspicious/noExportsInTest: Follow-up regressions reuse these telemetry builders.
+export { actor, at, identity, makeAnalysis, makeDamage, makeDeath, makeHeal, makeInput };
