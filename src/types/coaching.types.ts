@@ -61,11 +61,3 @@ export interface CoachingNarratorOptions {
   enabled: boolean;
   maxLineLength: number;
 }
-
-export interface OpenRouterChatResponse {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-}
