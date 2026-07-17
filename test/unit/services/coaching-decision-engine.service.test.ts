@@ -596,6 +596,65 @@ describe('CoachingDecisionEngineService', () => {
     expect(evidence).not.toContain('to the same player');
   });
 
+  it('never matches equal names when both PUBG account IDs differ', () => {
+    const impostorDamage = makeDamage({
+      attacker: actor('EnemyOne', 'account.other-enemy'),
+      victim: actor('TestPlayer', 'account.impostor', { x: 0, y: 0, z: 0 }),
+    });
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(makeInput({ telemetryEvents: [impostorDamage] }))
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('83 damage');
+    expect(evidence).not.toContain('before creating a reset');
+  });
+
+  it('does not treat same-name enemies with different account IDs as the same enemy', () => {
+    const damage = makeDamage({
+      attacker: actor('EnemyOne', 'account.enemy-b'),
+      victim: actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+    });
+    const death = makeDeath({
+      killer: actor('EnemyOne', 'account.enemy-a', { x: 1000, y: 0 }),
+    });
+    const player = identity('account.player', 'TestPlayer');
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          analyses: [makeAnalysis(player, { deathEvents: [death] })],
+          telemetryEvents: [damage],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('same player before creating a reset');
+  });
+
+  it('does not apply same-name reset telemetry from a different account', () => {
+    const impostorHeal = makeHeal(1119, actor('TestPlayer', 'account.impostor'));
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(makeInput({ telemetryEvents: [makeDamage(), impostorHeal] }))
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain('before creating a reset');
+  });
+
+  it('falls back to equal names when one side lacks an account ID', () => {
+    const legacyDamage = makeDamage({
+      attacker: actor('EnemyOne', ''),
+      victim: actor('TestPlayer', '', { x: 0, y: 0, z: 0 }),
+    });
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(makeInput({ telemetryEvents: [legacyDamage] }))
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain('EnemyOne hit you for 83 damage');
+  });
+
   it('uses injected scoring weights to rank raw death and knock contexts', () => {
     const player = identity('account.player', 'TestPlayer');
     const death = makeDeath({ seconds: 600 });

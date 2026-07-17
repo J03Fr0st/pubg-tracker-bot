@@ -46,19 +46,19 @@ type Position = { x: number; y: number; z?: number };
 type DecisiveEvent = LogPlayerKillV2 | LogPlayerMakeGroggy;
 type ActorWithPosition = { name?: string; accountId?: string; location?: Position };
 type FightOutcome = 'knock' | 'death';
+type FightIdentity = { pubgId?: string; name?: string };
 type FightDamageEvent = {
   timestamp: Date;
   matchTimeSeconds: number;
-  attackerPubgId?: string;
-  attackerName?: string;
-  victimPubgId?: string;
-  victimName?: string;
+  attacker: FightIdentity;
+  victim: FightIdentity;
   damage: number;
   position?: Position;
 };
 type FightResetEvent = {
   timestamp: Date;
   matchTimeSeconds: number;
+  character: FightIdentity;
   itemId?: string;
   healAmount?: number;
 };
@@ -145,22 +145,13 @@ export class CoachingDecisionEngineService {
   ): FightContext | null {
     const timestamp = this.getEventTime(decisiveEvent);
     if (!timestamp) return null;
-    const enemyName = this.getEnemyName(decisiveEvent);
-    const enemyPubgId = this.getEnemyPubgId(decisiveEvent);
-    const damageTaken = this.getDamageTaken(
-      player.pubgId,
-      timestamp,
-      damageEvents,
-      analysis.matchStartTime
-    );
-    const damageDealt = this.getDamageDealt(
-      player.pubgId,
-      timestamp,
-      damageEvents,
-      analysis.matchStartTime
-    );
+    const enemyActor =
+      decisiveEvent._T === 'LogPlayerMakeGroggy' ? decisiveEvent.attacker : decisiveEvent.killer;
+    const enemy = this.toFightIdentity(enemyActor);
+    const damageTaken = this.getDamageTaken(player, timestamp, damageEvents, analysis.matchStartTime);
+    const damageDealt = this.getDamageDealt(player, timestamp, damageEvents, analysis.matchStartTime);
     const playerPosition = this.getActorPosition(decisiveEvent.victim);
-    const enemyPosition = this.getEnemyPosition(decisiveEvent);
+    const enemyPosition = this.getActorPosition(enemyActor);
     const teammate = this.getClosestTeammate(
       player,
       playerPosition,
@@ -169,23 +160,27 @@ export class CoachingDecisionEngineService {
       timestamp,
       damageEvents
     );
+    const heightDeltaMeters =
+      playerPosition && enemyPosition
+        ? TelemetryGeometry.heightDeltaMeters(playerPosition, enemyPosition)
+        : undefined;
     return {
       playerPubgId: player.pubgId,
       playerName: analysis.playerName,
-      enemyName,
+      enemyName: enemy.name,
       outcome: decisiveEvent._T === 'LogPlayerMakeGroggy' ? 'knock' : 'death',
       timestamp,
       matchTimeSeconds: TelemetryGeometry.secondsBetween(analysis.matchStartTime, timestamp),
       damageTaken,
       damageDealt,
       resetEvents: this.getResetEvents(
-        player.pubgId,
+        player,
         timestamp,
         resetEvents,
         analysis.matchStartTime
       ),
       blueZoneDamage: this.getBlueZoneDamage(
-        player.pubgId,
+        player,
         timestamp,
         damageEvents,
         analysis.matchStartTime
@@ -200,8 +195,8 @@ export class CoachingDecisionEngineService {
           ? TelemetryGeometry.angleDegrees(enemyPosition, playerPosition, teammate.position)
           : undefined,
       closestTeammateDamageToEnemy: this.getDamageFromPlayerToEnemy(
-        teammate?.player.pubgId,
-        enemyPubgId,
+        teammate?.player,
+        enemy,
         timestamp,
         damageEvents,
         analysis.matchStartTime
@@ -212,19 +207,13 @@ export class CoachingDecisionEngineService {
           : undefined,
       tradeRangeConfidence: teammate?.confidence ?? 'low',
       repositionDistanceMeters: this.getRepositionDistanceMeters(damageTaken, playerPosition),
-      heightDeltaMeters:
-        playerPosition && enemyPosition
-          ? TelemetryGeometry.heightDeltaMeters(playerPosition, enemyPosition)
-          : undefined,
+      heightDeltaMeters,
       heightConfidence:
-        playerPosition &&
-        enemyPosition &&
-        (TelemetryGeometry.heightDeltaMeters(playerPosition, enemyPosition) ?? 0) >=
-          COACHING_THRESHOLDS.heightAdvantageMeters
+        heightDeltaMeters !== undefined &&
+        heightDeltaMeters >= COACHING_THRESHOLDS.heightAdvantageMeters
           ? 'medium'
           : 'low',
-      repeatedSameEnemy:
-        Boolean(enemyPubgId) && damageTaken.some((event) => event.attackerPubgId === enemyPubgId),
+      repeatedSameEnemy: damageTaken.some((event) => this.identitiesMatch(event.attacker, enemy)),
     };
   }
 
@@ -236,24 +225,24 @@ export class CoachingDecisionEngineService {
   }
 
   private getDamageTaken(
-    playerPubgId: string,
+    player: MatchPlayerIdentity,
     decisiveTime: Date,
     events: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
     return this.getDamageEvents(events, decisiveTime, matchStartTime).filter(
-      (event) => event.victimPubgId === playerPubgId
+      (event) => this.identitiesMatch(event.victim, player)
     );
   }
 
   private getDamageDealt(
-    playerPubgId: string,
+    player: MatchPlayerIdentity,
     decisiveTime: Date,
     events: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
     return this.getDamageEvents(events, decisiveTime, matchStartTime).filter(
-      (event) => event.attackerPubgId === playerPubgId
+      (event) => this.identitiesMatch(event.attacker, player)
     );
   }
 
@@ -280,29 +269,28 @@ export class CoachingDecisionEngineService {
     return {
       timestamp,
       matchTimeSeconds: TelemetryGeometry.secondsBetween(matchStartTime, timestamp),
-      attackerPubgId: event.attacker?.accountId,
-      attackerName: event.attacker?.name,
-      victimPubgId: event.victim?.accountId,
-      victimName: event.victim?.name,
+      attacker: this.toFightIdentity(event.attacker),
+      victim: this.toFightIdentity(event.victim),
       damage: Math.round(event.damage),
       position: this.getActorPosition(event.victim),
     };
   }
 
   private getResetEvents(
-    playerPubgId: string,
+    player: MatchPlayerIdentity,
     decisiveTime: Date,
     events: Array<LogHeal | LogItemUse>,
     matchStartTime: Date
   ): FightResetEvent[] {
     return events
-      .filter((event) => event.character?.accountId === playerPubgId)
+      .filter((event) => this.identitiesMatch(this.toFightIdentity(event.character), player))
       .map((event): FightResetEvent | null => {
         const timestamp = this.getEventTime(event);
         if (!timestamp) return null;
         return {
           timestamp,
           matchTimeSeconds: TelemetryGeometry.secondsBetween(matchStartTime, timestamp),
+          character: this.toFightIdentity(event.character),
           itemId: event.item?.itemId,
           healAmount: event._T === 'LogHeal' ? event.healAmount : undefined,
         };
@@ -316,7 +304,7 @@ export class CoachingDecisionEngineService {
   }
 
   private getBlueZoneDamage(
-    playerPubgId: string,
+    player: MatchPlayerIdentity,
     decisiveTime: Date,
     events: LogPlayerTakeDamage[],
     matchStartTime: Date
@@ -324,7 +312,8 @@ export class CoachingDecisionEngineService {
     const zoneEvents = events
       .filter(
         (event) =>
-          event.victim?.accountId === playerPubgId && event.damageTypeCategory === 'Damage_BlueZone'
+          this.identitiesMatch(this.toFightIdentity(event.victim), player) &&
+          event.damageTypeCategory === 'Damage_BlueZone'
       )
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
@@ -358,14 +347,14 @@ export class CoachingDecisionEngineService {
     return monitoredPlayers
       .filter(
         (candidate) =>
-          candidate.pubgId !== player.pubgId &&
+          !this.identitiesMatch(candidate, player) &&
           candidate.rosterId !== null &&
           candidate.rosterId === player.rosterId
       )
       .map((candidate) => {
         const analysis = analyses.get(candidate.pubgId);
         const latestDamagePosition = this.getLatestActorPosition(
-          candidate.pubgId,
+          candidate,
           decisiveTime,
           damageEvents
         );
@@ -395,19 +384,22 @@ export class CoachingDecisionEngineService {
   }
 
   private getLatestActorPosition(
-    actorPubgId: string,
+    identity: MatchPlayerIdentity,
     decisiveTime: Date,
     events: LogPlayerTakeDamage[]
   ): Position | undefined {
     return events
       .map((event) => {
         const timestamp = this.getEventTime(event);
-        const attackerPosition =
-          event.attacker?.accountId === actorPubgId
-            ? this.getActorPosition(event.attacker)
-            : undefined;
-        const victimPosition =
-          event.victim?.accountId === actorPubgId ? this.getActorPosition(event.victim) : undefined;
+        const attackerMatches = this.identitiesMatch(
+          this.toFightIdentity(event.attacker),
+          identity
+        );
+        const victimMatches = this.identitiesMatch(this.toFightIdentity(event.victim), identity);
+        const attackerPosition = attackerMatches
+          ? this.getActorPosition(event.attacker)
+          : undefined;
+        const victimPosition = victimMatches ? this.getActorPosition(event.victim) : undefined;
         const position = attackerPosition ?? victimPosition;
         return timestamp && position ? { timestamp, position } : undefined;
       })
@@ -420,17 +412,18 @@ export class CoachingDecisionEngineService {
   }
 
   private getDamageFromPlayerToEnemy(
-    playerPubgId: string | undefined,
-    enemyPubgId: string | undefined,
+    player: MatchPlayerIdentity | undefined,
+    enemy: FightIdentity | undefined,
     decisiveTime: Date,
     events: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
-    if (!playerPubgId || !enemyPubgId) return [];
+    if (!player || !enemy) return [];
     return events
       .filter(
         (event) =>
-          event.attacker?.accountId === playerPubgId && event.victim?.accountId === enemyPubgId
+          this.identitiesMatch(this.toFightIdentity(event.attacker), player) &&
+          this.identitiesMatch(this.toFightIdentity(event.victim), enemy)
       )
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
@@ -468,18 +461,21 @@ export class CoachingDecisionEngineService {
       : undefined;
   }
 
-  private getEnemyName(event: DecisiveEvent): string | undefined {
-    return event._T === 'LogPlayerMakeGroggy' ? event.attacker?.name : event.killer?.name;
+  private identitiesMatch(
+    left: FightIdentity | undefined,
+    right: FightIdentity | undefined
+  ): boolean {
+    if (!left || !right) return false;
+    if (left.pubgId && right.pubgId) return left.pubgId === right.pubgId;
+    if (!left.name || !right.name) return false;
+    return left.name.trim().toLowerCase() === right.name.trim().toLowerCase();
   }
 
-  private getEnemyPubgId(event: DecisiveEvent): string | undefined {
-    return event._T === 'LogPlayerMakeGroggy' ? event.attacker?.accountId : event.killer?.accountId;
-  }
-
-  private getEnemyPosition(event: DecisiveEvent): Position | undefined {
-    return this.getActorPosition(
-      event._T === 'LogPlayerMakeGroggy' ? event.attacker : event.killer
-    );
+  private toFightIdentity(actor?: ActorWithPosition): FightIdentity {
+    return {
+      pubgId: actor?.accountId || undefined,
+      name: actor?.name || undefined,
+    };
   }
 
   private getActorPosition(actor?: ActorWithPosition): Position | undefined {
