@@ -141,32 +141,36 @@ export class CoachingNarratorService {
   }
 
   private validateSectionContent(lines: string[], insight: CoachingInsight): string | null {
-    const text = lines.join(' ');
-    const severityReason = this.findContradictoryRating(text, 'severity', insight.severity);
-    if (severityReason) {
-      return severityReason;
-    }
-    const confidenceReason = this.findContradictoryRating(
-      text,
-      'confidence',
-      insight.confidence
-    );
-    if (confidenceReason) {
-      return confidenceReason;
-    }
-
-    const narrationTokens = new Set(this.tokenize(text));
-    const allowedTokens = this.collectAllowedTokens(insight);
-    for (const token of narrationTokens) {
-      if (!allowedTokens.has(token)) {
-        return `contains unsupported token "${token}"`;
+    const lineTokens = lines.map((line) => this.tokenize(line));
+    const ratingLineIndexes = new Set<number>();
+    for (let index = 0; index < lineTokens.length; index += 1) {
+      const tokens = lineTokens[index];
+      if (tokens.includes('severity') || tokens.includes('confidence')) {
+        const ratingReason = this.validateRatingLine(tokens, insight);
+        if (ratingReason) {
+          return ratingReason;
+        }
+        ratingLineIndexes.add(index);
       }
     }
 
+    const allowedTokens = this.collectAllowedTokens(insight);
+    for (const tokens of lineTokens) {
+      for (const token of tokens) {
+        if (!allowedTokens.has(token)) {
+          return `contains unsupported token "${token}"`;
+        }
+      }
+    }
+
+    const meaningfulLines = lineTokens.map((tokens) => this.meaningfulTokens(tokens));
+    const evidenceSequences = insight.evidence
+      .map((evidence) => this.meaningfulTokens(this.tokenize(evidence)))
+      .filter((tokens) => tokens.length > 0);
     if (
-      insight.evidence.length === 0 ||
-      !insight.evidence.every((evidence) =>
-        this.containsAllMeaningfulTokens(evidence, narrationTokens)
+      evidenceSequences.length !== insight.evidence.length ||
+      !evidenceSequences.every((sequence) =>
+        meaningfulLines.some((line) => this.containsSequence(line, sequence))
       )
     ) {
       return 'does not preserve all supplied evidence';
@@ -176,8 +180,43 @@ export class CoachingNarratorService {
       insight.betterPlay && insight.betterPlay.length > 0
         ? insight.betterPlay
         : [insight.recommendation];
-    if (!actions.some((action) => this.containsAllMeaningfulTokens(action, narrationTokens))) {
+    const actionSequences = actions
+      .map((action) => this.meaningfulTokens(this.tokenize(action)))
+      .filter((tokens) => tokens.length > 0);
+    if (
+      actionSequences.length !== actions.length ||
+      !meaningfulLines.some((line) => this.canSegment(line, actionSequences))
+    ) {
       return 'does not include a supplied action';
+    }
+
+    const metadataSequences = [
+      insight.playerName,
+      insight.category,
+      insight.title ?? this.toTitleCase(insight.category),
+      this.formatMatchTime(insight.matchTimeSeconds),
+    ]
+      .map((value) => this.meaningfulTokens(this.tokenize(value)))
+      .filter((tokens) => tokens.length > 0);
+    const statementSequences = [
+      ...evidenceSequences,
+      ...(insight.claims?.flatMap((claim) => [claim.text, ...claim.evidence]) ?? []).map((value) =>
+        this.meaningfulTokens(this.tokenize(value))
+      ),
+    ].filter((tokens) => tokens.length > 0);
+    const attributableSequences = [...metadataSequences, ...statementSequences];
+
+    for (let index = 0; index < meaningfulLines.length; index += 1) {
+      if (ratingLineIndexes.has(index)) {
+        continue;
+      }
+      const line = meaningfulLines[index];
+      if (
+        !this.canSegment(line, actionSequences) &&
+        !this.canSegment(line, attributableSequences)
+      ) {
+        return 'contains a statement not attributable to supplied content';
+      }
     }
 
     return null;
@@ -206,35 +245,104 @@ export class CoachingNarratorService {
     return allowedTokens;
   }
 
-  private containsAllMeaningfulTokens(source: string, narrationTokens: Set<string>): boolean {
-    const requiredTokens = this.tokenize(source).filter((token) => !CONNECTIVE_TOKENS.has(token));
-    return (
-      requiredTokens.length > 0 && requiredTokens.every((token) => narrationTokens.has(token))
-    );
+  private meaningfulTokens(tokens: string[]): string[] {
+    return tokens.filter((token) => !CONNECTIVE_TOKENS.has(token));
   }
 
-  private findContradictoryRating(
-    text: string,
-    label: 'severity' | 'confidence',
-    expected: CoachingRating
-  ): string | null {
-    const normalized = this.tokenize(text).join(' ');
-    for (const rating of COACHING_RATINGS) {
-      if (rating === expected) {
-        continue;
-      }
-      const pattern = new RegExp(
-        `\\b${rating} ${label}\\b|\\b${label} ${rating}\\b|\\b${label} is ${rating}\\b`
-      );
-      if (pattern.test(normalized)) {
-        return `contradicts ${label} ${expected}`;
+  private containsSequence(tokens: string[], sequence: string[]): boolean {
+    for (let start = 0; start <= tokens.length - sequence.length; start += 1) {
+      if (sequence.every((token, offset) => token === tokens[start + offset])) {
+        return true;
       }
     }
-    return null;
+    return false;
+  }
+
+  private canSegment(tokens: string[], sequences: string[][]): boolean {
+    if (tokens.length === 0 || sequences.length === 0) {
+      return false;
+    }
+
+    const reachable = new Array<boolean>(tokens.length + 1).fill(false);
+    reachable[0] = true;
+    for (let start = 0; start < tokens.length; start += 1) {
+      if (!reachable[start]) {
+        continue;
+      }
+      for (const sequence of sequences) {
+        if (
+          start + sequence.length <= tokens.length &&
+          sequence.every((token, offset) => token === tokens[start + offset])
+        ) {
+          reachable[start + sequence.length] = true;
+        }
+      }
+    }
+    return reachable[tokens.length];
+  }
+
+  private validateRatingLine(tokens: string[], insight: CoachingInsight): string | null {
+    const seenLabels = new Set<'severity' | 'confidence'>();
+    let index = 0;
+
+    while (index < tokens.length) {
+      let label: 'severity' | 'confidence';
+      let rating: CoachingRating | undefined;
+      const first = tokens[index];
+
+      if (this.isCoachingRating(first)) {
+        rating = first;
+        const next = tokens[index + 1];
+        if (next !== 'severity' && next !== 'confidence') {
+          return 'contains unsupported rating syntax';
+        }
+        label = next;
+        index += 2;
+      } else if (first === 'severity' || first === 'confidence') {
+        label = first;
+        index += tokens[index + 1] === 'is' ? 2 : 1;
+        const next = tokens[index];
+        if (!this.isCoachingRating(next)) {
+          return 'contains unsupported rating syntax';
+        }
+        rating = next;
+        index += 1;
+      } else {
+        return 'contains unsupported rating syntax';
+      }
+
+      if (seenLabels.has(label)) {
+        return `contains duplicate ${label} rating`;
+      }
+      seenLabels.add(label);
+      if (rating !== insight[label]) {
+        return `contradicts ${label} ${insight[label]}`;
+      }
+
+      if (index === tokens.length) {
+        return null;
+      }
+      if (tokens[index] !== 'and' || index + 1 === tokens.length) {
+        return 'contains unsupported rating syntax';
+      }
+      index += 1;
+    }
+
+    return 'contains unsupported rating syntax';
+  }
+
+  private isCoachingRating(token: string | undefined): token is CoachingRating {
+    return COACHING_RATINGS.includes(token as CoachingRating);
   }
 
   private tokenize(text: string): string[] {
-    return text.toLowerCase().replace(/'s\b/g, '').match(/[a-z0-9_]+/g) ?? [];
+    return (
+      text
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/['\u2019]s(?![\p{L}\p{N}_])/gu, '')
+        .match(/[\p{L}\p{N}_]+/gu) ?? []
+    );
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

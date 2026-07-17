@@ -38,7 +38,7 @@ const validNarration = {
       playerName: 'Alice',
       title: 'Decisive mistake',
       lines: [
-        '2:00 - Decisive mistake: Alice took 80 damage from Bob.',
+        '2:00 - Decisive mistake: Alice took 80 damage from Bob at 2:00.',
         'Bob eliminated Alice 6s later with M416.',
         'Do this: break line of sight and heal before re-engaging.',
       ],
@@ -287,7 +287,7 @@ describe('CoachingNarratorService', () => {
             playerName: 'Alice',
             title: 'Decisive mistake',
             lines: [
-              '2:00 - Decisive mistake: Alice took 80 damage from Bob.',
+              '2:00 - Decisive mistake: Alice took 80 damage from Bob at 2:00.',
               'Do this: break line of sight.',
             ],
           },
@@ -398,5 +398,166 @@ describe('CoachingNarratorService', () => {
     };
 
     await expectTemplateFallback(withoutAction, [insightWithEmptyBetterPlay]);
+  });
+
+  it('requires opposite-direction evidence statements independently', async () => {
+    const directionalInsight: CoachingInsight = {
+      ...insight,
+      evidence: ['Alice hit Bob.', 'Bob hit Alice.'],
+      recommendation: 'Hold cover.',
+      betterPlay: ['hold cover'],
+    };
+    const value = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: ['Alice hit Bob.', 'Do this: hold cover.'],
+        },
+      ],
+    };
+
+    await expectTemplateFallback(value, [directionalInsight]);
+  });
+
+  it('does not treat action tokens scattered through evidence lines as an action', async () => {
+    const scatteredActionInsight: CoachingInsight = {
+      ...insight,
+      evidence: [
+        'Alice should break after damage.',
+        'Bob blocked the line.',
+        'Alice lost sight.',
+      ],
+      recommendation: 'Break line of sight.',
+      betterPlay: ['break line of sight'],
+    };
+    const value = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: [...scatteredActionInsight.evidence],
+        },
+      ],
+    };
+
+    await expectTemplateFallback(value, [scatteredActionInsight]);
+  });
+
+  it('rejects advice recombined from globally allowed tokens', async () => {
+    await expectTemplateFallback({
+      sections: [
+        {
+          ...validNarration.sections[0],
+          lines: [...validNarration.sections[0].lines, 'Do this: heal Bob with M416.'],
+        },
+      ],
+    });
+  });
+
+  it.each(['чарли', 'ЧАРЛИ'])(
+    'rejects an unknown non-ASCII token regardless of case: %s',
+    async (unknownName) => {
+      await expectTemplateFallback({
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, `Alice and ${unknownName}.`],
+          },
+        ],
+      });
+    }
+  );
+
+  it('accepts supplied non-ASCII names and possessives', async () => {
+    const internationalInsight: CoachingInsight = {
+      ...insight,
+      playerName: 'Алиса',
+      evidence: ["Алиса protected Élodie's cover."],
+      recommendation: 'Hold cover.',
+      betterPlay: ['hold cover'],
+    };
+    const value = {
+      sections: [
+        {
+          playerName: 'Алиса',
+          title: 'Decisive mistake',
+          lines: ["Алиса protected Élodie's cover.", 'Do this: hold cover.'],
+        },
+      ],
+    };
+
+    await expect(
+      new CoachingNarratorService(makeLlmClient(value), options).narrate([internationalInsight])
+    ).resolves.toEqual(value);
+  });
+
+  it('normalizes compatibility-equivalent supplied tokens', async () => {
+    const compatibilityInsight: CoachingInsight = {
+      ...insight,
+      evidence: ['Alice hit Ｂob.'],
+      recommendation: 'Hold cover.',
+      betterPlay: ['hold cover'],
+    };
+    const value = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: ['Alice hit Bob.', 'Do this: hold cover.'],
+        },
+      ],
+    };
+
+    await expect(
+      new CoachingNarratorService(makeLlmClient(value), options).narrate([compatibilityInsight])
+    ).resolves.toEqual(value);
+  });
+
+  it.each([
+    'Confidence was high.',
+    'Confidence Bob high.',
+    'Confidence is medium or high.',
+    'Confidence is medium high.',
+    'High is confidence.',
+    'Medium severity and high confidence.',
+  ])('rejects unsupported or mismatched rating syntax: %s', async (ratingLine) => {
+    const insightWithRatingVocabulary: CoachingInsight = {
+      ...insight,
+      claims: [{ text: 'Confidence was high.', confidence: 'high', evidence: [] }],
+    };
+
+    await expectTemplateFallback(
+      {
+        sections: [
+          {
+            ...validNarration.sections[0],
+            lines: [...validNarration.sections[0].lines, ratingLine],
+          },
+        ],
+      },
+      [insightWithRatingVocabulary]
+    );
+  });
+
+  it.each([
+    'High severity.',
+    'Severity is high.',
+    'Confidence medium.',
+    'Confidence is medium.',
+    'High severity and confidence is medium.',
+  ])('accepts bounded matching rating syntax: %s', async (ratingLine) => {
+    const value = {
+      sections: [
+        {
+          ...validNarration.sections[0],
+          lines: [...validNarration.sections[0].lines, ratingLine],
+        },
+      ],
+    };
+
+    await expect(
+      new CoachingNarratorService(makeLlmClient(value), options).narrate([insight])
+    ).resolves.toEqual(value);
   });
 });
