@@ -431,4 +431,171 @@ describe('FightContextBuilderService', () => {
 
     expect(contexts[0].closestTeammateName).toBeUndefined();
   });
+
+  it('uses account identity for analysis and combat evidence when display names are stale', () => {
+    const currentIdentity = { ...monitoredPlayer, name: 'CurrentPlayerName' };
+    const death = makeDeath({
+      killer: {
+        accountId: 'account.decisive-enemy',
+        name: 'DecisiveEnemyDisplay',
+        location: { x: 1000, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.test-player',
+        name: 'TelemetryPlayerName',
+        location: { x: 100, y: 0, z: 0 },
+      },
+    });
+    const accountMatchedDamageTaken = makeDamage({
+      attacker: { accountId: 'account.prior-enemy', name: 'PriorEnemyDisplay' },
+      victim: { accountId: 'account.test-player', name: 'StalePlayerName' },
+      damage: 31,
+    });
+    const nameMatchedWrongVictim = makeDamage({
+      attacker: { accountId: 'account.decoy-enemy', name: 'DecoyEnemyDisplay' },
+      victim: { accountId: 'account.other-player', name: 'CurrentPlayerName' },
+      damage: 99,
+    });
+    const accountMatchedDamageDealt = makeDamage({
+      attacker: { accountId: 'account.test-player', name: 'StalePlayerName' },
+      victim: { accountId: 'account.target', name: 'TargetDisplay' },
+      damage: 17,
+    });
+    const nameMatchedWrongAttacker = makeDamage({
+      attacker: { accountId: 'account.other-player', name: 'CurrentPlayerName' },
+      victim: { accountId: 'account.other-target', name: 'OtherTargetDisplay' },
+      damage: 88,
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({
+          pubgId: 'account.test-player',
+          playerName: 'AnalysisPlayerDisplay',
+          deathEvents: [death],
+        }),
+      ]),
+      [currentIdentity],
+      [
+        accountMatchedDamageTaken,
+        nameMatchedWrongVictim,
+        accountMatchedDamageDealt,
+        nameMatchedWrongAttacker,
+      ]
+    );
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].playerName).toBe('AnalysisPlayerDisplay');
+    expect(contexts[0].enemyName).toBe('DecisiveEnemyDisplay');
+    expect(contexts[0].damageTaken).toEqual([
+      expect.objectContaining({
+        attackerName: 'PriorEnemyDisplay',
+        victimName: 'StalePlayerName',
+        damage: 31,
+      }),
+    ]);
+    expect(contexts[0].damageDealt).toEqual([
+      expect.objectContaining({
+        attackerName: 'StalePlayerName',
+        victimName: 'TargetDisplay',
+        damage: 17,
+      }),
+    ]);
+  });
+
+  it('does not merge repeated-enemy evidence for accounts sharing a display name', () => {
+    const duplicateEnemyName = 'DuplicateEnemyDisplay';
+    const death = makeDeath({
+      killer: {
+        accountId: 'account.decisive-enemy',
+        name: duplicateEnemyName,
+        location: { x: 1000, y: 0, z: 0 },
+      },
+    });
+    const lookalikeEnemyDamage = makeDamage({
+      attacker: {
+        accountId: 'account.lookalike-enemy',
+        name: duplicateEnemyName,
+      },
+      victim: {
+        accountId: 'account.test-player',
+        name: 'TelemetryPlayerName',
+      },
+      damage: 42,
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
+      [monitoredPlayer],
+      [lookalikeEnemyDamage]
+    );
+
+    expect(contexts[0].enemyName).toBe(duplicateEnemyName);
+    expect(contexts[0].damageTaken[0].attackerName).toBe(duplicateEnemyName);
+    expect(contexts[0].repeatedSameEnemy).toBe(false);
+  });
+
+  it('resolves same-roster teammate evidence by account when telemetry names are stale', () => {
+    const currentTeammate = { ...sameRosterTeammate, name: 'CurrentTeammateName' };
+    const death = makeDeath({
+      killer: {
+        accountId: 'account.enemy-one',
+        name: 'CurrentEnemyName',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+    });
+    const accountMatchedTeammateDamage = makeDamage({
+      _D: '2024-01-01T10:18:40.000Z',
+      attacker: {
+        accountId: 'account.same-roster',
+        name: 'FormerTeammateName',
+        location: { x: 500, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.enemy-one',
+        name: 'FormerEnemyName',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+      damage: 24,
+    });
+    const nameMatchedWrongTeammate = makeDamage({
+      _D: '2024-01-01T10:18:41.000Z',
+      attacker: {
+        accountId: 'account.teammate-decoy',
+        name: 'CurrentTeammateName',
+        location: { x: 9000, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.enemy-one',
+        name: 'CurrentEnemyName',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+      damage: 99,
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({ pubgId: 'account.test-player', deathEvents: [death] }),
+        makeAnalysis({
+          pubgId: 'account.same-roster',
+          playerName: 'AnalysisTeammateName',
+        }),
+      ]),
+      [monitoredPlayer, currentTeammate],
+      [makeDamage({}), accountMatchedTeammateDamage, nameMatchedWrongTeammate]
+    );
+
+    expect(contexts[0].closestTeammateName).toBe('CurrentTeammateName');
+    expect(contexts[0].closestTeammateDistanceMeters).toBe(4);
+    expect(contexts[0].closestTeammateDamageToEnemy).toEqual([
+      expect.objectContaining({
+        attackerName: 'FormerTeammateName',
+        victimName: 'FormerEnemyName',
+        damage: 24,
+      }),
+    ]);
+  });
 });
