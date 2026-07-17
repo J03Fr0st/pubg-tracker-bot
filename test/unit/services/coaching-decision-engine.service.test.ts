@@ -316,6 +316,62 @@ describe('CoachingDecisionEngineService', () => {
     expect(evidence).not.toContain('no damage from them to EnemyOne');
   });
 
+  it('does not call opposite pressure lines stacked when measured around the enemy', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const death = makeDeath({
+      victim: actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+      killer: actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 0 }),
+    });
+    const teammateDamage = makeDamage({
+      seconds: 1120,
+      attacker: actor('TeamMate', 'account.teammate', { x: 2000, y: 0, z: 0 }),
+      victim: actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 0 }),
+      damage: 24,
+    });
+
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          monitoredPlayers: [player, teammate],
+          analyses: [makeAnalysis(player, { deathEvents: [death] }), makeAnalysis(teammate)],
+          telemetryEvents: [makeDamage(), teammateDamage],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('positions were close together, not a separate angle');
+  });
+
+  it('calls nearby pressure lines stacked around the enemy', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const death = makeDeath({
+      victim: actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+      killer: actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 0 }),
+    });
+    const teammateDamage = makeDamage({
+      seconds: 1120,
+      attacker: actor('TeamMate', 'account.teammate', { x: 0, y: 100, z: 0 }),
+      victim: actor('EnemyOne', 'account.enemy', { x: 1000, y: 0, z: 0 }),
+      damage: 24,
+    });
+
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          monitoredPlayers: [player, teammate],
+          analyses: [makeAnalysis(player, { deathEvents: [death] }), makeAnalysis(teammate)],
+          telemetryEvents: [makeDamage(), teammateDamage],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain('TeamMate was only 6 degrees off your pressure line around EnemyOne');
+  });
+
   it('uses a victim position when the same teammate has no attacker position', () => {
     const player = identity('account.player', 'TestPlayer');
     const teammate = identity('account.teammate', 'TeamMate');

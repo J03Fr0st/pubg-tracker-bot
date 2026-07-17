@@ -78,7 +78,7 @@ type FightContext = {
   closestTeammateName?: string;
   closestTeammatePosition?: Position;
   closestTeammateDistanceMeters?: number;
-  teammateAngleFromPlayerToEnemyDegrees?: number;
+  stackedPressureAngleDegrees?: number;
   closestTeammateDamageToEnemy: FightDamageEvent[];
   enemyDistanceMeters?: number;
   tradeRangeConfidence: CoachingRating;
@@ -195,9 +195,9 @@ export class CoachingDecisionEngineService {
       closestTeammateName: teammate?.player.name,
       closestTeammatePosition: teammate?.position,
       closestTeammateDistanceMeters: teammate?.distanceMeters,
-      teammateAngleFromPlayerToEnemyDegrees:
+      stackedPressureAngleDegrees:
         playerPosition && enemyPosition && teammate?.position
-          ? TelemetryGeometry.angleDegrees(playerPosition, enemyPosition, teammate.position)
+          ? TelemetryGeometry.angleDegrees(enemyPosition, playerPosition, teammate.position)
           : undefined,
       closestTeammateDamageToEnemy: this.getDamageFromPlayerToEnemy(
         teammate?.player.pubgId,
@@ -730,15 +730,13 @@ export class CoachingDecisionEngineService {
       context.tradeRangeConfidence !== 'low' &&
       context.closestTeammateName &&
       context.enemyName &&
-      context.teammateAngleFromPlayerToEnemyDegrees !== undefined &&
-      context.teammateAngleFromPlayerToEnemyDegrees <= COACHING_THRESHOLDS.stackedAngleDegrees
+      context.stackedPressureAngleDegrees !== undefined &&
+      context.stackedPressureAngleDegrees <= COACHING_THRESHOLDS.stackedAngleDegrees
     ) {
       claims.push({
-        text: `${context.closestTeammateName} was only ${context.teammateAngleFromPlayerToEnemyDegrees} degrees off your logged line to ${context.enemyName}; the positions were close together, not a separate angle.`,
+        text: `${context.closestTeammateName} was only ${context.stackedPressureAngleDegrees} degrees off your pressure line around ${context.enemyName}; the positions were close together, not a separate angle.`,
         confidence: context.tradeRangeConfidence,
-        evidence: [
-          `Teammate angle from player-to-enemy line: ${context.teammateAngleFromPlayerToEnemyDegrees} degrees`,
-        ],
+        evidence: [`Pressure angle around enemy: ${context.stackedPressureAngleDegrees} degrees`],
       });
     }
     if (
