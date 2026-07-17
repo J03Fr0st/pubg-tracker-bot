@@ -392,6 +392,74 @@ describe('CoachingDecisionEngineService', () => {
     expect(evidence).not.toContain('to the same player');
   });
 
+  it('does not attribute another post-reset attacker heavy hit to the eventual killer', () => {
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          telemetryEvents: [
+            makeHeal(1113),
+            makeDamage({ seconds: 1115, damage: 10 }),
+            makeDamage({
+              seconds: 1116,
+              damage: 83,
+              attacker: actor('OtherEnemy', 'account.other-enemy', { x: 1000, y: 0, z: 1200 }),
+            }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('before creating a reset');
+    expect(evidence).not.toContain('EnemyOne hit you for 83 damage');
+  });
+
+  it('uses the eventual killer heavy hit amount and time among other attacker events', () => {
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          telemetryEvents: [
+            makeHeal(1113),
+            makeDamage({
+              seconds: 1114,
+              damage: 83,
+              attacker: actor('OtherEnemy', 'account.other-enemy', { x: 1000, y: 0, z: 1200 }),
+            }),
+            makeDamage({ seconds: 1116, damage: 71 }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain(
+      'EnemyOne hit you for 71 damage, then 6s later you died to the same player before creating a reset'
+    );
+    expect(evidence).not.toContain('EnemyOne hit you for 83 damage');
+  });
+
+  it('does not use a same-name heavy hit from a different attacker account', () => {
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          telemetryEvents: [
+            makeHeal(1113),
+            makeDamage({ seconds: 1115, damage: 10 }),
+            makeDamage({
+              seconds: 1116,
+              damage: 83,
+              attacker: actor('EnemyOne', 'account.impostor', { x: 1000, y: 0, z: 1200 }),
+            }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('before creating a reset');
+    expect(evidence).not.toContain('EnemyOne hit you for 83 damage');
+  });
+
   it('uses teammate raw damage to avoid a false missed-trade claim', () => {
     const player = identity('account.player', 'TestPlayer');
     const teammate = identity('account.teammate', 'TeamMate');
