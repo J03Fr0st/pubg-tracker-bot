@@ -318,6 +318,19 @@ describe('Discord match presentation gateway', () => {
     expect(channel.send.mock.calls[1][0]).toEqual({ embeds: embeds.slice(10) });
   });
 
+  it('rejects automatic delivery when presentation produces no embeds', async () => {
+    const presentation = createPresentation();
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([]);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toThrow(
+      'Match summary presentation produced no embeds'
+    );
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
   it('accepts an exact 6000-character aggregate in one automatic message', async () => {
     const presentation = createPresentation();
     const embeds = [

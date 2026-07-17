@@ -117,8 +117,7 @@ export class DiscordBotService {
     const channel = await this.fetchTextChannel(channelId);
     const embeds = await this.deps.matchPresentation.createEmbeds(summary);
     if (embeds.length === 0) {
-      error('No embeds were created for match summary');
-      return;
+      throw new Error('Match summary presentation produced no embeds');
     }
 
     for (const batch of this.createEmbedBatches(embeds)) {

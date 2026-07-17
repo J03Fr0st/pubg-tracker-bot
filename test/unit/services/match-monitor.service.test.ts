@@ -155,6 +155,31 @@ describe('MatchMonitorService', () => {
     expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith('match-xyz');
   });
 
+  it('does not mark a failed delivery and continues with later matches', async () => {
+    jest.useFakeTimers();
+    const harness = createDependencies(['match-delivery-failed', 'match-delivered']);
+    harness.pubgClient.matches.getMatch
+      .mockResolvedValueOnce(makeResponse('match-delivery-failed'))
+      .mockResolvedValueOnce(makeResponse('match-delivered', '2026-07-14T08:01:00.000Z'));
+    harness.discordBot.sendMatchSummary
+      .mockRejectedValueOnce(new Error('Match summary presentation produced no embeds'))
+      .mockResolvedValueOnce(undefined);
+    const service = new MatchMonitorService(harness.dependencies);
+
+    const check = service.checkNow();
+    await jest.runAllTimersAsync();
+    await check;
+
+    expect(harness.discordBot.sendMatchSummary).toHaveBeenCalledTimes(2);
+    expect(harness.processedMatchRepository.addProcessedMatch).not.toHaveBeenCalledWith(
+      'match-delivery-failed'
+    );
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledTimes(1);
+    expect(harness.processedMatchRepository.addProcessedMatch).toHaveBeenCalledWith(
+      'match-delivered'
+    );
+  });
+
   it('processes no more than the configured maximum in one check cycle', async () => {
     jest.useFakeTimers();
     const harness = createDependencies(['match-1', 'match-2', 'match-3', 'match-4'], {
