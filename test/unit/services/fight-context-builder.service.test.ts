@@ -504,6 +504,86 @@ describe('FightContextBuilderService', () => {
     ]);
   });
 
+  it('uses account identity for reset events when display names are stale or duplicated', () => {
+    const currentIdentity = { ...monitoredPlayer, name: 'CurrentPlayerName' };
+    const accountMatchedReset = {
+      _D: '2024-01-01T10:18:30.000Z',
+      _T: 'LogHeal',
+      character: { accountId: 'account.test-player', name: 'StalePlayerName' },
+      item: { itemId: 'Item_Heal_FirstAid_C' },
+      healAmount: 40,
+    } as LogHeal;
+    const nameMatchedDecoyReset = {
+      _D: '2024-01-01T10:18:31.000Z',
+      _T: 'LogItemUse',
+      character: { accountId: 'account.other-player', name: 'CurrentPlayerName' },
+      item: { itemId: 'Item_Heal_MedKit_C' },
+    } as LogItemUse;
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({
+          pubgId: 'account.test-player',
+          playerName: 'AnalysisPlayerDisplay',
+          deathEvents: [makeDeath({})],
+        }),
+      ]),
+      [currentIdentity],
+      [],
+      [accountMatchedReset, nameMatchedDecoyReset]
+    );
+
+    expect(contexts[0].resetEvents).toEqual([
+      expect.objectContaining({
+        itemId: 'Item_Heal_FirstAid_C',
+        healAmount: 40,
+      }),
+    ]);
+  });
+
+  it('uses account identity for blue-zone damage when display names are stale or duplicated', () => {
+    const currentIdentity = { ...monitoredPlayer, name: 'CurrentPlayerName' };
+    const accountMatchedBlueZoneDamage = makeDamage({
+      _D: '2024-01-01T10:18:20.000Z',
+      attacker: { accountId: 'account.test-player', name: 'StalePlayerName' },
+      victim: { accountId: 'account.test-player', name: 'StalePlayerName' },
+      damage: 13,
+      damageTypeCategory: 'Damage_BlueZone',
+    });
+    const nameMatchedDecoyBlueZoneDamage = makeDamage({
+      _D: '2024-01-01T10:18:21.000Z',
+      attacker: { accountId: 'account.other-player', name: 'CurrentPlayerName' },
+      victim: { accountId: 'account.other-player', name: 'CurrentPlayerName' },
+      damage: 87,
+      damageTypeCategory: 'Damage_BlueZone',
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({
+          pubgId: 'account.test-player',
+          playerName: 'AnalysisPlayerDisplay',
+          deathEvents: [makeDeath({})],
+        }),
+      ]),
+      [currentIdentity],
+      [accountMatchedBlueZoneDamage, nameMatchedDecoyBlueZoneDamage]
+    );
+
+    expect(contexts[0].blueZoneDamage).toMatchObject({
+      damage: 13,
+      events: [
+        expect.objectContaining({
+          attackerName: 'StalePlayerName',
+          victimName: 'StalePlayerName',
+          damage: 13,
+        }),
+      ],
+    });
+  });
+
   it('does not merge repeated-enemy evidence for accounts sharing a display name', () => {
     const duplicateEnemyName = 'DuplicateEnemyDisplay';
     const death = makeDeath({
