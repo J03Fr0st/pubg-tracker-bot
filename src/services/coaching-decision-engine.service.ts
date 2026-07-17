@@ -171,7 +171,7 @@ export class CoachingDecisionEngineService {
     );
     return {
       playerPubgId: player.pubgId,
-      playerName: player.name,
+      playerName: analysis.playerName,
       enemyName,
       outcome: decisiveEvent._T === 'LogPlayerMakeGroggy' ? 'knock' : 'death',
       timestamp,
@@ -354,10 +354,13 @@ export class CoachingDecisionEngineService {
         confidence: 'high' | 'medium';
       }
     | undefined {
-    if (!playerPosition || !player.rosterId) return undefined;
+    if (!playerPosition || player.rosterId === null) return undefined;
     return monitoredPlayers
       .filter(
-        (candidate) => candidate.pubgId !== player.pubgId && candidate.rosterId === player.rosterId
+        (candidate) =>
+          candidate.pubgId !== player.pubgId &&
+          candidate.rosterId !== null &&
+          candidate.rosterId === player.rosterId
       )
       .map((candidate) => {
         const analysis = analyses.get(candidate.pubgId);
@@ -399,13 +402,13 @@ export class CoachingDecisionEngineService {
     return events
       .map((event) => {
         const timestamp = this.getEventTime(event);
-        const actor =
+        const attackerPosition =
           event.attacker?.accountId === actorPubgId
-            ? event.attacker
-            : event.victim?.accountId === actorPubgId
-              ? event.victim
-              : undefined;
-        const position = this.getActorPosition(actor);
+            ? this.getActorPosition(event.attacker)
+            : undefined;
+        const victimPosition =
+          event.victim?.accountId === actorPubgId ? this.getActorPosition(event.victim) : undefined;
+        const position = attackerPosition ?? victimPosition;
         return timestamp && position ? { timestamp, position } : undefined;
       })
       .filter((entry): entry is { timestamp: Date; position: Position } => Boolean(entry))
