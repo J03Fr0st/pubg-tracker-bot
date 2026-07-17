@@ -157,6 +157,35 @@ describe('createApplication', () => {
       analyze: expect.any(Function),
       narrate: expect.any(Function),
     });
+    const coachingPipelineDeps = jest.mocked(CoachingPipelineService).mock.calls[0][0];
+    const matchAnalysis = {
+      matchId: 'match-identity',
+      playerAnalyses: new Map(),
+      processingTimeMs: 0,
+      totalEventsProcessed: 0,
+    };
+    const monitoredPlayers = [
+      { pubgId: 'account.player', name: 'Player', rosterId: 'roster-1' },
+    ];
+    const damageEvents: never[] = [];
+    const resetEvents: never[] = [];
+    jest.mocked(fightContextBuilder.buildFightContexts).mockReturnValue([]);
+    jest.mocked(coachingDecisionEngine.createInsights).mockReturnValue([]);
+
+    coachingPipelineDeps.analyze(
+      matchAnalysis,
+      monitoredPlayers,
+      damageEvents,
+      resetEvents
+    );
+
+    expect(fightContextBuilder.buildFightContexts).toHaveBeenCalledWith(
+      matchAnalysis,
+      monitoredPlayers,
+      damageEvents,
+      resetEvents
+    );
+    expect(coachingDecisionEngine.createInsights).toHaveBeenCalledWith([]);
     expect(MatchInterpreter).toHaveBeenCalledTimes(1);
     expect(MatchInterpreter).toHaveBeenCalledWith();
     expect(MatchPresentationService).toHaveBeenCalledTimes(1);

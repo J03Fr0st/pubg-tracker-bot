@@ -60,9 +60,14 @@ export function createApplication(config: AppConfig): Application {
     maxLineLength: 240,
   });
   const coachingPipeline = new CoachingPipelineService({
-    analyze: (analysis, names, damage, resetEvents) =>
+    analyze: (analysis, monitoredPlayers, damage, resetEvents) =>
       coachingDecisionEngine.createInsights(
-        fightContextBuilder.buildFightContexts(analysis, names, damage, resetEvents)
+        fightContextBuilder.buildFightContexts(
+          analysis,
+          monitoredPlayers,
+          damage,
+          resetEvents
+        )
       ),
     narrate: (insights) => coachingNarrator.narrate(insights),
   });

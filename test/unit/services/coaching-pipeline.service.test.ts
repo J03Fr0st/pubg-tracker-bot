@@ -1,6 +1,13 @@
 import { CoachingPipelineService } from '../../../src/services/coaching-pipeline.service';
 import type { MatchAnalysis } from '../../../src/types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../../../src/types/coaching.types';
+import type { MatchPlayerIdentity } from '../../../src/types/match.types';
+
+const alice: MatchPlayerIdentity = {
+  pubgId: 'account.alice',
+  name: 'Alice',
+  rosterId: 'roster-1',
+};
 
 describe('CoachingPipelineService', () => {
   const fakeMatchAnalysis = {
@@ -41,10 +48,10 @@ describe('CoachingPipelineService', () => {
       },
     ];
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], [], resetEvents as never);
+    const result = await pipeline.run(fakeMatchAnalysis, [alice], [], resetEvents as never);
 
     expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
-    expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, ['Alice'], [], resetEvents);
+    expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, [alice], [], resetEvents);
   });
 
   it('returns kind:empty when analyze yields no insights', async () => {
@@ -53,7 +60,7 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn(),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(fakeMatchAnalysis, [alice], []);
 
     expect(result).toEqual({ kind: 'empty' });
   });
@@ -66,7 +73,7 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn(),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(fakeMatchAnalysis, [alice], []);
 
     expect(result).toEqual({ kind: 'failed', reason: 'boom', stage: 'analyze' });
   });
@@ -77,7 +84,7 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn().mockRejectedValue(new Error('llm down')),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(fakeMatchAnalysis, [alice], []);
 
     expect(result).toEqual({ kind: 'failed', reason: 'llm down', stage: 'narrate' });
   });

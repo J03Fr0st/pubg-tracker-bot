@@ -1,6 +1,23 @@
 import type { LogHeal, LogItemUse, LogPlayerKillV2, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
 import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
 import type { MatchAnalysis, PlayerAnalysis } from '../../../src/types/analytics-results.types';
+import type { MatchPlayerIdentity } from '../../../src/types/match.types';
+
+const monitoredPlayer: MatchPlayerIdentity = {
+  pubgId: 'account.test-player',
+  name: 'TestPlayer',
+  rosterId: 'roster-1',
+};
+const sameRosterTeammate: MatchPlayerIdentity = {
+  pubgId: 'account.same-roster',
+  name: 'TeamMate',
+  rosterId: 'roster-1',
+};
+const crossRosterPlayer: MatchPlayerIdentity = {
+  pubgId: 'account.cross-roster',
+  name: 'CrossRoster',
+  rosterId: 'roster-2',
+};
 
 function makeAnalysis(overrides: Partial<PlayerAnalysis>): PlayerAnalysis {
   return {
@@ -39,8 +56,16 @@ function makeDamage(overrides: Record<string, unknown>): LogPlayerTakeDamage {
   return {
     _D: '2024-01-01T10:18:36.000Z',
     _T: 'LogPlayerTakeDamage',
-    attacker: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
-    victim: { name: 'TestPlayer', location: { x: 0, y: 0, z: 0 } },
+    attacker: {
+      accountId: 'account.enemy-one',
+      name: 'EnemyOne',
+      location: { x: 1000, y: 0, z: 1200 },
+    },
+    victim: {
+      accountId: 'account.test-player',
+      name: 'TestPlayer',
+      location: { x: 0, y: 0, z: 0 },
+    },
     damage: 83,
     ...overrides,
   } as LogPlayerTakeDamage;
@@ -50,8 +75,16 @@ function makeDeath(overrides: Record<string, unknown>): LogPlayerKillV2 {
   return {
     _D: '2024-01-01T10:18:42.000Z',
     _T: 'LogPlayerKillV2',
-    killer: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
-    victim: { name: 'TestPlayer', location: { x: 100, y: 0, z: 0 } },
+    killer: {
+      accountId: 'account.enemy-one',
+      name: 'EnemyOne',
+      location: { x: 1000, y: 0, z: 1200 },
+    },
+    victim: {
+      accountId: 'account.test-player',
+      name: 'TestPlayer',
+      location: { x: 100, y: 0, z: 0 },
+    },
     ...overrides,
   } as LogPlayerKillV2;
 }
@@ -64,7 +97,7 @@ describe('FightContextBuilderService', () => {
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
-      ['TestPlayer'],
+      [monitoredPlayer],
       [damage]
     );
 
@@ -87,12 +120,20 @@ describe('FightContextBuilderService', () => {
     const damage = makeDamage({});
     const death = makeDeath({});
     const teammate = makeAnalysis({
-      pubgId: 'account.team-mate',
+      pubgId: 'account.same-roster',
       playerName: 'TeamMate',
       deathEvents: [
         makeDeath({
-          victim: { name: 'TeamMate', location: { x: 9000, y: 0, z: 0 } },
-          killer: { name: 'OtherEnemy', location: { x: 9100, y: 0, z: 0 } },
+          victim: {
+            accountId: 'account.same-roster',
+            name: 'TeamMate',
+            location: { x: 9000, y: 0, z: 0 },
+          },
+          killer: {
+            accountId: 'account.other-enemy',
+            name: 'OtherEnemy',
+            location: { x: 9100, y: 0, z: 0 },
+          },
         }),
       ],
     });
@@ -100,7 +141,7 @@ describe('FightContextBuilderService', () => {
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] }), teammate]),
-      ['TestPlayer', 'TeamMate'],
+      [monitoredPlayer, sameRosterTeammate],
       [damage]
     );
 
@@ -114,19 +155,27 @@ describe('FightContextBuilderService', () => {
     const death = makeDeath({});
     const teammateDamage = makeDamage({
       _D: '2024-01-01T10:18:40.000Z',
-      attacker: { name: 'TeamMate', location: { x: 500, y: 0, z: 0 } },
-      victim: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+      attacker: {
+        accountId: 'account.same-roster',
+        name: 'TeamMate',
+        location: { x: 500, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.enemy-one',
+        name: 'EnemyOne',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
       damage: 24,
     });
     const teammate = makeAnalysis({
-      pubgId: 'account.team-mate',
+      pubgId: 'account.same-roster',
       playerName: 'TeamMate',
     });
     const service = new FightContextBuilderService();
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] }), teammate]),
-      ['TestPlayer', 'TeamMate'],
+      [monitoredPlayer, sameRosterTeammate],
       [damage, teammateDamage]
     );
 
@@ -145,16 +194,24 @@ describe('FightContextBuilderService', () => {
 
   it('detects no meaningful reposition when the player barely moves after heavy damage', () => {
     const damage = makeDamage({
-      victim: { name: 'TestPlayer', location: { x: 0, y: 0, z: 0 } },
+      victim: {
+        accountId: 'account.test-player',
+        name: 'TestPlayer',
+        location: { x: 0, y: 0, z: 0 },
+      },
     });
     const death = makeDeath({
-      victim: { name: 'TestPlayer', location: { x: 100, y: 0, z: 0 } },
+      victim: {
+        accountId: 'account.test-player',
+        name: 'TestPlayer',
+        location: { x: 100, y: 0, z: 0 },
+      },
     });
     const service = new FightContextBuilderService();
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
-      ['TestPlayer'],
+      [monitoredPlayer],
       [damage]
     );
 
@@ -169,7 +226,7 @@ describe('FightContextBuilderService', () => {
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
-      ['TestPlayer'],
+      [monitoredPlayer],
       [damage]
     );
 
@@ -179,18 +236,18 @@ describe('FightContextBuilderService', () => {
 
   it('omits geometry confidence when position data is missing', () => {
     const damage = makeDamage({
-      attacker: { name: 'EnemyOne' },
-      victim: { name: 'TestPlayer' },
+      attacker: { accountId: 'account.enemy-one', name: 'EnemyOne' },
+      victim: { accountId: 'account.test-player', name: 'TestPlayer' },
     });
     const death = makeDeath({
-      killer: { name: 'EnemyOne' },
-      victim: { name: 'TestPlayer' },
+      killer: { accountId: 'account.enemy-one', name: 'EnemyOne' },
+      victim: { accountId: 'account.test-player', name: 'TestPlayer' },
     });
     const service = new FightContextBuilderService();
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
-      ['TestPlayer'],
+      [monitoredPlayer],
       [damage]
     );
 
@@ -210,8 +267,12 @@ describe('FightContextBuilderService', () => {
     });
     const blueZoneDamage = makeDamage({
       _D: '2024-01-01T10:18:10.000Z',
-      attacker: { name: 'TestPlayer' },
-      victim: { name: 'TestPlayer', location: { x: 25, y: 0, z: 0 } },
+      attacker: { accountId: 'account.test-player', name: 'TestPlayer' },
+      victim: {
+        accountId: 'account.test-player',
+        name: 'TestPlayer',
+        location: { x: 25, y: 0, z: 0 },
+      },
       damage: 31,
       damageCauserName: 'TslGameModeBase_BattleRoyaleBP_C',
       damageTypeCategory: 'Damage_BlueZone',
@@ -220,19 +281,27 @@ describe('FightContextBuilderService', () => {
     const heal = {
       _D: '2024-01-01T10:18:30.000Z',
       _T: 'LogHeal',
-      character: { name: 'TestPlayer' },
+      character: { accountId: 'account.test-player', name: 'TestPlayer' },
       item: { itemId: 'Item_Heal_FirstAid_C' },
       healAmount: 40,
     } as LogHeal;
     const itemUse = {
       _D: '2024-01-01T10:18:34.000Z',
       _T: 'LogItemUse',
-      character: { name: 'TestPlayer' },
+      character: { accountId: 'account.test-player', name: 'TestPlayer' },
       item: { itemId: 'Item_Boost_EnergyDrink_C' },
     } as LogItemUse;
     const death = makeDeath({
-      killer: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
-      finisher: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+      killer: {
+        accountId: 'account.enemy-one',
+        name: 'EnemyOne',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+      finisher: {
+        accountId: 'account.enemy-one',
+        name: 'EnemyOne',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
       finishDamageInfo: {
         damageCauserName: 'WeapHK416_C',
         damageTypeCategory: 'Damage_Gun',
@@ -243,7 +312,7 @@ describe('FightContextBuilderService', () => {
 
     const contexts = service.buildFightContexts(
       makeMatchAnalysis([makeAnalysis({ deathEvents: [death] })]),
-      ['TestPlayer'],
+      [monitoredPlayer],
       [gunDamage, blueZoneDamage],
       [heal, itemUse]
     );
@@ -273,5 +342,93 @@ describe('FightContextBuilderService', () => {
       attackerName: 'TestPlayer',
       victimName: 'TestPlayer',
     });
+  });
+
+  it('uses a different monitored account on the same non-null roster as teammate evidence', () => {
+    const death = makeDeath({});
+    const teammateDamage = makeDamage({
+      _D: '2024-01-01T10:18:40.000Z',
+      attacker: {
+        accountId: 'account.same-roster',
+        name: 'TeamMate',
+        location: { x: 500, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.enemy-one',
+        name: 'EnemyOne',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+      damage: 24,
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({ pubgId: 'account.test-player', deathEvents: [death] }),
+        makeAnalysis({ pubgId: 'account.same-roster', playerName: 'TeamMate' }),
+      ]),
+      [monitoredPlayer, sameRosterTeammate],
+      [makeDamage({}), teammateDamage]
+    );
+
+    expect(contexts[0].closestTeammateName).toBe('TeamMate');
+    expect(contexts[0].closestTeammateDistanceMeters).toBe(4);
+    expect(contexts[0].closestTeammateDamageToEnemy).toEqual([
+      expect.objectContaining({
+        attackerName: 'TeamMate',
+        victimName: 'EnemyOne',
+        damage: 24,
+      }),
+    ]);
+  });
+
+  it('excludes a monitored player on another roster from teammate evidence', () => {
+    const death = makeDeath({});
+    const crossRosterDamage = makeDamage({
+      _D: '2024-01-01T10:18:40.000Z',
+      attacker: {
+        accountId: 'account.cross-roster',
+        name: 'CrossRoster',
+        location: { x: 500, y: 0, z: 0 },
+      },
+      victim: {
+        accountId: 'account.enemy-one',
+        name: 'EnemyOne',
+        location: { x: 1000, y: 0, z: 1200 },
+      },
+      damage: 50,
+    });
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({ pubgId: 'account.test-player', deathEvents: [death] }),
+        makeAnalysis({ pubgId: 'account.cross-roster', playerName: 'CrossRoster' }),
+      ]),
+      [monitoredPlayer, crossRosterPlayer],
+      [makeDamage({}), crossRosterDamage]
+    );
+
+    expect(contexts[0].closestTeammateName).toBeUndefined();
+    expect(contexts[0].closestTeammateDistanceMeters).toBeUndefined();
+    expect(contexts[0].closestTeammateDamageToEnemy).toEqual([]);
+    expect(contexts[0].tradeRangeConfidence).toBe('low');
+  });
+
+  it('does not infer teammates when both monitored roster IDs are null', () => {
+    const unrosteredPlayer = { ...monitoredPlayer, rosterId: null };
+    const unrosteredOther = { ...sameRosterTeammate, rosterId: null };
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({ pubgId: 'account.test-player', deathEvents: [makeDeath({})] }),
+        makeAnalysis({ pubgId: 'account.same-roster', playerName: 'TeamMate' }),
+      ]),
+      [unrosteredPlayer, unrosteredOther],
+      [makeDamage({})]
+    );
+
+    expect(contexts[0].closestTeammateName).toBeUndefined();
   });
 });

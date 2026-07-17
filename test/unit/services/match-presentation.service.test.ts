@@ -170,7 +170,7 @@ describe('MatchPresentationService', () => {
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
     expect(embeds[2].data.description).toContain('⚔️ Kills: 1');
     expect(embeds[2].data.description).not.toContain('⚔️ **COMBAT STATS**');
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, ['MonitoredPlayer'], [], []);
+    expect(coaching).toHaveBeenCalledWith(matchAnalysis, [monitored], [], []);
   });
 
   it('creates enhanced player embeds from live telemetry', async () => {
@@ -323,7 +323,7 @@ describe('MatchPresentationService', () => {
     expect(embeds.at(-1)?.data.description).toContain('Hold the stronger angle.');
     expect(liveTelemetry).not.toHaveBeenCalled();
     expect(processTelemetry).not.toHaveBeenCalled();
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, ['CachedPlayer'], [], []);
+    expect(coaching).toHaveBeenCalledWith(matchAnalysis, summary.monitoredPlayers, [], []);
   });
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {

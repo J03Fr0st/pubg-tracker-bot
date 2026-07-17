@@ -2,11 +2,12 @@ import type { LogHeal, LogItemUse, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts
 import type { MatchAnalysis } from '../types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
+import type { MatchPlayerIdentity } from '../types/match.types';
 
 type CoachingPipelineDeps = {
   analyze: (
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    monitoredPlayers: readonly MatchPlayerIdentity[],
     damageEvents: LogPlayerTakeDamage[],
     resetEvents: Array<LogHeal | LogItemUse>
   ) => CoachingInsight[];
@@ -18,13 +19,13 @@ export class CoachingPipelineService {
 
   public async run(
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    monitoredPlayers: readonly MatchPlayerIdentity[],
     damageEvents: LogPlayerTakeDamage[],
     resetEvents: Array<LogHeal | LogItemUse> = []
   ): Promise<CoachingPipelineResult> {
     let insights: CoachingInsight[];
     try {
-      insights = this.deps.analyze(matchAnalysis, trackedPlayerNames, damageEvents, resetEvents);
+      insights = this.deps.analyze(matchAnalysis, monitoredPlayers, damageEvents, resetEvents);
     } catch (err) {
       return { kind: 'failed', reason: messageOf(err), stage: 'analyze' };
     }

@@ -722,7 +722,7 @@ export class MatchPresentationService {
     try {
       const result = await this.deps.coachingPipeline.run(
         matchAnalysis,
-        monitoredPlayers.map((participant) => participant.name),
+        monitoredPlayers,
         damageEvents,
         resetEvents
       );

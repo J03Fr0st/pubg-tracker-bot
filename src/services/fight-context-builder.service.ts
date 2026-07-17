@@ -15,6 +15,7 @@ import type {
   TelemetryPosition,
   ZonePressureEvidence,
 } from '../types/coaching.types';
+import type { MatchPlayerIdentity } from '../types/match.types';
 import { TelemetryGeometry } from '../utils/telemetry-geometry';
 
 const CONTEXT_WINDOW_SECONDS = 45;
@@ -25,29 +26,32 @@ const TRADE_DAMAGE_WINDOW_SECONDS = 10;
 const ZONE_PRESSURE_WINDOW_SECONDS = 60;
 
 type DecisiveEvent = LogPlayerKillV2 | LogPlayerMakeGroggy;
-type ActorWithPosition = { name?: string; location?: TelemetryPosition };
+type ActorWithPosition = {
+  accountId?: string;
+  name?: string;
+  location?: TelemetryPosition;
+};
 
 export class FightContextBuilderService {
   public buildFightContexts(
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    monitoredPlayers: readonly MatchPlayerIdentity[],
     damageEvents: LogPlayerTakeDamage[] = [],
     resetEvents: Array<LogHeal | LogItemUse> = []
   ): FightContext[] {
     const contexts: FightContext[] = [];
 
-    for (const playerName of trackedPlayerNames) {
-      const analysis = this.findAnalysisByPlayerName(matchAnalysis, playerName);
-      if (!analysis) {
-        continue;
-      }
+    for (const player of monitoredPlayers) {
+      const analysis = matchAnalysis.playerAnalyses.get(player.pubgId);
+      if (!analysis) continue;
 
       for (const decisiveEvent of this.getDecisiveEvents(analysis)) {
         const context = this.buildContextForEvent(
+          player,
           analysis,
           decisiveEvent,
           matchAnalysis,
-          trackedPlayerNames,
+          monitoredPlayers,
           damageEvents,
           resetEvents
         );
@@ -61,10 +65,11 @@ export class FightContextBuilderService {
   }
 
   private buildContextForEvent(
+    player: MatchPlayerIdentity,
     analysis: PlayerTelemetry,
     decisiveEvent: DecisiveEvent,
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    monitoredPlayers: readonly MatchPlayerIdentity[],
     damageEvents: LogPlayerTakeDamage[],
     resetEvents: Array<LogHeal | LogItemUse>
   ): FightContext | null {
@@ -77,25 +82,25 @@ export class FightContextBuilderService {
     const outcome: FightOutcome = decisiveEvent._T === 'LogPlayerMakeGroggy' ? 'knock' : 'death';
     const matchTimeSeconds = TelemetryGeometry.secondsBetween(analysis.matchStartTime, timestamp);
     const damageTaken = this.getDamageTaken(
-      analysis.playerName,
+      player.pubgId,
       timestamp,
       damageEvents,
       analysis.matchStartTime
     );
     const damageDealt = this.getDamageDealt(
-      analysis.playerName,
+      player.pubgId,
       timestamp,
       damageEvents,
       analysis.matchStartTime
     );
     const recentResetEvents = this.getResetEvents(
-      analysis.playerName,
+      player.pubgId,
       timestamp,
       resetEvents,
       analysis.matchStartTime
     );
     const blueZoneDamage = this.getBlueZoneDamage(
-      analysis.playerName,
+      player.pubgId,
       timestamp,
       damageEvents,
       analysis.matchStartTime
@@ -103,10 +108,10 @@ export class FightContextBuilderService {
     const playerPosition = this.getVictimPosition(decisiveEvent);
     const enemyPosition = this.getEnemyPosition(decisiveEvent);
     const closestTeammate = this.getClosestTeammate(
-      analysis.playerName,
+      player,
       playerPosition,
       matchAnalysis,
-      trackedPlayerNames,
+      monitoredPlayers,
       timestamp,
       damageEvents
     );
@@ -122,9 +127,10 @@ export class FightContextBuilderService {
       playerPosition && enemyPosition && closestTeammate?.position
         ? TelemetryGeometry.angleDegrees(playerPosition, enemyPosition, closestTeammate.position)
         : undefined;
+    const enemyPubgId = this.getEnemyPubgId(decisiveEvent);
     const closestTeammateDamageToEnemy = this.getDamageFromPlayerToEnemy(
-      closestTeammate?.name,
-      enemyName,
+      closestTeammate?.pubgId,
+      enemyPubgId,
       timestamp,
       damageEvents,
       analysis.matchStartTime
@@ -134,8 +140,12 @@ export class FightContextBuilderService {
       playerPosition && enemyPosition
         ? TelemetryGeometry.heightDeltaMeters(playerPosition, enemyPosition)
         : undefined;
-    const repeatedSameEnemy =
-      Boolean(enemyName) && damageTaken.some((event) => event.attackerName === enemyName);
+    const repeatedSameEnemy = this.hasRecentDamageFromEnemy(
+      player.pubgId,
+      enemyPubgId,
+      timestamp,
+      damageEvents
+    );
 
     return {
       playerName: analysis.playerName,
@@ -189,13 +199,13 @@ export class FightContextBuilderService {
   }
 
   private getDamageTaken(
-    playerName: string,
+    playerPubgId: string,
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
     return damageEvents
-      .filter((event) => this.getActorName(event.victim) === playerName)
+      .filter((event) => event.victim?.accountId === playerPubgId)
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
       .filter((event) => {
@@ -205,13 +215,13 @@ export class FightContextBuilderService {
   }
 
   private getDamageDealt(
-    playerName: string,
+    playerPubgId: string,
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
     return damageEvents
-      .filter((event) => this.getActorName(event.attacker) === playerName)
+      .filter((event) => event.attacker?.accountId === playerPubgId)
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
       .filter((event) => {
@@ -240,13 +250,13 @@ export class FightContextBuilderService {
   }
 
   private getResetEvents(
-    playerName: string,
+    playerPubgId: string,
     decisiveTime: Date,
     resetEvents: Array<LogHeal | LogItemUse>,
     matchStartTime: Date
   ): FightResetEvent[] {
     return resetEvents
-      .filter((event) => this.getActorName(event.character) === playerName)
+      .filter((event) => event.character?.accountId === playerPubgId)
       .map((event) => {
         const timestamp = this.getEventTime(event);
         if (!timestamp) return null;
@@ -267,7 +277,7 @@ export class FightContextBuilderService {
   }
 
   private getBlueZoneDamage(
-    playerName: string,
+    playerPubgId: string,
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[],
     matchStartTime: Date
@@ -275,7 +285,7 @@ export class FightContextBuilderService {
     const events = damageEvents
       .filter(
         (event) =>
-          this.getActorName(event.victim) === playerName &&
+          event.victim?.accountId === playerPubgId &&
           event.damageTypeCategory === 'Damage_BlueZone'
       )
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
@@ -293,35 +303,44 @@ export class FightContextBuilderService {
   }
 
   private getClosestTeammate(
-    playerName: string,
+    player: MatchPlayerIdentity,
     playerPosition: TelemetryPosition | undefined,
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    monitoredPlayers: readonly MatchPlayerIdentity[],
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[]
   ):
     | {
+        pubgId: string;
         name: string;
         distanceMeters: number;
         position: TelemetryPosition;
         confidence: 'high' | 'medium';
       }
     | undefined {
-    if (!playerPosition) {
-      return undefined;
-    }
+    if (!playerPosition || player.rosterId === null) return undefined;
 
-    return trackedPlayerNames
-      .filter((name) => name !== playerName)
-      .map((name) => {
-        const analysis = this.findAnalysisByPlayerName(matchAnalysis, name);
-        const latestDamagePosition = this.getLatestActorPosition(name, decisiveTime, damageEvents);
+    return monitoredPlayers
+      .filter(
+        (candidate) =>
+          candidate.pubgId !== player.pubgId &&
+          candidate.rosterId !== null &&
+          candidate.rosterId === player.rosterId
+      )
+      .map((candidate) => {
+        const analysis = matchAnalysis.playerAnalyses.get(candidate.pubgId);
+        const latestDamagePosition = this.getLatestActorPosition(
+          candidate.pubgId,
+          decisiveTime,
+          damageEvents
+        );
         const position =
           latestDamagePosition ??
           (analysis ? this.getLastKnownPlayerPosition(analysis) : undefined);
         return position
           ? {
-              name,
+              pubgId: candidate.pubgId,
+              name: candidate.name,
               distanceMeters: TelemetryGeometry.distanceMeters(playerPosition, position),
               position,
               confidence: latestDamagePosition ? 'high' : 'medium',
@@ -332,6 +351,7 @@ export class FightContextBuilderService {
         (
           candidate
         ): candidate is {
+          pubgId: string;
           name: string;
           distanceMeters: number;
           position: TelemetryPosition;
@@ -341,17 +361,8 @@ export class FightContextBuilderService {
       .sort((left, right) => left.distanceMeters - right.distanceMeters)[0];
   }
 
-  private findAnalysisByPlayerName(
-    matchAnalysis: MatchAnalysis,
-    playerName: string
-  ): PlayerTelemetry | undefined {
-    return [...matchAnalysis.playerAnalyses.values()].find(
-      (analysis) => analysis.playerName === playerName
-    );
-  }
-
   private getLatestActorPosition(
-    actorName: string,
+    actorPubgId: string,
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[]
   ): TelemetryPosition | undefined {
@@ -359,11 +370,11 @@ export class FightContextBuilderService {
       .map((event) => {
         const timestamp = this.getEventTime(event);
         const attackerPosition =
-          this.getActorName(event.attacker) === actorName
+          event.attacker?.accountId === actorPubgId
             ? this.getActorPosition(event.attacker)
             : undefined;
         const victimPosition =
-          this.getActorName(event.victim) === actorName
+          event.victim?.accountId === actorPubgId
             ? this.getActorPosition(event.victim)
             : undefined;
         const position = attackerPosition ?? victimPosition;
@@ -378,21 +389,19 @@ export class FightContextBuilderService {
   }
 
   private getDamageFromPlayerToEnemy(
-    playerName: string | undefined,
-    enemyName: string | undefined,
+    playerPubgId: string | undefined,
+    enemyPubgId: string | undefined,
     decisiveTime: Date,
     damageEvents: LogPlayerTakeDamage[],
     matchStartTime: Date
   ): FightDamageEvent[] {
-    if (!playerName || !enemyName) {
-      return [];
-    }
+    if (!playerPubgId || !enemyPubgId) return [];
 
     return damageEvents
       .filter(
         (event) =>
-          this.getActorName(event.attacker) === playerName &&
-          this.getActorName(event.victim) === enemyName
+          event.attacker?.accountId === playerPubgId &&
+          event.victim?.accountId === enemyPubgId
       )
       .map((event) => this.toFightDamageEvent(event, matchStartTime))
       .filter((event): event is FightDamageEvent => Boolean(event))
@@ -400,6 +409,28 @@ export class FightContextBuilderService {
         const seconds = TelemetryGeometry.signedSecondsBetween(event.timestamp, decisiveTime);
         return seconds >= 0 && seconds <= TRADE_DAMAGE_WINDOW_SECONDS;
       });
+  }
+
+  private hasRecentDamageFromEnemy(
+    playerPubgId: string,
+    enemyPubgId: string | undefined,
+    decisiveTime: Date,
+    damageEvents: LogPlayerTakeDamage[]
+  ): boolean {
+    if (!enemyPubgId) return false;
+
+    return damageEvents.some((event) => {
+      if (
+        event.attacker?.accountId !== enemyPubgId ||
+        event.victim?.accountId !== playerPubgId
+      ) {
+        return false;
+      }
+      const timestamp = this.getEventTime(event);
+      if (!timestamp) return false;
+      const seconds = TelemetryGeometry.signedSecondsBetween(timestamp, decisiveTime);
+      return seconds >= 0 && seconds <= CONTEXT_WINDOW_SECONDS;
+    });
   }
 
   private getLastKnownPlayerPosition(analysis: PlayerTelemetry): TelemetryPosition | undefined {
@@ -423,6 +454,12 @@ export class FightContextBuilderService {
     return event._T === 'LogPlayerMakeGroggy'
       ? this.getActorName(event.attacker)
       : this.getActorName(event.killer);
+  }
+
+  private getEnemyPubgId(event: DecisiveEvent): string | undefined {
+    return event._T === 'LogPlayerMakeGroggy'
+      ? event.attacker?.accountId
+      : event.killer?.accountId;
   }
 
   private getDecisiveWeapon(event: DecisiveEvent): string | undefined {
