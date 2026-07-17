@@ -377,6 +377,43 @@ describe('CoachingDecisionEngineService', () => {
     expect(evidence).not.toContain('TeamMate was');
   });
 
+  it('uses an older valid teammate position when a newer eligible event has no coordinates', () => {
+    const player = identity('account.player', 'TestPlayer');
+    const teammate = identity('account.teammate', 'TeamMate');
+    const reviewedDeath = makeDeath({ seconds: 600 });
+    const newerTeammateDeath = makeDeath({
+      seconds: 550,
+      killer: actor('OtherEnemy', 'account.other'),
+      victim: actor('TeamMate', 'account.teammate'),
+    });
+    const olderTeammateDeath = makeDeath({
+      seconds: 500,
+      killer: actor('OtherEnemy', 'account.other', { x: 3100, y: 0, z: 0 }),
+      victim: actor('TeamMate', 'account.teammate', { x: 3000, y: 0, z: 0 }),
+    });
+
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          monitoredPlayers: [player, teammate],
+          analyses: [
+            makeAnalysis(player, { deathEvents: [reviewedDeath] }),
+            makeAnalysis(teammate, {
+              deathEvents: [newerTeammateDeath, olderTeammateDeath],
+            }),
+          ],
+          telemetryEvents: [makeDamage({ seconds: 594 })],
+        })
+      )
+      .filter((insight) => insight.playerName === 'TestPlayer')
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain(
+      'TeamMate was 29m from you, but telemetry shows no damage from them to EnemyOne'
+    );
+  });
+
   it('treats only null roster IDs as absent', () => {
     const player = identity('account.player', 'TestPlayer', '');
     const teammate = identity('account.teammate', 'TeamMate', '');

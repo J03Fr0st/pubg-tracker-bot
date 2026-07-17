@@ -444,15 +444,18 @@ export class CoachingDecisionEngineService {
     analysis: PlayerAnalysis,
     decisiveTime: Date
   ): Position | undefined {
-    const event = this.getDecisiveEvents(analysis)
-      .map((decisiveEvent) => ({ decisiveEvent, timestamp: this.getEventTime(decisiveEvent) }))
+    return this.getDecisiveEvents(analysis)
+      .map((decisiveEvent) => ({
+        timestamp: this.getEventTime(decisiveEvent),
+        position: this.getActorPosition(decisiveEvent.victim),
+      }))
       .filter(
-        (entry): entry is { decisiveEvent: DecisiveEvent; timestamp: Date } =>
-          entry.timestamp !== null && entry.timestamp.getTime() <= decisiveTime.getTime()
+        (entry): entry is { timestamp: Date; position: Position } =>
+          entry.timestamp !== null &&
+          entry.timestamp.getTime() <= decisiveTime.getTime() &&
+          entry.position !== undefined
       )
-      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]
-      ?.decisiveEvent;
-    return event ? this.getActorPosition(event.victim) : undefined;
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())[0]?.position;
   }
 
   private getRepositionDistanceMeters(
