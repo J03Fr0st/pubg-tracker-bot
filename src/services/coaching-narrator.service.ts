@@ -164,6 +164,9 @@ export class CoachingNarratorService {
     }
 
     const meaningfulLines = lineTokens.map((tokens) => this.meaningfulTokens(tokens));
+    if (insight.evidence.length === 0) {
+      return 'does not preserve all supplied evidence';
+    }
     const evidenceSequences = insight.evidence
       .map((evidence) => this.meaningfulTokens(this.tokenize(evidence)))
       .filter((tokens) => tokens.length > 0);

@@ -560,4 +560,22 @@ describe('CoachingNarratorService', () => {
       new CoachingNarratorService(makeLlmClient(value), options).narrate([insight])
     ).resolves.toEqual(value);
   });
+
+  it('falls back when an insight has no evidence', async () => {
+    const insightWithoutEvidence: CoachingInsight = {
+      ...insight,
+      evidence: [],
+    };
+    const actionOnlyNarration = {
+      sections: [
+        {
+          playerName: 'Alice',
+          title: 'Decisive mistake',
+          lines: ['Do this: break line of sight and heal before re-engaging.'],
+        },
+      ],
+    };
+
+    await expectTemplateFallback(actionOnlyNarration, [insightWithoutEvidence]);
+  });
 });
