@@ -37,7 +37,7 @@ export class FightContextBuilderService {
     const contexts: FightContext[] = [];
 
     for (const playerName of trackedPlayerNames) {
-      const analysis = matchAnalysis.playerAnalyses.get(playerName);
+      const analysis = this.findAnalysisByPlayerName(matchAnalysis, playerName);
       if (!analysis) {
         continue;
       }
@@ -314,7 +314,7 @@ export class FightContextBuilderService {
     return trackedPlayerNames
       .filter((name) => name !== playerName)
       .map((name) => {
-        const analysis = matchAnalysis.playerAnalyses.get(name);
+        const analysis = this.findAnalysisByPlayerName(matchAnalysis, name);
         const latestDamagePosition = this.getLatestActorPosition(name, decisiveTime, damageEvents);
         const position =
           latestDamagePosition ??
@@ -339,6 +339,15 @@ export class FightContextBuilderService {
         } => Boolean(candidate)
       )
       .sort((left, right) => left.distanceMeters - right.distanceMeters)[0];
+  }
+
+  private findAnalysisByPlayerName(
+    matchAnalysis: MatchAnalysis,
+    playerName: string
+  ): PlayerTelemetry | undefined {
+    return [...matchAnalysis.playerAnalyses.values()].find(
+      (analysis) => analysis.playerName === playerName
+    );
   }
 
   private getLatestActorPosition(

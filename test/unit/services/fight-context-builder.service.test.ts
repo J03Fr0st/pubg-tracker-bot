@@ -29,7 +29,7 @@ function makeAnalysis(overrides: Partial<PlayerAnalysis>): PlayerAnalysis {
 function makeMatchAnalysis(analyses: PlayerAnalysis[]): MatchAnalysis {
   return {
     matchId: 'match-123',
-    playerAnalyses: new Map(analyses.map((analysis) => [analysis.playerName, analysis])),
+    playerAnalyses: new Map(analyses.map((analysis) => [analysis.pubgId, analysis])),
     processingTimeMs: 1,
     totalEventsProcessed: 1,
   };
@@ -87,6 +87,7 @@ describe('FightContextBuilderService', () => {
     const damage = makeDamage({});
     const death = makeDeath({});
     const teammate = makeAnalysis({
+      pubgId: 'account.team-mate',
       playerName: 'TeamMate',
       deathEvents: [
         makeDeath({
@@ -117,7 +118,10 @@ describe('FightContextBuilderService', () => {
       victim: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
       damage: 24,
     });
-    const teammate = makeAnalysis({ playerName: 'TeamMate' });
+    const teammate = makeAnalysis({
+      pubgId: 'account.team-mate',
+      playerName: 'TeamMate',
+    });
     const service = new FightContextBuilderService();
 
     const contexts = service.buildFightContexts(
