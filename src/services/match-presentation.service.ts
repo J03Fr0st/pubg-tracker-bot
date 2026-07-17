@@ -161,14 +161,22 @@ export class MatchPresentationService {
       warn(`Failed to read telemetry cache for ${summary.matchId}: ${err}`);
       cached = { kind: 'miss' };
     }
+    let rawEvents: TelemetryEvent[];
     if (cached.kind === 'hit') {
-      return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
-    }
-    if (cached.kind === 'corrupt') {
-      warn(`Ignoring corrupt telemetry cache for ${summary.matchId}: ${cached.reason}`);
+      const hasAllMonitoredPlayers = summary.monitoredPlayers.every((player) =>
+        cached.matchAnalysis.playerAnalyses.has(player.pubgId)
+      );
+      if (hasAllMonitoredPlayers) {
+        return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
+      }
+      rawEvents = cached.rawEvents;
+    } else {
+      if (cached.kind === 'corrupt') {
+        warn(`Ignoring corrupt telemetry cache for ${summary.matchId}: ${cached.reason}`);
+      }
+      rawEvents = await this.deps.pubgClient.matches.getTelemetry(summary.matchId);
     }
 
-    const rawEvents = await this.deps.pubgClient.matches.getTelemetry(summary.matchId);
     const matchAnalysis = await this.deps.telemetryProcessor.processMatchTelemetry(
       rawEvents,
       summary.matchId,

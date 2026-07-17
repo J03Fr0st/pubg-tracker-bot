@@ -335,6 +335,80 @@ describe('MatchPresentationService', () => {
     });
   });
 
+  it('rebuilds an incomplete cache hit from cached events for all monitored players', async () => {
+    const deps = createDependencies();
+    const rawEvents: TelemetryEvent[] = [
+      {
+        _D: '2026-07-14T08:00:00.000Z',
+        _T: 'FixtureEvent',
+        common: { isGame: 1 },
+      },
+    ];
+    const cachedAnalysis = createMatchAnalysis(
+      'partial-cache-match',
+      'account.cached',
+      'CachedPlayer'
+    );
+    const rebuiltAnalysis = createMatchAnalysis(
+      'partial-cache-match',
+      'account.cached',
+      'CachedPlayer'
+    );
+    rebuiltAnalysis.playerAnalyses.set(
+      'account.missing',
+      createPlayerAnalysis('account.missing', 'MissingPlayer')
+    );
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis: cachedAnalysis,
+      rawEvents,
+    });
+    const saveTelemetry = jest
+      .spyOn(deps.telemetryRepository, 'saveTelemetry')
+      .mockResolvedValue(undefined);
+    const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry');
+    const processTelemetry = jest
+      .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
+      .mockResolvedValue(rebuiltAnalysis);
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
+    const service = new MatchPresentationService(deps);
+    const cachedPlayer = {
+      name: 'CachedPlayer',
+      pubgId: 'account.cached',
+      stats: makeMatchParticipantStats(),
+    };
+    const missingPlayer = {
+      name: 'MissingPlayer',
+      pubgId: 'account.missing',
+      stats: makeMatchParticipantStats(),
+    };
+    const summary = makeMatchSummary({
+      matchId: 'partial-cache-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/partial-cache-match',
+      rosterParticipants: [cachedPlayer, missingPlayer],
+      monitoredPlayers: [cachedPlayer, missingPlayer],
+      lobbyParticipants: [],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+
+    expect(embeds.slice(1, 3).map((embed) => embed.data.description)).toEqual([
+      expect.stringContaining('⚔️ **COMBAT STATS**'),
+      expect.stringContaining('⚔️ **COMBAT STATS**'),
+    ]);
+    expect(liveTelemetry).not.toHaveBeenCalled();
+    expect(processTelemetry).toHaveBeenCalledWith(
+      rawEvents,
+      'partial-cache-match',
+      summary.playedAt,
+      summary.monitoredPlayers
+    );
+    expect(saveTelemetry).toHaveBeenCalledWith(rawEvents, rebuiltAnalysis);
+  });
+
   it('calculates opponent difficulty from unique encountered opponents', async () => {
     const deps = createDependencies();
     const matchAnalysis = createMatchAnalysis('opponent-match', 'account.tracked', 'TrackedPlayer');
