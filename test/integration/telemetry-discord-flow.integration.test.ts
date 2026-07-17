@@ -326,8 +326,8 @@ describe('Discord match presentation gateway', () => {
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
 
-    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toThrow(
-      'Match summary presentation produced no embeds'
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toEqual(
+      new Error('Match summary presentation produced no embeds')
     );
     expect(channel.send).not.toHaveBeenCalled();
   });
@@ -392,6 +392,25 @@ describe('Discord match presentation gateway', () => {
       .setDescription('D'.repeat(4096))
       .setFooter({ text: 'F'.repeat(1905) });
     jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([oversized]);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toThrow(
+      "Embed text length 6001 exceeds Discord's 6000-character message limit"
+    );
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
+  it('validates later embeds before sending an earlier valid batch', async () => {
+    const presentation = createPresentation();
+    const valid = Array.from({ length: 10 }, (_, index) =>
+      new EmbedBuilder().setTitle(`Valid embed ${index + 1}`)
+    );
+    const oversized = new EmbedBuilder()
+      .setDescription('D'.repeat(4096))
+      .setFooter({ text: 'F'.repeat(1905) });
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([...valid, oversized]);
     const bot = createBot(presentation);
     const channel = createTextChannel();
     jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
