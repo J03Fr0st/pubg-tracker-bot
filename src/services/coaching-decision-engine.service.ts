@@ -502,22 +502,19 @@ export class CoachingDecisionEngineService {
   }
 
   private getHeavyDamage(context: FightContext): FightDamageEvent | undefined {
-    return context.damageTaken.find((event) => event.damage >= COACHING_THRESHOLDS.heavyDamage);
+    const latestReset = context.resetEvents.at(-1);
+    return context.damageTaken
+      .filter(
+        (event) =>
+          event.damage >= COACHING_THRESHOLDS.heavyDamage &&
+          (!latestReset || event.timestamp.getTime() > latestReset.timestamp.getTime())
+      )
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())[0];
   }
 
   private getResetWindowSeconds(context: FightContext): number | undefined {
     const heavyDamage = this.getHeavyDamage(context);
     return heavyDamage ? context.matchTimeSeconds - heavyDamage.matchTimeSeconds : undefined;
-  }
-
-  private hasResetAfterHeavyDamage(context: FightContext): boolean {
-    const heavyDamage = this.getHeavyDamage(context);
-    if (!heavyDamage) return false;
-    return context.resetEvents.some(
-      (event) =>
-        event.timestamp.getTime() > heavyDamage.timestamp.getTime() &&
-        event.timestamp.getTime() <= context.timestamp.getTime()
-    );
   }
 
   private isBadReset(context: FightContext): boolean {
@@ -527,7 +524,6 @@ export class CoachingDecisionEngineService {
         resetWindow !== undefined &&
         resetWindow >= COACHING_THRESHOLDS.minimumResetWindowSeconds &&
         context.repeatedSameEnemy &&
-        !this.hasResetAfterHeavyDamage(context) &&
         (context.repositionDistanceMeters === undefined ||
           context.repositionDistanceMeters < COACHING_THRESHOLDS.meaningfulRepositionMeters)
     );

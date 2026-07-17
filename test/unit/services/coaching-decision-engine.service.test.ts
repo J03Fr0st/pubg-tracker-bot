@@ -292,6 +292,25 @@ describe('CoachingDecisionEngineService', () => {
     expect(insights.some((insight) => insight.kind === 'pattern')).toBe(false);
   });
 
+  it('evaluates heavy damage after the latest completed reset', () => {
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          telemetryEvents: [
+            makeDamage({ seconds: 1110, damage: 70 }),
+            makeHeal(1113),
+            makeDamage({ seconds: 1116, damage: 83 }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain(
+      'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset'
+    );
+  });
+
   it('uses teammate raw damage to avoid a false missed-trade claim', () => {
     const player = identity('account.player', 'TestPlayer');
     const teammate = identity('account.teammate', 'TeamMate');
