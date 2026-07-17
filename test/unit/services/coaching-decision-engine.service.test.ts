@@ -311,6 +311,87 @@ describe('CoachingDecisionEngineService', () => {
     );
   });
 
+  it('ignores pre-reset movement when evaluating a later unreset heavy hit', () => {
+    const death = makeDeath({
+      victim: actor('TestPlayer', 'account.player', { x: 2000, y: 0, z: 0 }),
+    });
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          analyses: [
+            makeAnalysis(identity('account.player', 'TestPlayer'), { deathEvents: [death] }),
+          ],
+          telemetryEvents: [
+            makeDamage({
+              seconds: 1110,
+              damage: 70,
+              victim: actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+            }),
+            makeHeal(1113),
+            makeDamage({
+              seconds: 1116,
+              damage: 83,
+              victim: actor('TestPlayer', 'account.player', { x: 2000, y: 0, z: 0 }),
+            }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).toContain(
+      'EnemyOne hit you for 83 damage, then 6s later you died to the same player before creating a reset'
+    );
+  });
+
+  it('suppresses a later unreset heavy hit after post-reset movement at the threshold', () => {
+    const death = makeDeath({
+      victim: actor('TestPlayer', 'account.player', { x: 1500, y: 0, z: 0 }),
+    });
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          analyses: [
+            makeAnalysis(identity('account.player', 'TestPlayer'), { deathEvents: [death] }),
+          ],
+          telemetryEvents: [
+            makeHeal(1113),
+            makeDamage({
+              seconds: 1116,
+              damage: 83,
+              victim: actor('TestPlayer', 'account.player', { x: 0, y: 0, z: 0 }),
+            }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('before creating a reset');
+  });
+
+  it('does not use pre-reset same-enemy damage for a different post-reset attacker', () => {
+    const evidence = new CoachingDecisionEngineService()
+      .createInsights(
+        makeInput({
+          telemetryEvents: [
+            makeDamage({ seconds: 1110, damage: 70 }),
+            makeHeal(1113),
+            makeDamage({
+              seconds: 1116,
+              damage: 83,
+              attacker: actor('OtherEnemy', 'account.other-enemy', { x: 1000, y: 0, z: 1200 }),
+            }),
+          ],
+        })
+      )
+      .flatMap((insight) => insight.evidence)
+      .join(' ');
+
+    expect(evidence).not.toContain('before creating a reset');
+    expect(evidence).not.toContain('to the same player');
+  });
+
   it('uses teammate raw damage to avoid a false missed-trade claim', () => {
     const player = identity('account.player', 'TestPlayer');
     const teammate = identity('account.teammate', 'TeamMate');

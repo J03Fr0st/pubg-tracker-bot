@@ -71,7 +71,7 @@ type FightContext = {
   matchTimeSeconds: number;
   damageTaken: FightDamageEvent[];
   damageDealt: FightDamageEvent[];
-  resetEvents: FightResetEvent[];
+  badResetDamageSegment: FightDamageEvent[];
   blueZoneDamage: { damage: number; events: FightDamageEvent[]; windowSeconds: number };
   playerPosition?: Position;
   enemyPosition?: Position;
@@ -150,6 +150,13 @@ export class CoachingDecisionEngineService {
     const enemy = this.toFightIdentity(enemyActor);
     const damageTaken = this.getDamageTaken(player, timestamp, damageEvents, analysis.matchStartTime);
     const damageDealt = this.getDamageDealt(player, timestamp, damageEvents, analysis.matchStartTime);
+    const fightResetEvents = this.getResetEvents(
+      player,
+      timestamp,
+      resetEvents,
+      analysis.matchStartTime
+    );
+    const badResetDamageSegment = this.getBadResetDamageSegment(damageTaken, fightResetEvents);
     const playerPosition = this.getActorPosition(decisiveEvent.victim);
     const enemyPosition = this.getActorPosition(enemyActor);
     const teammate = this.getClosestTeammate(
@@ -173,12 +180,7 @@ export class CoachingDecisionEngineService {
       matchTimeSeconds: TelemetryGeometry.secondsBetween(analysis.matchStartTime, timestamp),
       damageTaken,
       damageDealt,
-      resetEvents: this.getResetEvents(
-        player,
-        timestamp,
-        resetEvents,
-        analysis.matchStartTime
-      ),
+      badResetDamageSegment,
       blueZoneDamage: this.getBlueZoneDamage(
         player,
         timestamp,
@@ -206,14 +208,19 @@ export class CoachingDecisionEngineService {
           ? TelemetryGeometry.distanceMeters(playerPosition, enemyPosition)
           : undefined,
       tradeRangeConfidence: teammate?.confidence ?? 'low',
-      repositionDistanceMeters: this.getRepositionDistanceMeters(damageTaken, playerPosition),
+      repositionDistanceMeters: this.getRepositionDistanceMeters(
+        badResetDamageSegment,
+        playerPosition
+      ),
       heightDeltaMeters,
       heightConfidence:
         heightDeltaMeters !== undefined &&
         heightDeltaMeters >= COACHING_THRESHOLDS.heightAdvantageMeters
           ? 'medium'
           : 'low',
-      repeatedSameEnemy: damageTaken.some((event) => this.identitiesMatch(event.attacker, enemy)),
+      repeatedSameEnemy: badResetDamageSegment.some((event) =>
+        this.identitiesMatch(event.attacker, enemy)
+      ),
     };
   }
 
@@ -461,6 +468,18 @@ export class CoachingDecisionEngineService {
       : undefined;
   }
 
+  private getBadResetDamageSegment(
+    damageTaken: FightDamageEvent[],
+    resetEvents: FightResetEvent[]
+  ): FightDamageEvent[] {
+    const latestReset = resetEvents.at(-1);
+    return damageTaken
+      .filter(
+        (event) => !latestReset || event.timestamp.getTime() > latestReset.timestamp.getTime()
+      )
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  }
+
   private identitiesMatch(
     left: FightIdentity | undefined,
     right: FightIdentity | undefined
@@ -502,14 +521,9 @@ export class CoachingDecisionEngineService {
   }
 
   private getHeavyDamage(context: FightContext): FightDamageEvent | undefined {
-    const latestReset = context.resetEvents.at(-1);
-    return context.damageTaken
-      .filter(
-        (event) =>
-          event.damage >= COACHING_THRESHOLDS.heavyDamage &&
-          (!latestReset || event.timestamp.getTime() > latestReset.timestamp.getTime())
-      )
-      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())[0];
+    return context.badResetDamageSegment.find(
+      (event) => event.damage >= COACHING_THRESHOLDS.heavyDamage
+    );
   }
 
   private getResetWindowSeconds(context: FightContext): number | undefined {
