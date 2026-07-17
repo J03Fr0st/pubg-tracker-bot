@@ -331,6 +331,28 @@ describe('Discord match presentation gateway', () => {
     expect(channel.send).not.toHaveBeenCalled();
   });
 
+  it('stops automatic delivery on the first failed batch', async () => {
+    const presentation = createPresentation();
+    const embeds = Array.from({ length: 21 }, (_, index) =>
+      new EmbedBuilder().setTitle(`Embed ${index + 1}`)
+    );
+    jest.spyOn(presentation, 'createEmbeds').mockResolvedValue(embeds);
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    const deliveryError = new Error('second batch failed');
+    channel.send
+      .mockResolvedValueOnce({ id: 'message-1' })
+      .mockRejectedValueOnce(deliveryError)
+      .mockResolvedValueOnce({ id: 'message-3' });
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+
+    await expect(bot.sendMatchSummary('channel-123', createSummary())).rejects.toBe(deliveryError);
+
+    expect(channel.send).toHaveBeenCalledTimes(2);
+    expect(channel.send.mock.calls[0][0]).toEqual({ embeds: embeds.slice(0, 10) });
+    expect(channel.send.mock.calls[1][0]).toEqual({ embeds: embeds.slice(10, 20) });
+  });
+
   it('accepts an exact 6000-character aggregate in one automatic message', async () => {
     const presentation = createPresentation();
     const embeds = [
@@ -434,6 +456,49 @@ describe('Discord match presentation gateway', () => {
     const calls = [...interaction.editReply.mock.calls, ...interaction.followUp.mock.calls];
     expect(calls.flatMap(([payload]) => payload.embeds)).toEqual(embeds);
     expect(calls).toHaveLength(3);
+  });
+
+  it('reports the same empty-presentation error for manual processmatch', async () => {
+    const presentation = createPresentation();
+    const createEmbeds = jest.spyOn(presentation, 'createEmbeds').mockResolvedValue([]);
+    createBot(presentation);
+    jest.mocked(latestPubgClient().matches.getMatch).mockResolvedValue(makeMatchResponse());
+    jest.spyOn(PlayerRepository.prototype, 'getAllPlayers').mockResolvedValue([
+      {
+        id: 'player-1',
+        pubgId: 'account.1',
+        name: 'Player1',
+        shardId: 'steam',
+        patchVersion: '36.1.1',
+        titleId: 'bluehole-pubg',
+        lastMatchAt: null,
+        createdAt: new Date('2026-07-14T08:00:00.000Z'),
+        updatedAt: new Date('2026-07-14T08:00:00.000Z'),
+      },
+    ]);
+    const interaction = createProcessMatchInteraction();
+
+    await interactionHandler()(interaction);
+
+    expect(createEmbeds).toHaveBeenCalledWith(createExpectedManualSummary());
+    expect(interaction.followUp).not.toHaveBeenCalled();
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply).toHaveBeenCalledWith({
+      embeds: [
+        expect.objectContaining({
+          data: expect.objectContaining({
+            title: '❌ Error Processing Match',
+            fields: expect.arrayContaining([
+              expect.objectContaining({
+                name: 'Error Details',
+                value: 'Match summary presentation produced no embeds',
+                inline: false,
+              }),
+            ]),
+          }),
+        }),
+      ],
+    });
   });
 
   it('explains Missing Access returned while sending a batch', async () => {
