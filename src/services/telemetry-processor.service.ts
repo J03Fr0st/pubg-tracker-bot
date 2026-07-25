@@ -14,6 +14,7 @@ import type {
   KillChain,
   MatchAnalysis,
   PlayerAnalysis,
+  TrackedPlayerIdentity,
   WeaponStats,
 } from '../types/analytics-results.types';
 
@@ -79,7 +80,7 @@ export class TelemetryProcessorService {
     telemetryData: TelemetryEvent[], // Use existing union type
     matchId: string,
     matchStartTime: Date,
-    trackedPlayerNames: string[]
+    trackedPlayers: Array<TrackedPlayerIdentity | string>
   ): Promise<MatchAnalysis> {
     const startTime = Date.now();
 
@@ -102,9 +103,11 @@ export class TelemetryProcessorService {
     const playerAnalyses = new Map<string, PlayerAnalysis>();
 
     // Process each tracked player
-    for (const playerName of trackedPlayerNames) {
+    for (const trackedPlayer of trackedPlayers) {
+      const identity =
+        typeof trackedPlayer === 'string' ? { name: trackedPlayer, accountId: '' } : trackedPlayer;
       const analysis = this.analyzePlayer(
-        playerName,
+        identity,
         killEvents,
         knockdownEvents,
         damageEvents,
@@ -113,7 +116,7 @@ export class TelemetryProcessorService {
         matchStartTime
       );
 
-      playerAnalyses.set(playerName, analysis);
+      playerAnalyses.set(identity.name, analysis);
     }
 
     return {
@@ -145,7 +148,7 @@ export class TelemetryProcessorService {
    * @returns PlayerAnalysis object with detailed statistics and raw event data
    */
   private analyzePlayer(
-    playerName: string,
+    identity: TrackedPlayerIdentity,
     allKills: LogPlayerKillV2[],
     allKnockdowns: LogPlayerMakeGroggy[],
     allDamage: LogPlayerTakeDamage[],
@@ -153,6 +156,7 @@ export class TelemetryProcessorService {
     allFireCounts: LogWeaponFireCount[],
     matchStartTime: Date
   ): PlayerAnalysis {
+    const { name: playerName, accountId } = identity;
     // Debug: Log all unique killer names in telemetry
     const allKillerNames = [...new Set(allKills.map((k) => k.killer?.name).filter(Boolean))];
     console.log('[DEBUG] Tracked player:', playerName);
@@ -237,6 +241,7 @@ export class TelemetryProcessorService {
 
     return {
       playerName,
+      accountId,
       matchStartTime, // Include the actual match start time
       // Store raw events (using existing types!)
       killEvents: playerKills,

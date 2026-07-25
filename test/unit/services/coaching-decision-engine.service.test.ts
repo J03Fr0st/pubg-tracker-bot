@@ -40,6 +40,7 @@ function makeContext(overrides: Partial<FightContext>): FightContext {
     heightDeltaMeters: 12,
     heightConfidence: 'medium',
     repeatedSameEnemy: true,
+    wasAlreadyDownedBeforeDecisiveEvent: false,
     claims: [],
     ...overrides,
   };
@@ -108,6 +109,52 @@ describe('CoachingDecisionEngineService', () => {
     ]);
 
     expect(insights[0]?.evidence.join(' ') ?? '').not.toContain('before creating a reset');
+  });
+
+  it('does not count time spent knocked before death as a reset window', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        matchTimeSeconds: 951,
+        damageTaken: [
+          {
+            timestamp: new Date('2024-01-01T10:15:43.000Z'),
+            matchTimeSeconds: 943,
+            attackerName: 'EnemyOne',
+            victimName: 'TestPlayer',
+            damage: 100,
+          },
+        ],
+        wasAlreadyDownedBeforeDecisiveEvent: true,
+      }),
+    ]);
+
+    const evidence = insights[0]?.evidence.join(' ') ?? '';
+    expect(evidence).not.toContain('hit you for 100 damage');
+    expect(evidence).not.toContain('before creating a reset');
+  });
+
+  it('does not reuse pre-knock damage after the player has been revived', () => {
+    const service = new CoachingDecisionEngineService();
+    const insights = service.createInsights([
+      makeContext({
+        matchTimeSeconds: 951,
+        damageTaken: [
+          {
+            timestamp: new Date('2024-01-01T10:15:43.000Z'),
+            matchTimeSeconds: 943,
+            attackerName: 'EnemyOne',
+            victimName: 'TestPlayer',
+            damage: 100,
+          },
+        ],
+        lastReviveMatchTimeSeconds: 947,
+      }),
+    ]);
+
+    const evidence = insights[0]?.evidence.join(' ') ?? '';
+    expect(evidence).not.toContain('hit you for 100 damage');
+    expect(evidence).not.toContain('before creating a reset');
   });
 
   it('calls out close spacing that does not become trade damage', () => {

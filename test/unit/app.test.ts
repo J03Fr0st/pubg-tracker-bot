@@ -155,8 +155,29 @@ describe('createApplication', () => {
     expect(CoachingPipelineService).toHaveBeenCalledTimes(1);
     expect(CoachingPipelineService).toHaveBeenCalledWith({
       analyze: expect.any(Function),
+      deriveTimeline: expect.any(Function),
       narrate: expect.any(Function),
     });
+    const coachingDeps = jest.mocked(CoachingPipelineService).mock.calls[0][0];
+    const matchAnalysis = { playerAnalyses: new Map() } as never;
+    const damageEvents = [{ _T: 'LogPlayerTakeDamage' }] as never;
+    const resetEvents = [{ _T: 'LogHeal' }] as never;
+    const reviveEvents = [{ _T: 'LogPlayerRevive' }] as never;
+    const rawEvents = [...damageEvents, ...resetEvents, ...reviveEvents] as never;
+
+    coachingDeps.analyze(
+      matchAnalysis,
+      [{ name: 'TestPlayer', accountId: 'account.test-player' }],
+      rawEvents
+    );
+
+    expect(fightContextBuilder.buildFightContexts).toHaveBeenCalledWith(
+      matchAnalysis,
+      ['TestPlayer'],
+      damageEvents,
+      resetEvents,
+      reviveEvents
+    );
     expect(MatchInterpreter).toHaveBeenCalledTimes(1);
     expect(MatchInterpreter).toHaveBeenCalledWith();
     expect(MatchPresentationService).toHaveBeenCalledTimes(1);

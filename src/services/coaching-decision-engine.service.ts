@@ -369,7 +369,16 @@ export class CoachingDecisionEngineService {
   }
 
   private getHeavyDamage(context: FightContext) {
-    return context.damageTaken.find((event) => event.damage >= HEAVY_DAMAGE_THRESHOLD);
+    if (context.wasAlreadyDownedBeforeDecisiveEvent) {
+      return undefined;
+    }
+
+    return context.damageTaken.find(
+      (event) =>
+        event.damage >= HEAVY_DAMAGE_THRESHOLD &&
+        (context.lastReviveMatchTimeSeconds === undefined ||
+          event.matchTimeSeconds >= context.lastReviveMatchTimeSeconds)
+    );
   }
 
   private lowestClaimConfidence(claims: FightContextClaim[]): CoachingRating {

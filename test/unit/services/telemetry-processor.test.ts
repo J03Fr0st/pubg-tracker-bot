@@ -37,7 +37,7 @@ describe('TelemetryProcessorService', () => {
 
       const telemetryData: TelemetryEvent[] = [mockKillEvent, mockDamageEvent];
       const matchStartTime = new Date('2024-01-01T09:30:00.000Z');
-      const trackedPlayers = ['TestPlayer1'];
+      const trackedPlayers = [{ name: 'TestPlayer1', accountId: 'account.test-player-1' }];
 
       const result = await telemetryProcessor.processMatchTelemetry(
         telemetryData,
@@ -53,6 +53,7 @@ describe('TelemetryProcessorService', () => {
 
       const playerAnalysis = result.playerAnalyses.get('TestPlayer1');
       expect(playerAnalysis).toBeDefined();
+      expect(playerAnalysis!.accountId).toBe('account.test-player-1');
       expect(playerAnalysis!.killEvents).toHaveLength(1);
       expect(playerAnalysis!.damageEvents).toHaveLength(1);
       expect(playerAnalysis!.deathEvents).toHaveLength(0); // No deaths in test data

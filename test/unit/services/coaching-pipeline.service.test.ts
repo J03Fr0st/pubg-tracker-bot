@@ -29,22 +29,35 @@ describe('CoachingPipelineService', () => {
 
   it('returns kind:ok with insights and narration on the happy path', async () => {
     const analyze = jest.fn().mockReturnValue([insight]);
+    const deriveTimeline = jest.fn().mockReturnValue({
+      timeline: { events: [], diagnostics: [] },
+      state: { players: new Map(), diagnostics: [] },
+      encounters: [],
+    });
     const pipeline = new CoachingPipelineService({
       analyze,
+      deriveTimeline,
       narrate: jest.fn().mockResolvedValue(narration),
     });
-    const resetEvents = [
+    const rawEvents = [
       {
         _T: 'LogHeal',
         _D: '2024-01-01T00:01:00.000Z',
         character: { name: 'Alice' },
       },
-    ];
-
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], [], resetEvents as never);
+      {
+        _T: 'LogPlayerRevive',
+        _D: '2024-01-01T00:01:30.000Z',
+        reviver: { name: 'Bob' },
+        victim: { name: 'Alice' },
+      },
+    ] as never;
+    const trackedPlayers = [{ name: 'Alice', accountId: 'account.alice' }];
+    const result = await pipeline.run(fakeMatchAnalysis, trackedPlayers, rawEvents);
 
     expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
-    expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, ['Alice'], [], resetEvents);
+    expect(deriveTimeline).toHaveBeenCalledWith(fakeMatchAnalysis, trackedPlayers, rawEvents);
+    expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, trackedPlayers, rawEvents);
   });
 
   it('returns kind:empty when analyze yields no insights', async () => {
@@ -53,7 +66,11 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn(),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(
+      fakeMatchAnalysis,
+      [{ name: 'Alice', accountId: 'account.alice' }],
+      []
+    );
 
     expect(result).toEqual({ kind: 'empty' });
   });
@@ -66,7 +83,11 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn(),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(
+      fakeMatchAnalysis,
+      [{ name: 'Alice', accountId: 'account.alice' }],
+      []
+    );
 
     expect(result).toEqual({ kind: 'failed', reason: 'boom', stage: 'analyze' });
   });
@@ -77,7 +98,11 @@ describe('CoachingPipelineService', () => {
       narrate: jest.fn().mockRejectedValue(new Error('llm down')),
     });
 
-    const result = await pipeline.run(fakeMatchAnalysis, ['Alice'], []);
+    const result = await pipeline.run(
+      fakeMatchAnalysis,
+      [{ name: 'Alice', accountId: 'account.alice' }],
+      []
+    );
 
     expect(result).toEqual({ kind: 'failed', reason: 'llm down', stage: 'narrate' });
   });
@@ -89,5 +114,23 @@ describe('CoachingPipelineService', () => {
     });
     const result = await pipeline.run(fakeMatchAnalysis, [], []);
     expect(result.kind).toBe('empty');
+  });
+
+  it('keeps visible coaching available when shadow derivation fails', async () => {
+    const pipeline = new CoachingPipelineService({
+      analyze: jest.fn().mockReturnValue([insight]),
+      deriveTimeline: () => {
+        throw new Error('shadow failed');
+      },
+      narrate: jest.fn().mockResolvedValue(narration),
+    });
+
+    const result = await pipeline.run(
+      fakeMatchAnalysis,
+      [{ name: 'Alice', accountId: 'account.alice' }],
+      []
+    );
+
+    expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
   });
 });

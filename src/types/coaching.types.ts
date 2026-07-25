@@ -79,6 +79,8 @@ export interface FightContext {
   heightDeltaMeters?: number;
   heightConfidence: CoachingRating;
   repeatedSameEnemy: boolean;
+  wasAlreadyDownedBeforeDecisiveEvent: boolean;
+  lastReviveMatchTimeSeconds?: number;
   claims: FightContextClaim[];
 }
 

@@ -4,6 +4,7 @@ import {
   type LogItemUse,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
+  type LogPlayerRevive,
   type LogPlayerTakeDamage,
 } from '@j03fr0st/pubg-ts';
 import type { MatchAnalysis, PlayerTelemetry } from '../types/analytics-results.types';
@@ -32,7 +33,8 @@ export class FightContextBuilderService {
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
     damageEvents: LogPlayerTakeDamage[] = [],
-    resetEvents: Array<LogHeal | LogItemUse> = []
+    resetEvents: Array<LogHeal | LogItemUse> = [],
+    reviveEvents: LogPlayerRevive[] = []
   ): FightContext[] {
     const contexts: FightContext[] = [];
 
@@ -49,7 +51,8 @@ export class FightContextBuilderService {
           matchAnalysis,
           trackedPlayerNames,
           damageEvents,
-          resetEvents
+          resetEvents,
+          reviveEvents
         );
         if (context) {
           contexts.push(context);
@@ -66,7 +69,8 @@ export class FightContextBuilderService {
     matchAnalysis: MatchAnalysis,
     trackedPlayerNames: string[],
     damageEvents: LogPlayerTakeDamage[],
-    resetEvents: Array<LogHeal | LogItemUse>
+    resetEvents: Array<LogHeal | LogItemUse>,
+    reviveEvents: LogPlayerRevive[]
   ): FightContext | null {
     const timestamp = this.getEventTime(decisiveEvent);
     if (!timestamp) {
@@ -136,6 +140,13 @@ export class FightContextBuilderService {
         : undefined;
     const repeatedSameEnemy =
       Boolean(enemyName) && damageTaken.some((event) => event.attackerName === enemyName);
+    const combatState = this.getCombatStateBeforeEvent(
+      analysis.playerName,
+      timestamp,
+      analysis.knockedDownEvents,
+      reviveEvents,
+      analysis.matchStartTime
+    );
 
     return {
       playerName: analysis.playerName,
@@ -176,8 +187,48 @@ export class FightContextBuilderService {
           ? 'medium'
           : 'low',
       repeatedSameEnemy,
+      wasAlreadyDownedBeforeDecisiveEvent: combatState.isDowned,
+      lastReviveMatchTimeSeconds: combatState.lastReviveMatchTimeSeconds,
       claims: [],
     };
+  }
+
+  private getCombatStateBeforeEvent(
+    playerName: string,
+    decisiveTime: Date,
+    knockedDownEvents: LogPlayerMakeGroggy[],
+    reviveEvents: LogPlayerRevive[],
+    matchStartTime: Date
+  ): { isDowned: boolean; lastReviveMatchTimeSeconds?: number } {
+    const stateEvents = [
+      ...knockedDownEvents
+        .filter((event) => this.getActorName(event.victim) === playerName)
+        .map((event) => ({ type: 'knock' as const, timestamp: this.getEventTime(event) })),
+      ...reviveEvents
+        .filter((event) => this.getActorName(event.victim) === playerName)
+        .map((event) => ({ type: 'revive' as const, timestamp: this.getEventTime(event) })),
+    ]
+      .filter(
+        (event): event is { type: 'knock' | 'revive'; timestamp: Date } =>
+          event.timestamp !== null && event.timestamp.getTime() < decisiveTime.getTime()
+      )
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+
+    let isDowned = false;
+    let lastReviveMatchTimeSeconds: number | undefined;
+    for (const event of stateEvents) {
+      if (event.type === 'knock') {
+        isDowned = true;
+      } else {
+        isDowned = false;
+        lastReviveMatchTimeSeconds = TelemetryGeometry.secondsBetween(
+          matchStartTime,
+          event.timestamp
+        );
+      }
+    }
+
+    return { isDowned, lastReviveMatchTimeSeconds };
   }
 
   private getDecisiveEvents(analysis: PlayerTelemetry): DecisiveEvent[] {

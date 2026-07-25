@@ -1,4 +1,11 @@
-import type { LogHeal, LogItemUse, LogPlayerKillV2, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
+import type {
+  LogHeal,
+  LogItemUse,
+  LogPlayerKillV2,
+  LogPlayerMakeGroggy,
+  LogPlayerRevive,
+  LogPlayerTakeDamage,
+} from '@j03fr0st/pubg-ts';
 import { FightContextBuilderService } from '../../../src/services/fight-context-builder.service';
 import type { MatchAnalysis, PlayerAnalysis } from '../../../src/types/analytics-results.types';
 
@@ -22,6 +29,7 @@ function makeAnalysis(overrides: Partial<PlayerAnalysis>): PlayerAnalysis {
     headshotPercentage: 0,
     killsPerMinute: 0,
     ...overrides,
+    accountId: overrides.accountId ?? 'account.test-player',
   };
 }
 
@@ -53,6 +61,27 @@ function makeDeath(overrides: Record<string, unknown>): LogPlayerKillV2 {
     victim: { name: 'TestPlayer', location: { x: 100, y: 0, z: 0 } },
     ...overrides,
   } as LogPlayerKillV2;
+}
+
+function makeKnock(overrides: Record<string, unknown> = {}): LogPlayerMakeGroggy {
+  return {
+    _D: '2024-01-01T10:18:34.100Z',
+    _T: 'LogPlayerMakeGroggy',
+    attacker: { name: 'EnemyOne', location: { x: 1000, y: 0, z: 1200 } },
+    victim: { name: 'TestPlayer', location: { x: 0, y: 0, z: 0 } },
+    damage: 100,
+    ...overrides,
+  } as unknown as LogPlayerMakeGroggy;
+}
+
+function makeRevive(overrides: Record<string, unknown> = {}): LogPlayerRevive {
+  return {
+    _D: '2024-01-01T10:18:38.000Z',
+    _T: 'LogPlayerRevive',
+    reviver: { name: 'TeamMate' },
+    victim: { name: 'TestPlayer' },
+    ...overrides,
+  } as LogPlayerRevive;
 }
 
 describe('FightContextBuilderService', () => {
@@ -155,6 +184,63 @@ describe('FightContextBuilderService', () => {
 
     expect(contexts[0].repositionDistanceMeters).toBeLessThan(15);
     expect(contexts[0].repositionConfidence).toBe('high');
+  });
+
+  it('marks a player as already downed when a knock is followed by death without a revive', () => {
+    const damage = makeDamage({
+      _D: '2024-01-01T10:18:34.000Z',
+      damage: 100,
+    });
+    const knock = makeKnock();
+    const death = makeDeath({});
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({
+          deathEvents: [death],
+          knockedDownEvents: [knock],
+        }),
+      ]),
+      ['TestPlayer'],
+      [damage]
+    );
+
+    const deathContext = contexts.find((context) => context.outcome === 'death');
+    expect(deathContext).toMatchObject({
+      wasAlreadyDownedBeforeDecisiveEvent: true,
+      lastReviveMatchTimeSeconds: undefined,
+    });
+  });
+
+  it('restores the reset opportunity only after the knocked player is revived', () => {
+    const damage = makeDamage({
+      _D: '2024-01-01T10:18:34.000Z',
+      damage: 100,
+    });
+    const knock = makeKnock();
+    const revive = makeRevive();
+    const death = makeDeath({});
+    const service = new FightContextBuilderService();
+
+    const contexts = service.buildFightContexts(
+      makeMatchAnalysis([
+        makeAnalysis({
+          deathEvents: [death],
+          knockedDownEvents: [knock],
+        }),
+      ]),
+      ['TestPlayer'],
+      [damage],
+      [],
+      [revive]
+    );
+
+    const deathContext = contexts.find((context) => context.outcome === 'death');
+    expect(deathContext).toMatchObject({
+      wasAlreadyDownedBeforeDecisiveEvent: false,
+      lastReviveMatchTimeSeconds: 1118,
+    });
   });
 
   it('detects height disadvantage when enemy z position is meaningfully higher', () => {
