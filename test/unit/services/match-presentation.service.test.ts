@@ -36,6 +36,7 @@ function createDependencies(): MatchPresentationDependencies {
 function createPlayerAnalysis(playerName: string): PlayerAnalysis {
   return {
     playerName,
+    accountId: `account.${playerName.toLowerCase()}`,
     matchStartTime: new Date('2026-07-14T08:00:00.000Z'),
     killEvents: [],
     knockdownEvents: [],
@@ -124,7 +125,7 @@ describe('MatchPresentationService', () => {
       .spyOn(deps.telemetryProcessor, 'processMatchTelemetry')
       .mockResolvedValue(createMatchAnalysis('live-match', 'LivePlayer'));
     jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
-    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
+    const coaching = jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({ kind: 'empty' });
     const service = new MatchPresentationService(deps);
     const summary = makeMatchSummary({
       matchId: 'live-match',
@@ -145,8 +146,13 @@ describe('MatchPresentationService', () => {
     expect(embeds[1].data.description).toContain('⚔️ **COMBAT STATS**');
     expect(liveTelemetry).toHaveBeenCalledWith('live-match');
     expect(processTelemetry).toHaveBeenCalledWith([], 'live-match', summary.playedAt, [
-      'LivePlayer',
+      { name: 'LivePlayer', accountId: 'account.live' },
     ]);
+    expect(coaching).toHaveBeenCalledWith(
+      expect.any(Object),
+      [{ name: 'LivePlayer', accountId: 'account.live' }],
+      []
+    );
   });
 
   it('keeps enhanced delivery nonblocking when saving the live telemetry cache fails', async () => {
@@ -226,10 +232,13 @@ describe('MatchPresentationService', () => {
   it('uses cached telemetry without a live fetch and still creates coaching', async () => {
     const deps = createDependencies();
     const matchAnalysis = createMatchAnalysis('cached-match', 'CachedPlayer');
+    const damageEvent = { _T: 'LogPlayerTakeDamage' } as never;
+    const healEvent = { _T: 'LogHeal' } as never;
+    const reviveEvent = { _T: 'LogPlayerRevive' } as never;
     jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
       kind: 'hit',
       matchAnalysis,
-      rawEvents: [],
+      rawEvents: [damageEvent, healEvent, reviveEvent],
     });
     const liveTelemetry = jest.spyOn(deps.pubgClient.matches, 'getTelemetry');
     const processTelemetry = jest.spyOn(deps.telemetryProcessor, 'processMatchTelemetry');
@@ -262,7 +271,11 @@ describe('MatchPresentationService', () => {
     expect(embeds.at(-1)?.data.description).toContain('Hold the stronger angle.');
     expect(liveTelemetry).not.toHaveBeenCalled();
     expect(processTelemetry).not.toHaveBeenCalled();
-    expect(coaching).toHaveBeenCalledWith(matchAnalysis, ['CachedPlayer'], [], []);
+    expect(coaching).toHaveBeenCalledWith(
+      matchAnalysis,
+      [{ name: 'CachedPlayer', accountId: 'account.cached' }],
+      [damageEvent, healEvent, reviveEvent]
+    );
   });
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {

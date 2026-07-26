@@ -18,6 +18,7 @@ const makeAnalysis = (): MatchAnalysis => ({
       'Player1',
       {
         playerName: 'Player1',
+        accountId: 'account.player-1',
         matchStartTime: new Date('2026-07-14T08:00:00.000Z'),
         killEvents: [],
         knockdownEvents: [],

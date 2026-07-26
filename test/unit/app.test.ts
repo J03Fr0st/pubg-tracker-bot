@@ -8,17 +8,16 @@ import { PlayerRepository } from '../../src/data/repositories/player.repository'
 import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
 import { SeasonCacheRepository } from '../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
-import { CoachingDecisionEngineService } from '../../src/services/coaching-decision-engine.service';
 import { CoachingNarratorService } from '../../src/services/coaching-narrator.service';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
-import { FightContextBuilderService } from '../../src/services/fight-context-builder.service';
 import { MatchInterpreter } from '../../src/services/match-interpreter.service';
 import { MatchMonitorService } from '../../src/services/match-monitor.service';
 import { MatchPresentationService } from '../../src/services/match-presentation.service';
 import { OpenRouterCoachingLlmClient } from '../../src/services/openrouter-coaching-llm-client.service';
 import { PlayerStatsService } from '../../src/services/player-stats.service';
 import { TelemetryProcessorService } from '../../src/services/telemetry-processor.service';
+import { TimelineCoachingAnalyzerService } from '../../src/services/timeline-coaching-analyzer.service';
 
 const prisma = {
   $connect: jest.fn().mockResolvedValue(undefined),
@@ -47,17 +46,16 @@ jest.mock('../../src/data/repositories/player.repository');
 jest.mock('../../src/data/repositories/processed-match.repository');
 jest.mock('../../src/data/repositories/season-cache.repository');
 jest.mock('../../src/data/repositories/telemetry.repository');
-jest.mock('../../src/services/coaching-decision-engine.service');
 jest.mock('../../src/services/coaching-narrator.service');
 jest.mock('../../src/services/coaching-pipeline.service');
 jest.mock('../../src/services/discord-bot.service');
-jest.mock('../../src/services/fight-context-builder.service');
 jest.mock('../../src/services/match-interpreter.service');
 jest.mock('../../src/services/match-monitor.service');
 jest.mock('../../src/services/match-presentation.service');
 jest.mock('../../src/services/openrouter-coaching-llm-client.service');
 jest.mock('../../src/services/player-stats.service');
 jest.mock('../../src/services/telemetry-processor.service');
+jest.mock('../../src/services/timeline-coaching-analyzer.service');
 
 const validConfig: AppConfig = {
   discord: {
@@ -100,8 +98,7 @@ describe('createApplication', () => {
     const seasonCacheRepository = jest.mocked(SeasonCacheRepository).mock.instances[0];
     const playerStatsService = jest.mocked(PlayerStatsService).mock.instances[0];
     const telemetryProcessor = jest.mocked(TelemetryProcessorService).mock.instances[0];
-    const fightContextBuilder = jest.mocked(FightContextBuilderService).mock.instances[0];
-    const coachingDecisionEngine = jest.mocked(CoachingDecisionEngineService).mock.instances[0];
+    const timelineAnalyzer = jest.mocked(TimelineCoachingAnalyzerService).mock.instances[0];
     const llmClient = jest.mocked(OpenRouterCoachingLlmClient).mock.instances[0];
     const coachingNarrator = jest.mocked(CoachingNarratorService).mock.instances[0];
     const coachingPipeline = jest.mocked(CoachingPipelineService).mock.instances[0];
@@ -137,10 +134,7 @@ describe('createApplication', () => {
     );
     expect(TelemetryProcessorService).toHaveBeenCalledTimes(1);
     expect(TelemetryProcessorService).toHaveBeenCalledWith();
-    expect(FightContextBuilderService).toHaveBeenCalledTimes(1);
-    expect(FightContextBuilderService).toHaveBeenCalledWith();
-    expect(CoachingDecisionEngineService).toHaveBeenCalledTimes(1);
-    expect(CoachingDecisionEngineService).toHaveBeenCalledWith();
+    expect(TimelineCoachingAnalyzerService).toHaveBeenCalledTimes(1);
     expect(OpenRouterCoachingLlmClient).toHaveBeenCalledTimes(1);
     expect(OpenRouterCoachingLlmClient).toHaveBeenCalledWith({
       apiKey: validConfig.llm.openRouterApiKey,
@@ -157,6 +151,21 @@ describe('createApplication', () => {
       analyze: expect.any(Function),
       narrate: expect.any(Function),
     });
+    const coachingDeps = jest.mocked(CoachingPipelineService).mock.calls[0][0];
+    const matchAnalysis = { playerAnalyses: new Map() } as never;
+    const rawEvents = [{ _T: 'LogPlayerTakeDamage' }] as never;
+
+    coachingDeps.analyze(
+      matchAnalysis,
+      [{ name: 'TestPlayer', accountId: 'account.test-player' }],
+      rawEvents
+    );
+
+    expect(timelineAnalyzer.analyze).toHaveBeenCalledWith(
+      matchAnalysis,
+      [{ name: 'TestPlayer', accountId: 'account.test-player' }],
+      rawEvents
+    );
     expect(MatchInterpreter).toHaveBeenCalledTimes(1);
     expect(MatchInterpreter).toHaveBeenCalledWith();
     expect(MatchPresentationService).toHaveBeenCalledTimes(1);
@@ -222,8 +231,7 @@ describe('createApplication', () => {
     expect(jest.mocked(matchMonitor?.stopMonitoring)).toHaveBeenCalledTimes(1);
     expect(prisma.$disconnect).toHaveBeenCalledTimes(1);
 
-    expect(fightContextBuilder).toBeDefined();
-    expect(coachingDecisionEngine).toBeDefined();
+    expect(timelineAnalyzer).toBeDefined();
     expect(coachingNarrator).toBeDefined();
   });
 });

@@ -1,12 +1,9 @@
 import {
   DAMAGE_CAUSER_NAME,
   GAME_MODES,
-  type LogHeal,
-  type LogItemUse,
   type LogPlayerKillV2,
   type LogPlayerMakeGroggy,
   type LogPlayerRevive,
-  type LogPlayerTakeDamage,
   MAP_NAMES,
   type PubgClient,
   type TelemetryEvent,
@@ -18,6 +15,7 @@ import type {
   KillChain,
   MatchAnalysis,
   PlayerAnalysis,
+  TrackedPlayerIdentity,
 } from '../types/analytics-results.types';
 import type { CoachingNarration } from '../types/coaching.types';
 import type { MatchParticipantStats, MatchSummary, MatchSummaryPlayer } from '../types/match.types';
@@ -124,7 +122,7 @@ export class MatchPresentationService {
       });
       const coachingEmbeds = await this.createCoachingEmbeds(
         matchAnalysis,
-        players.map((player) => player.name),
+        players.map((player) => ({ name: player.name, accountId: player.pubgId })),
         rawEvents,
         matchColor
       );
@@ -147,6 +145,12 @@ export class MatchPresentationService {
       cached = { kind: 'miss' };
     }
     if (cached.kind === 'hit') {
+      for (const player of summary.players) {
+        const analysis = cached.matchAnalysis.playerAnalyses.get(player.name);
+        if (analysis && !analysis.accountId) {
+          analysis.accountId = player.pubgId;
+        }
+      }
       return { matchAnalysis: cached.matchAnalysis, rawEvents: cached.rawEvents };
     }
     if (cached.kind === 'corrupt') {
@@ -158,7 +162,7 @@ export class MatchPresentationService {
       rawEvents,
       summary.matchId,
       summary.playedAt,
-      summary.players.map((player) => player.name)
+      summary.players.map((player) => ({ name: player.name, accountId: player.pubgId }))
     );
     this.deps.telemetryRepository
       .saveTelemetry(rawEvents, matchAnalysis)
@@ -693,23 +697,12 @@ export class MatchPresentationService {
 
   private async createCoachingEmbeds(
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
+    trackedPlayers: TrackedPlayerIdentity[],
     rawEvents: TelemetryEvent[],
     matchColor: number
   ): Promise<EmbedBuilder[]> {
-    const damageEvents = rawEvents.filter(
-      (event) => event._T === 'LogPlayerTakeDamage'
-    ) as LogPlayerTakeDamage[];
-    const resetEvents = rawEvents.filter(
-      (event) => event._T === 'LogHeal' || event._T === 'LogItemUse'
-    ) as Array<LogHeal | LogItemUse>;
     try {
-      const result = await this.deps.coachingPipeline.run(
-        matchAnalysis,
-        trackedPlayerNames,
-        damageEvents,
-        resetEvents
-      );
+      const result = await this.deps.coachingPipeline.run(matchAnalysis, trackedPlayers, rawEvents);
       if (result.kind === 'empty') {
         return [];
       }

@@ -1,14 +1,13 @@
-import type { LogHeal, LogItemUse, LogPlayerTakeDamage } from '@j03fr0st/pubg-ts';
-import type { MatchAnalysis } from '../types/analytics-results.types';
+import type { TelemetryEvent } from '@j03fr0st/pubg-ts';
+import type { MatchAnalysis, TrackedPlayerIdentity } from '../types/analytics-results.types';
 import type { CoachingInsight, CoachingNarration } from '../types/coaching.types';
 import type { CoachingPipelineResult } from '../types/coaching-pipeline.types';
 
 type CoachingPipelineDeps = {
   analyze: (
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[],
-    resetEvents: Array<LogHeal | LogItemUse>
+    trackedPlayers: TrackedPlayerIdentity[],
+    rawEvents: TelemetryEvent[]
   ) => CoachingInsight[];
   narrate: (insights: CoachingInsight[]) => Promise<CoachingNarration>;
 };
@@ -18,13 +17,12 @@ export class CoachingPipelineService {
 
   public async run(
     matchAnalysis: MatchAnalysis,
-    trackedPlayerNames: string[],
-    damageEvents: LogPlayerTakeDamage[],
-    resetEvents: Array<LogHeal | LogItemUse> = []
+    trackedPlayers: TrackedPlayerIdentity[],
+    rawEvents: TelemetryEvent[]
   ): Promise<CoachingPipelineResult> {
     let insights: CoachingInsight[];
     try {
-      insights = this.deps.analyze(matchAnalysis, trackedPlayerNames, damageEvents, resetEvents);
+      insights = this.deps.analyze(matchAnalysis, trackedPlayers, rawEvents);
     } catch (err) {
       return { kind: 'failed', reason: messageOf(err), stage: 'analyze' };
     }

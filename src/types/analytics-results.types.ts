@@ -37,8 +37,14 @@ export interface AssistInfo {
   weapon: string;
 }
 
+export interface TrackedPlayerIdentity {
+  name: string;
+  accountId: string;
+}
+
 export interface PlayerTelemetry {
   playerName: string;
+  accountId: string;
   matchStartTime: Date;
   killEvents: LogPlayerKillV2[];
   knockdownEvents: LogPlayerMakeGroggy[];
