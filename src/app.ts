@@ -1,10 +1,4 @@
-import {
-  type LogHeal,
-  type LogItemUse,
-  type LogPlayerRevive,
-  type LogPlayerTakeDamage,
-  PubgClient,
-} from '@j03fr0st/pubg-ts';
+import { PubgClient } from '@j03fr0st/pubg-ts';
 import { Client, GatewayIntentBits, REST } from 'discord.js';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { AppConfig } from './config/config';
@@ -14,20 +8,41 @@ import { PlayerRepository } from './data/repositories/player.repository';
 import { ProcessedMatchRepository } from './data/repositories/processed-match.repository';
 import { SeasonCacheRepository } from './data/repositories/season-cache.repository';
 import { TelemetryRepository } from './data/repositories/telemetry.repository';
-import { CoachingDecisionEngineService } from './services/coaching-decision-engine.service';
+import { CoachingDetectorRegistryService } from './services/coaching-detector-registry.service';
+import {
+  CoachingCandidateRankerService,
+  CoachingNarrativeBuilderService,
+} from './services/coaching-insight-ranking.service';
 import { CoachingNarratorService } from './services/coaching-narrator.service';
 import { CoachingPipelineService } from './services/coaching-pipeline.service';
+import {
+  DamageConversionDetector,
+  FailedResetDetector,
+  MovementExposureDetector,
+  RecoveryDecisionDetector,
+  TeamSpacingDetector,
+} from './services/core-coaching-detectors.service';
 import { DiscordBotService } from './services/discord-bot.service';
 import { EncounterSegmenterService } from './services/encounter-segmenter.service';
-import { FightContextBuilderService } from './services/fight-context-builder.service';
+import {
+  ArmorDisadvantageDetector,
+  CarryContextDetector,
+  LifecycleAccuracyDetector,
+  RedeployContextDetector,
+  UtilityUsageDetector,
+  VehicleDecisionDetector,
+  ZoneRotationDetector,
+} from './services/match-context-coaching-detectors.service';
 import { MatchInterpreter } from './services/match-interpreter.service';
 import { MatchMonitorService } from './services/match-monitor.service';
 import { MatchPresentationService } from './services/match-presentation.service';
 import { OpenRouterCoachingLlmClient } from './services/openrouter-coaching-llm-client.service';
 import { PlayerStateProjectorService } from './services/player-state-projector.service';
 import { PlayerStatsService } from './services/player-stats.service';
+import { TelemetryContextEnricherService } from './services/telemetry-context-enricher.service';
 import { TelemetryProcessorService } from './services/telemetry-processor.service';
 import { TelemetryTimelineBuilderService } from './services/telemetry-timeline-builder.service';
+import { TimelineCoachingAnalyzerService } from './services/timeline-coaching-analyzer.service';
 import { TimelineCoachingShadowService } from './services/timeline-coaching-shadow.service';
 
 export interface Application {
@@ -63,8 +78,30 @@ export function createApplication(config: AppConfig): Application {
     stateProjector,
     encounterSegmenter
   );
-  const fightContextBuilder = new FightContextBuilderService();
-  const coachingDecisionEngine = new CoachingDecisionEngineService();
+  const contextEnricher = new TelemetryContextEnricherService();
+  const detectorRegistry = new CoachingDetectorRegistryService([
+    new LifecycleAccuracyDetector(),
+    new FailedResetDetector(),
+    new TeamSpacingDetector(),
+    new DamageConversionDetector(),
+    new MovementExposureDetector(),
+    new RecoveryDecisionDetector(),
+    new ZoneRotationDetector(),
+    new ArmorDisadvantageDetector(),
+    new UtilityUsageDetector(),
+    new VehicleDecisionDetector(),
+    new CarryContextDetector(),
+    new RedeployContextDetector(),
+  ]);
+  const candidateRanker = new CoachingCandidateRankerService();
+  const narrativeBuilder = new CoachingNarrativeBuilderService();
+  const timelineAnalyzer = new TimelineCoachingAnalyzerService(
+    timelineShadow,
+    contextEnricher,
+    detectorRegistry,
+    candidateRanker,
+    narrativeBuilder
+  );
   const llmClient =
     config.llm.coachingEnabled && config.llm.openRouterApiKey && config.llm.openRouterModel
       ? new OpenRouterCoachingLlmClient({
@@ -78,33 +115,8 @@ export function createApplication(config: AppConfig): Application {
     maxLineLength: 240,
   });
   const coachingPipeline = new CoachingPipelineService({
-    analyze: (analysis, players, rawEvents) => {
-      const damageEvents = rawEvents.filter(
-        (event) => event._T === 'LogPlayerTakeDamage'
-      ) as LogPlayerTakeDamage[];
-      const resetEvents = rawEvents.filter(
-        (event) => event._T === 'LogHeal' || event._T === 'LogItemUse'
-      ) as Array<LogHeal | LogItemUse>;
-      const reviveEvents = rawEvents.filter(
-        (event) => event._T === 'LogPlayerRevive'
-      ) as LogPlayerRevive[];
-      return coachingDecisionEngine.createInsights(
-        fightContextBuilder.buildFightContexts(
-          analysis,
-          players.map((player) => player.name),
-          damageEvents,
-          resetEvents,
-          reviveEvents
-        )
-      );
-    },
-    deriveTimeline: (analysis, players, rawEvents) => {
-      const firstPlayer = analysis.playerAnalyses.values().next().value;
-      if (!firstPlayer) {
-        throw new Error('Cannot derive coaching timeline without a player match start time');
-      }
-      return timelineShadow.derive(rawEvents, firstPlayer.matchStartTime, players);
-    },
+    analyze: (analysis, players, rawEvents) =>
+      timelineAnalyzer.analyze(analysis, players, rawEvents),
     narrate: (insights) => coachingNarrator.narrate(insights),
   });
   const matchInterpreter = new MatchInterpreter();

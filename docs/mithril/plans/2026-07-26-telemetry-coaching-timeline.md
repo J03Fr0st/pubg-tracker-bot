@@ -195,3 +195,21 @@ movement/exposure, and recovery/revive detectors over enriched encounters. Phase
 utility, vehicle, carry, and SDK-supported redeploy context. Phase 4 adds candidate ranking,
 deduplication, established causal links, and deterministic narrative assembly before the existing LLM
 guardrail.
+
+## Completion status
+
+Implemented on 2026-07-26:
+
+- Phase 2: enriched encounter facts, evidence provenance, isolated detector results, detector failure
+  isolation, and the core fight detectors.
+- Phase 3: lifecycle accuracy, zone rotation, armor disadvantage, utility usage, vehicle decision,
+  carry context, and a deliberately suppressed redeploy detector until `@j03fr0st/pubg-ts` exposes a
+  typed redeploy event.
+- Phase 4: deterministic ranking, deduplication, candidate caps, evidence-only claims, causal links,
+  and narrative assembly before the existing narration guardrail.
+- Public migration: `CoachingPipelineService` now delegates to the timeline analyzer; the temporary
+  fight-context adapter, decision engine, coaching weights, geometry helper, and their compatibility
+  tests were removed.
+- Regression and resilience: Discord integration coverage proves 100 damage that immediately causes
+  DBNO does not create a false reset window, visible coaching still reaches Discord, cache and live
+  telemetry paths agree, and coaching failure does not suppress the normal match embeds.

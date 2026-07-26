@@ -29,14 +29,8 @@ describe('CoachingPipelineService', () => {
 
   it('returns kind:ok with insights and narration on the happy path', async () => {
     const analyze = jest.fn().mockReturnValue([insight]);
-    const deriveTimeline = jest.fn().mockReturnValue({
-      timeline: { events: [], diagnostics: [] },
-      state: { players: new Map(), diagnostics: [] },
-      encounters: [],
-    });
     const pipeline = new CoachingPipelineService({
       analyze,
-      deriveTimeline,
       narrate: jest.fn().mockResolvedValue(narration),
     });
     const rawEvents = [
@@ -56,7 +50,6 @@ describe('CoachingPipelineService', () => {
     const result = await pipeline.run(fakeMatchAnalysis, trackedPlayers, rawEvents);
 
     expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
-    expect(deriveTimeline).toHaveBeenCalledWith(fakeMatchAnalysis, trackedPlayers, rawEvents);
     expect(analyze).toHaveBeenCalledWith(fakeMatchAnalysis, trackedPlayers, rawEvents);
   });
 
@@ -114,23 +107,5 @@ describe('CoachingPipelineService', () => {
     });
     const result = await pipeline.run(fakeMatchAnalysis, [], []);
     expect(result.kind).toBe('empty');
-  });
-
-  it('keeps visible coaching available when shadow derivation fails', async () => {
-    const pipeline = new CoachingPipelineService({
-      analyze: jest.fn().mockReturnValue([insight]),
-      deriveTimeline: () => {
-        throw new Error('shadow failed');
-      },
-      narrate: jest.fn().mockResolvedValue(narration),
-    });
-
-    const result = await pipeline.run(
-      fakeMatchAnalysis,
-      [{ name: 'Alice', accountId: 'account.alice' }],
-      []
-    );
-
-    expect(result).toEqual({ kind: 'ok', insights: [insight], narration });
   });
 });

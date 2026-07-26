@@ -50,11 +50,13 @@ describe('TelemetryTimelineBuilderService', () => {
           attacker: {
             accountId: 'account.enemy',
             name: 'Enemy',
+            teamId: 2,
             location: { x: 100, y: 200, z: 300 },
           },
           victim: {
             accountId: 'account.player',
             name: 'Player',
+            teamId: 1,
             location: { x: 400, y: 500, z: 600 },
           },
           damage: 63.5,
@@ -71,8 +73,18 @@ describe('TelemetryTimelineBuilderService', () => {
       category: 'damage',
       sourceType: 'LogPlayerTakeDamage',
       matchTimeSeconds: 3,
-      actor: { accountId: 'account.enemy', name: 'Enemy', confidence: 'high' },
-      target: { accountId: 'account.player', name: 'Player', confidence: 'high' },
+      actor: {
+        accountId: 'account.enemy',
+        name: 'Enemy',
+        teamId: 2,
+        confidence: 'high',
+      },
+      target: {
+        accountId: 'account.player',
+        name: 'Player',
+        teamId: 1,
+        confidence: 'high',
+      },
       actorPosition: { x: 100, y: 200, z: 300 },
       targetPosition: { x: 400, y: 500, z: 600 },
       data: {

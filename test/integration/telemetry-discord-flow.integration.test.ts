@@ -5,15 +5,43 @@ import { PlayerRepository } from '../../src/data/repositories/player.repository'
 import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
 import { SeasonCacheRepository } from '../../src/data/repositories/season-cache.repository';
 import { TelemetryRepository } from '../../src/data/repositories/telemetry.repository';
+import { CoachingDetectorRegistryService } from '../../src/services/coaching-detector-registry.service';
+import {
+  CoachingCandidateRankerService,
+  CoachingNarrativeBuilderService,
+} from '../../src/services/coaching-insight-ranking.service';
+import { CoachingNarratorService } from '../../src/services/coaching-narrator.service';
 import { CoachingPipelineService } from '../../src/services/coaching-pipeline.service';
+import {
+  DamageConversionDetector,
+  FailedResetDetector,
+  MovementExposureDetector,
+  RecoveryDecisionDetector,
+  TeamSpacingDetector,
+} from '../../src/services/core-coaching-detectors.service';
 import { DiscordBotService } from '../../src/services/discord-bot.service';
+import { EncounterSegmenterService } from '../../src/services/encounter-segmenter.service';
+import {
+  ArmorDisadvantageDetector,
+  CarryContextDetector,
+  LifecycleAccuracyDetector,
+  RedeployContextDetector,
+  UtilityUsageDetector,
+  VehicleDecisionDetector,
+  ZoneRotationDetector,
+} from '../../src/services/match-context-coaching-detectors.service';
 import { MatchInterpreter } from '../../src/services/match-interpreter.service';
 import {
   type MatchPresentationDependencies,
   MatchPresentationService,
 } from '../../src/services/match-presentation.service';
+import { PlayerStateProjectorService } from '../../src/services/player-state-projector.service';
 import { PlayerStatsService } from '../../src/services/player-stats.service';
+import { TelemetryContextEnricherService } from '../../src/services/telemetry-context-enricher.service';
 import { TelemetryProcessorService } from '../../src/services/telemetry-processor.service';
+import { TelemetryTimelineBuilderService } from '../../src/services/telemetry-timeline-builder.service';
+import { TimelineCoachingAnalyzerService } from '../../src/services/timeline-coaching-analyzer.service';
+import { TimelineCoachingShadowService } from '../../src/services/timeline-coaching-shadow.service';
 import { makeMatchResponse } from '../fixtures/match-response.fixture';
 import { makeMatchParticipantStats, makeMatchSummary } from '../fixtures/match-summary.fixture';
 
@@ -61,6 +89,53 @@ function createPresentation(): MatchPresentationService {
     }),
   };
   return new MatchPresentationService(dependencies);
+}
+
+function createTimelinePresentation(): MatchPresentationService {
+  const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+  const timeline = new TimelineCoachingShadowService(
+    new TelemetryTimelineBuilderService(),
+    new PlayerStateProjectorService(),
+    new EncounterSegmenterService()
+  );
+  const analyzer = new TimelineCoachingAnalyzerService(
+    timeline,
+    new TelemetryContextEnricherService(),
+    new CoachingDetectorRegistryService([
+      new LifecycleAccuracyDetector(),
+      new FailedResetDetector(),
+      new TeamSpacingDetector(),
+      new DamageConversionDetector(),
+      new MovementExposureDetector(),
+      new RecoveryDecisionDetector(),
+      new ZoneRotationDetector(),
+      new ArmorDisadvantageDetector(),
+      new UtilityUsageDetector(),
+      new VehicleDecisionDetector(),
+      new CarryContextDetector(),
+      new RedeployContextDetector(),
+    ]),
+    new CoachingCandidateRankerService(),
+    new CoachingNarrativeBuilderService()
+  );
+  const narrator = new CoachingNarratorService(undefined, {
+    enabled: false,
+    maxLineLength: 240,
+  });
+  return new MatchPresentationService({
+    pubgClient,
+    telemetryRepository: new TelemetryRepository(prisma),
+    telemetryProcessor: new TelemetryProcessorService(),
+    playerStatsService: new PlayerStatsService(
+      pubgClient,
+      'steam',
+      new SeasonCacheRepository(prisma)
+    ),
+    coachingPipeline: new CoachingPipelineService({
+      analyze: (analysis, players, events) => analyzer.analyze(analysis, players, events),
+      narrate: (insights) => narrator.narrate(insights),
+    }),
+  });
 }
 
 function createBot(presentation: MatchPresentationService): DiscordBotService {
@@ -389,6 +464,112 @@ describe('Discord match presentation gateway', () => {
     expect(sentEmbeds.map((embed: EmbedBuilder) => embed.data.title)).toEqual([
       '🎮 PUBG Match Summary',
       'Player: SmokePlayer',
+    ]);
+  });
+
+  it('delivers visible timeline coaching through Discord without false DBNO reset wording', async () => {
+    const presentation = createTimelinePresentation();
+    const presentationClient = latestPubgClient();
+    const playedAt = new Date('2026-07-25T10:00:00.000Z');
+    const tracked = {
+      name: 'TimelinePlayer',
+      accountId: 'account.timeline',
+      location: { x: 0, y: 0, z: 0 },
+    };
+    const enemy = {
+      name: 'Enemy',
+      accountId: 'account.enemy',
+      location: { x: 1000, y: 0, z: 0 },
+    };
+    const rawEvents = [
+      {
+        _T: 'LogPlayerTakeDamage',
+        _D: '2026-07-25T10:00:02.000Z',
+        common: { isGame: 1 },
+        attacker: enemy,
+        victim: tracked,
+        damage: 100,
+      },
+      {
+        _T: 'LogPlayerMakeGroggy',
+        _D: '2026-07-25T10:00:02.000Z',
+        common: { isGame: 1 },
+        attacker: enemy,
+        victim: tracked,
+      },
+      {
+        _T: 'LogPlayerKillV2',
+        _D: '2026-07-25T10:00:10.000Z',
+        common: { isGame: 1 },
+        killer: enemy,
+        victim: tracked,
+      },
+    ] as never;
+    jest.spyOn(TelemetryRepository.prototype, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
+    jest.spyOn(TelemetryRepository.prototype, 'saveTelemetry').mockResolvedValue(undefined);
+    jest.spyOn(presentationClient.matches, 'getTelemetry').mockResolvedValue(rawEvents);
+    jest.spyOn(PlayerStatsService.prototype, 'getSeasonStats').mockResolvedValue(new Map());
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+    const summary = makeMatchSummary({
+      matchId: 'timeline-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      playedAt,
+      telemetryUrl: 'https://telemetry.example/timeline-match',
+      players: [
+        {
+          name: tracked.name,
+          pubgId: tracked.accountId,
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+      lobbyPlayers: [],
+    });
+
+    await bot.sendMatchSummary('channel-123', summary);
+
+    const sentEmbeds = channel.send.mock.calls[0][0].embeds as EmbedBuilder[];
+    const coaching = sentEmbeds.find((embed) => embed.data.title === 'Coaching');
+    expect(coaching?.data.description).toContain('You took 100 damage while dealing 0');
+    expect(coaching?.data.description).not.toContain('before creating a reset');
+  });
+
+  it('still delivers match embeds through Discord when coaching fails', async () => {
+    const presentation = createPresentation();
+    const presentationClient = latestPubgClient();
+    jest
+      .spyOn(CoachingPipelineService.prototype, 'run')
+      .mockRejectedValue(new Error('coaching unavailable'));
+    jest.spyOn(TelemetryRepository.prototype, 'getTelemetry').mockResolvedValue({ kind: 'miss' });
+    jest.spyOn(TelemetryRepository.prototype, 'saveTelemetry').mockResolvedValue(undefined);
+    jest.spyOn(presentationClient.matches, 'getTelemetry').mockResolvedValue([]);
+    jest.spyOn(PlayerStatsService.prototype, 'getSeasonStats').mockResolvedValue(new Map());
+    const bot = createBot(presentation);
+    const channel = createTextChannel();
+    jest.mocked(latestDiscordClient().channels.fetch).mockResolvedValue(channel);
+    const summary = makeMatchSummary({
+      matchId: 'coaching-failure-match',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/coaching-failure-match',
+      players: [
+        {
+          name: 'ResilientPlayer',
+          pubgId: 'account.resilient',
+          stats: makeMatchParticipantStats({ kills: 1 }),
+        },
+      ],
+      lobbyPlayers: [],
+    });
+
+    await bot.sendMatchSummary('channel-123', summary);
+
+    const sentEmbeds = channel.send.mock.calls[0][0].embeds as EmbedBuilder[];
+    expect(sentEmbeds.map((embed) => embed.data.title)).toEqual([
+      '🎮 PUBG Match Summary',
+      'Player: ResilientPlayer',
     ]);
   });
 

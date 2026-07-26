@@ -4,6 +4,7 @@ import type { CoachingRating } from './coaching.types';
 export interface TimelineIdentity {
   accountId?: string;
   name?: string;
+  teamId?: number;
   confidence: CoachingRating;
 }
 

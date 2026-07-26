@@ -175,10 +175,12 @@ export class TelemetryTimelineBuilderService {
   ): TimelineIdentity | undefined {
     const accountId = directAccountId ?? this.stringOf(record?.accountId);
     const name = this.stringOf(record?.name);
+    const teamId = this.numberOf(record?.teamId);
     if (!accountId && !name) return undefined;
     return {
       accountId,
       name,
+      ...(teamId === undefined ? {} : { teamId }),
       confidence: accountId ? 'high' : 'medium',
     };
   }

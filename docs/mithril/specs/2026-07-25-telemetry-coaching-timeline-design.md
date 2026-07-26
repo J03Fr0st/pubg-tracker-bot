@@ -1,7 +1,8 @@
 # Telemetry Coaching Timeline Design
 
-**Status:** Approved
+**Status:** Implemented
 **Date:** 2026-07-25
+**Implemented:** 2026-07-26
 
 ## Summary
 
