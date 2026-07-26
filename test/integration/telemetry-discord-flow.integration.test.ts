@@ -1,5 +1,5 @@
 import { PubgClient } from '@j03fr0st/pubg-ts';
-import { Client, EmbedBuilder, Events, PermissionFlagsBits, REST } from 'discord.js';
+import { Client, EmbedBuilder, Events, MessageFlags, PermissionFlagsBits, REST } from 'discord.js';
 import { MatchRepository } from '../../src/data/repositories/match.repository';
 import { PlayerRepository } from '../../src/data/repositories/player.repository';
 import { ProcessedMatchRepository } from '../../src/data/repositories/processed-match.repository';
@@ -363,6 +363,84 @@ describe('Discord match presentation gateway', () => {
     expect(client.login).toHaveBeenCalledWith('explicit-token');
   });
 
+  it('retries a transient Discord gateway login failure during startup', async () => {
+    jest.useFakeTimers();
+    try {
+      const client = new Client({ intents: [] });
+      jest
+        .mocked(client.login)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('Opening handshake has timed out'), {
+            code: 'ETIMEDOUT',
+          })
+        )
+        .mockResolvedValueOnce('logged-in');
+      const rest = {
+        put: jest.fn().mockResolvedValue(undefined),
+      } as unknown as REST;
+      const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+      const bot = new DiscordBotService({
+        client,
+        rest,
+        token: 'explicit-token',
+        clientId: 'explicit-client-id',
+        pubgClient,
+        playerRepository: new PlayerRepository(prisma),
+        processedMatchRepository: new ProcessedMatchRepository(prisma),
+        matchInterpreter: new MatchInterpreter(),
+        matchPresentation: createPresentation(),
+      });
+      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const initialization = expect(bot.initialize()).resolves.toBeUndefined();
+      await jest.runAllTimersAsync();
+      await initialization;
+
+      expect(client.login).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('retries transient Discord command registration failures during startup', async () => {
+    jest.useFakeTimers();
+    try {
+      const client = new Client({ intents: [] });
+      const rest = {
+        put: jest
+          .fn()
+          .mockRejectedValueOnce(
+            Object.assign(new Error('getaddrinfo EAI_AGAIN discord.com'), {
+              code: 'EAI_AGAIN',
+            })
+          )
+          .mockResolvedValueOnce(undefined),
+      } as unknown as REST;
+      const pubgClient = new PubgClient({ apiKey: 'test-api-key', shard: 'steam' });
+      const bot = new DiscordBotService({
+        client,
+        rest,
+        token: 'explicit-token',
+        clientId: 'explicit-client-id',
+        pubgClient,
+        playerRepository: new PlayerRepository(prisma),
+        processedMatchRepository: new ProcessedMatchRepository(prisma),
+        matchInterpreter: new MatchInterpreter(),
+        matchPresentation: createPresentation(),
+      });
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const initialization = expect(bot.initialize()).resolves.toBeUndefined();
+      await jest.runAllTimersAsync();
+      await initialization;
+
+      expect(rest.put).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('delegates presentation and sends 12 small embeds in exact 10/2 batches', async () => {
     const presentation = createPresentation();
     const embeds = Array.from({ length: 12 }, (_, index) =>
@@ -571,6 +649,64 @@ describe('Discord match presentation gateway', () => {
       '🎮 PUBG Match Summary',
       'Player: ResilientPlayer',
     ]);
+  });
+
+  it('does not reject the Discord event handler when an interaction expires before defer', async () => {
+    createBot(createPresentation());
+    const unknownInteraction = Object.assign(new Error('Unknown interaction'), {
+      code: 10062,
+    });
+    const interaction = {
+      ...createProcessMatchInteraction(),
+      deferred: false,
+      replied: false,
+      reply: jest.fn().mockRejectedValue(unknownInteraction),
+    };
+    interaction.deferReply.mockRejectedValue(unknownInteraction);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(interactionHandler()(interaction)).resolves.toBeUndefined();
+
+    expect(interaction.reply).not.toHaveBeenCalled();
+  });
+
+  it('uses Discord message flags for ephemeral command errors', async () => {
+    createBot(createPresentation());
+    const interaction = {
+      ...createProcessMatchInteraction(),
+      deferred: false,
+      replied: false,
+      reply: jest.fn().mockResolvedValue(undefined),
+    };
+    interaction.deferReply.mockRejectedValue(new Error('command failed'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(interactionHandler()(interaction)).resolves.toBeUndefined();
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral })
+    );
+    expect(interaction.reply).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ephemeral: expect.anything() })
+    );
+  });
+
+  it('does not reject when Discord cannot deliver the command error response', async () => {
+    createBot(createPresentation());
+    const interaction = {
+      ...createProcessMatchInteraction(),
+      deferred: false,
+      replied: false,
+      reply: jest.fn().mockRejectedValue(new Error('response delivery failed')),
+    };
+    interaction.deferReply.mockRejectedValue(new Error('command failed'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(interactionHandler()(interaction)).resolves.toBeUndefined();
+
+    expect(interaction.reply).toHaveBeenCalledTimes(1);
   });
 
   it('delegates manual processmatch presentation and batches rich output within both limits', async () => {
