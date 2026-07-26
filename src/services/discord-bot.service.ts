@@ -6,6 +6,7 @@ import {
   type Client,
   EmbedBuilder,
   Events,
+  MessageFlags,
   PermissionFlagsBits,
   type REST,
   Routes,
@@ -15,7 +16,7 @@ import {
 import type { PlayerRepository } from '../data/repositories/player.repository';
 import type { ProcessedMatchRepository } from '../data/repositories/processed-match.repository';
 import type { MatchSummary } from '../types/match.types';
-import { debug, error, success } from '../utils/logger';
+import { debug, error, success, warn } from '../utils/logger';
 import type { MatchInterpreter } from './match-interpreter.service';
 import type { MatchPresentationService } from './match-presentation.service';
 
@@ -33,6 +34,9 @@ interface ChannelWithPermissionResolver {
 
 const DISCORD_MISSING_ACCESS = 50001;
 const DISCORD_MISSING_PERMISSIONS = 50013;
+const DISCORD_UNKNOWN_INTERACTION = 10062;
+const DISCORD_STARTUP_ATTEMPTS = 3;
+const DISCORD_RETRY_DELAY_MS = 1000;
 const MAX_EMBEDS_PER_MESSAGE = 10;
 const MAX_EMBED_TEXT_PER_MESSAGE = 6000;
 
@@ -99,18 +103,58 @@ export class DiscordBotService {
   }
 
   public async initialize(): Promise<void> {
-    // Register slash commands
-    try {
-      debug('Started refreshing application (/) commands.');
-      await this.deps.rest.put(Routes.applicationCommands(this.deps.clientId), {
-        body: this.commands,
-      });
-      success('Successfully reloaded application (/) commands.');
-    } catch (err) {
-      error('Error registering slash commands:', err as Error);
-    }
+    await this.registerCommandsWithRetry();
+    await this.loginWithRetry();
+  }
 
-    await this.deps.client.login(this.deps.token);
+  private async registerCommandsWithRetry(): Promise<void> {
+    debug('Started refreshing application (/) commands.');
+    for (let attempt = 1; attempt <= DISCORD_STARTUP_ATTEMPTS; attempt += 1) {
+      try {
+        await this.deps.rest.put(Routes.applicationCommands(this.deps.clientId), {
+          body: this.commands,
+        });
+        success('Successfully reloaded application (/) commands.');
+        return;
+      } catch (err) {
+        if (attempt === DISCORD_STARTUP_ATTEMPTS || !this.isTransientDiscordStartupError(err)) {
+          error('Error registering slash commands:', err as Error);
+          return;
+        }
+        warn(
+          `Discord command registration failed transiently; retrying (${attempt}/${DISCORD_STARTUP_ATTEMPTS}).`
+        );
+        await new Promise((resolve) => setTimeout(resolve, DISCORD_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  private async loginWithRetry(): Promise<void> {
+    for (let attempt = 1; attempt <= DISCORD_STARTUP_ATTEMPTS; attempt += 1) {
+      try {
+        await this.deps.client.login(this.deps.token);
+        return;
+      } catch (err) {
+        if (attempt === DISCORD_STARTUP_ATTEMPTS || !this.isTransientDiscordStartupError(err)) {
+          throw err;
+        }
+        warn(
+          `Discord gateway login failed transiently; retrying (${attempt}/${DISCORD_STARTUP_ATTEMPTS}).`
+        );
+        await new Promise((resolve) => setTimeout(resolve, DISCORD_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  private isTransientDiscordStartupError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const value = err as { code?: unknown; message?: unknown };
+    const code = typeof value.code === 'string' ? value.code : '';
+    const message = typeof value.message === 'string' ? value.message.toLowerCase() : '';
+    return (
+      ['EAI_AGAIN', 'ECONNRESET', 'ETIMEDOUT'].includes(code) ||
+      message.includes('opening handshake has timed out')
+    );
   }
 
   public async sendMatchSummary(channelId: string, summary: MatchSummary): Promise<void> {
@@ -227,6 +271,14 @@ export class DiscordBotService {
     return code === DISCORD_MISSING_ACCESS || code === DISCORD_MISSING_PERMISSIONS;
   }
 
+  private isUnknownInteraction(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: unknown }).code === DISCORD_UNKNOWN_INTERACTION
+    );
+  }
+
   private formatDiscordError(err: unknown): string {
     const discordError = err as { code?: unknown; message?: unknown };
     const code = discordError.code ? `${discordError.code}` : 'unknown';
@@ -327,16 +379,26 @@ export class DiscordBotService {
         }
       } catch (err) {
         error('Error handling command:', err as Error);
+        if (this.isUnknownInteraction(err)) {
+          warn('Discord interaction expired before it could be acknowledged.');
+          return;
+        }
         const errorEmbed = new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle('❌ Error')
           .setDescription('An unexpected error occurred while processing your command.')
           .setTimestamp();
 
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
-        } else {
-          await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        try {
+          if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+          } else {
+            await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+          }
+        } catch (responseErr) {
+          warn(
+            `Unable to deliver Discord command error response: ${this.formatDiscordError(responseErr)}`
+          );
         }
       }
     });
