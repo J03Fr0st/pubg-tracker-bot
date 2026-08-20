@@ -267,7 +267,7 @@ describe('MatchPresentationService', () => {
 
     const embeds = await service.createEmbeds(summary);
 
-    expect(embeds.map((embed) => embed.data.title)).toContain('Coaching');
+    expect(embeds.map((embed) => embed.data.title)).toContain('Coaching: CachedPlayer');
     expect(embeds.at(-1)?.data.description).toContain('Hold the stronger angle.');
     expect(liveTelemetry).not.toHaveBeenCalled();
     expect(processTelemetry).not.toHaveBeenCalled();
@@ -276,6 +276,119 @@ describe('MatchPresentationService', () => {
       [{ name: 'CachedPlayer', accountId: 'account.cached' }],
       [damageEvent, healEvent, reviveEvent]
     );
+  });
+
+  it('groups compact coaching sections into one embed per player', async () => {
+    const deps = createDependencies();
+    const matchAnalysis = createMatchAnalysis('coaching-format', 'CachedPlayer');
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis,
+      rawEvents: [],
+    });
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({
+      kind: 'ok',
+      insights: [],
+      narration: {
+        sections: [
+          {
+            playerName: 'CachedPlayer',
+            title: 'Decisive mistake',
+            lines: [
+              '⚠️ **DECISIVE MISTAKE** · `23:43`',
+              '• You took 93 damage while dealing 0.',
+              '🎯 **DO THIS**',
+              'Reposition before exposing again.',
+            ],
+          },
+          {
+            playerName: 'CachedPlayer',
+            title: 'Pattern to fix',
+            lines: [
+              '⚠️ **PATTERN TO FIX** · `24:03`',
+              '• Armor broke.',
+              '🎯 **DO THIS**',
+              'Disengage.',
+            ],
+          },
+          {
+            playerName: 'Teammate',
+            title: 'Decisive mistake',
+            lines: [
+              '⚠️ **DECISIVE MISTAKE** · `11:35`',
+              '• Lost the trade.',
+              '🎯 **DO THIS**',
+              'Use cover.',
+            ],
+          },
+        ],
+      },
+    });
+    const service = new MatchPresentationService(deps);
+    const summary = makeMatchSummary({
+      matchId: 'coaching-format',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/coaching-format',
+      players: [
+        {
+          name: 'CachedPlayer',
+          pubgId: 'account.cached',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+    const coachingEmbeds = embeds.filter((embed) => embed.data.title?.startsWith('Coaching:'));
+
+    expect(coachingEmbeds.map((embed) => embed.data.title)).toEqual([
+      'Coaching: CachedPlayer',
+      'Coaching: Teammate',
+    ]);
+    expect(coachingEmbeds[0].data.description).toContain('⚠️ **DECISIVE MISTAKE** · `23:43`');
+    expect(coachingEmbeds[0].data.description).toContain('\n\n⚠️ **PATTERN TO FIX** · `24:03`');
+    expect(coachingEmbeds[0].data.description).not.toContain('CachedPlayer - Decisive mistake');
+    expect(coachingEmbeds[1].data.description).toContain('• Lost the trade.');
+  });
+
+  it('keeps each coaching description within the Discord safety limit', async () => {
+    const deps = createDependencies();
+    const matchAnalysis = createMatchAnalysis('long-coaching', 'CachedPlayer');
+    jest.spyOn(deps.telemetryRepository, 'getTelemetry').mockResolvedValue({
+      kind: 'hit',
+      matchAnalysis,
+      rawEvents: [],
+    });
+    jest.spyOn(deps.playerStatsService, 'getSeasonStats').mockResolvedValue(new Map());
+    jest.spyOn(deps.coachingPipeline, 'run').mockResolvedValue({
+      kind: 'ok',
+      insights: [],
+      narration: {
+        sections: [{ playerName: 'CachedPlayer', lines: ['x'.repeat(4000)] }],
+      },
+    });
+    const service = new MatchPresentationService(deps);
+    const summary = makeMatchSummary({
+      matchId: 'long-coaching',
+      mapName: 'Baltic_Main',
+      gameMode: 'squad',
+      telemetryUrl: 'https://telemetry.example/long-coaching',
+      players: [
+        {
+          name: 'CachedPlayer',
+          pubgId: 'account.cached',
+          stats: makeMatchParticipantStats(),
+        },
+      ],
+    });
+
+    const embeds = await service.createEmbeds(summary);
+    const coaching = embeds.find((embed) => embed.data.title === 'Coaching: CachedPlayer');
+
+    expect(coaching?.data.description).toHaveLength(3900);
+    expect(coaching?.data.description?.endsWith('...')).toBe(true);
   });
 
   it('calculates opponent difficulty from unique encountered opponents', async () => {

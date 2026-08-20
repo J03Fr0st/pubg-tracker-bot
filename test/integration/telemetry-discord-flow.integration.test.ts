@@ -609,7 +609,7 @@ describe('Discord match presentation gateway', () => {
     await bot.sendMatchSummary('channel-123', summary);
 
     const sentEmbeds = channel.send.mock.calls[0][0].embeds as EmbedBuilder[];
-    const coaching = sentEmbeds.find((embed) => embed.data.title === 'Coaching');
+    const coaching = sentEmbeds.find((embed) => embed.data.title === `Coaching: ${tracked.name}`);
     expect(coaching?.data.description).toContain('You took 100 damage while dealing 0');
     expect(coaching?.data.description).not.toContain('before creating a reset');
   });

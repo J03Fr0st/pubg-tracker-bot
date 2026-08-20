@@ -718,47 +718,50 @@ export class MatchPresentationService {
   }
 
   private buildCoachingEmbeds(narration: CoachingNarration, matchColor: number): EmbedBuilder[] {
-    if (narration.sections.length === 0) {
-      return [];
-    }
-
     const maxDescriptionLength = 3900;
-    const sectionBlocks = narration.sections
-      .map((section) => {
-        const title = section.title
-          ? `${section.playerName} - ${section.title}`
-          : section.playerName;
-        return [`**${title}**`, ...section.lines].join('\n');
-      })
-      .filter((section) => section.trim().length > 0);
-    const descriptions: string[] = [];
-    let currentDescription = '';
+    const sectionsByPlayer = new Map<string, string[]>();
 
-    for (const sectionBlock of sectionBlocks) {
-      const nextDescription = currentDescription
-        ? `${currentDescription}\n\n${sectionBlock}`
-        : sectionBlock;
-      if (nextDescription.length <= maxDescriptionLength) {
-        currentDescription = nextDescription;
-        continue;
-      }
-      if (currentDescription) {
+    for (const section of narration.sections) {
+      const block = section.lines.join('\n').trim();
+      if (!block) continue;
+      const blocks = sectionsByPlayer.get(section.playerName) ?? [];
+      blocks.push(block);
+      sectionsByPlayer.set(section.playerName, blocks);
+    }
+
+    const embeds: EmbedBuilder[] = [];
+    for (const [playerName, blocks] of sectionsByPlayer) {
+      const descriptions: string[] = [];
+      let currentDescription = '';
+
+      for (const block of blocks) {
+        const safeBlock =
+          block.length <= maxDescriptionLength
+            ? block
+            : `${block.slice(0, maxDescriptionLength - 3)}...`;
+        const nextDescription = currentDescription
+          ? `${currentDescription}\n\n${safeBlock}`
+          : safeBlock;
+        if (nextDescription.length <= maxDescriptionLength) {
+          currentDescription = nextDescription;
+          continue;
+        }
         descriptions.push(currentDescription);
+        currentDescription = safeBlock;
       }
-      currentDescription =
-        sectionBlock.length <= maxDescriptionLength
-          ? sectionBlock
-          : `${sectionBlock.slice(0, maxDescriptionLength - 3)}...`;
-    }
-    if (currentDescription) {
-      descriptions.push(currentDescription);
+
+      if (currentDescription) descriptions.push(currentDescription);
+      descriptions.forEach((description, index) => {
+        const continuation = index === 0 ? '' : ` (${index + 1})`;
+        embeds.push(
+          new EmbedBuilder()
+            .setTitle(`Coaching: ${playerName}${continuation}`)
+            .setDescription(description)
+            .setColor(matchColor)
+        );
+      });
     }
 
-    return descriptions.map((description, index) =>
-      new EmbedBuilder()
-        .setTitle(index === 0 ? 'Coaching' : `Coaching (${index + 1})`)
-        .setDescription(description)
-        .setColor(matchColor)
-    );
+    return embeds;
   }
 }
