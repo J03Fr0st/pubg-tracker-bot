@@ -56,9 +56,10 @@ export class CoachingNarratorService {
     const label = insight.title ?? this.toTitleCase(insight.category);
     const matchTime = this.formatMatchTime(insight.matchTimeSeconds);
     const lines = [
-      `${matchTime} - ${label}`,
-      ...insight.evidence.map((evidence) => `- ${evidence}`),
-      `Do this: ${insight.recommendation}`,
+      `⚠️ **${label.toUpperCase()}** · \`${matchTime}\``,
+      ...insight.evidence.map((evidence) => `• ${evidence}`),
+      '🎯 **DO THIS**',
+      insight.recommendation,
     ];
 
     return lines.map((line) => this.truncateLine(line));
@@ -71,8 +72,9 @@ export class CoachingNarratorService {
   }
 
   private formatMatchTime(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const wholeSeconds = Math.floor(seconds);
+    const minutes = Math.floor(wholeSeconds / 60);
+    const remainingSeconds = wholeSeconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 

@@ -37,20 +37,31 @@ const enrichedInsight: CoachingInsight = {
 };
 
 describe('CoachingNarratorService', () => {
-  it('formats deterministic template narration when LLM is disabled', async () => {
+  it('formats template coaching as a compact whole-second display block', async () => {
     const service = new CoachingNarratorService(undefined, {
       enabled: false,
       maxLineLength: 240,
     });
 
-    const narration = await service.narrate([insight]);
+    const narration = await service.narrate([
+      {
+        ...insight,
+        category: 'decisive-mistake',
+        kind: 'decisive-mistake',
+        title: 'Decisive mistake',
+        matchTimeSeconds: 1423.0969999999998,
+      },
+    ]);
 
     expect(narration.sections).toHaveLength(1);
     expect(narration.sections[0].playerName).toBe('TestPlayer');
-    expect(narration.sections[0].lines[0]).toContain('18:42 - Fight Reset');
-    expect(narration.sections[0].lines[1]).toBe('- Took 83 damage from EnemyOne');
-    expect(narration.sections[0].lines[2]).toBe('- Died to EnemyOne 6s later');
-    expect(narration.sections[0].lines[3]).toContain('Do this: Break line of sight');
+    expect(narration.sections[0].lines).toEqual([
+      '⚠️ **DECISIVE MISTAKE** · `23:43`',
+      '• Took 83 damage from EnemyOne',
+      '• Died to EnemyOne 6s later',
+      '🎯 **DO THIS**',
+      'Break line of sight, heal, or force a new angle before challenging the same player again.',
+    ]);
     expect(narration.sections[0].lines.join('\n')).not.toContain(';');
   });
 
@@ -148,7 +159,7 @@ describe('CoachingNarratorService', () => {
     expect(narration.sections[0].title).toBe('Decisive mistake');
     expect(narration.sections[1].title).toBe('Pattern to fix');
     expect(narration.sections[2].title).toBe('Player fingerprint');
-    expect(narration.sections[2].lines[0]).toContain('Player fingerprint');
+    expect(narration.sections[2].lines[0]).toContain('PLAYER FINGERPRINT');
   });
 
   it('formats enriched death-review and zone-pressure evidence in template narration', async () => {
@@ -160,10 +171,10 @@ describe('CoachingNarratorService', () => {
     const narration = await service.narrate([enrichedInsight]);
     const text = narration.sections[0].lines.join('\n');
 
-    expect(text).toContain('14:01 - Decisive mistake');
+    expect(text).toContain('⚠️ **DECISIVE MISTAKE** · `14:01`');
     expect(text).toContain('died to the same player with M416');
     expect(text).toContain('31 blue-zone damage in the 60s before this fight');
-    expect(text).toContain('Do this: Rotate earlier');
+    expect(text).toContain('🎯 **DO THIS**\nRotate earlier');
     expect(narration.sections[0].lines.every((line) => line.length <= 240)).toBe(true);
   });
 
